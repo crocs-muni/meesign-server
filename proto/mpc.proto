@@ -1,0 +1,37 @@
+syntax = "proto3";
+package mpcoord;
+
+service MPC {
+    rpc Register(RegistrationRequest) returns (Resp);
+    rpc Sign(SignRequest) returns (Resp);
+    rpc GetTask(TaskRequest) returns (Task);
+    rpc UpdateTask(Task) returns (Resp);
+}
+
+message RegistrationRequest {
+    bytes device_id = 1;
+}
+
+message SignRequest {
+    repeated bytes device_ids = 1;
+    bytes data = 2;
+}
+
+message TaskRequest {
+    bytes device_id = 1;
+}
+
+message Task {
+    bytes task_id = 1;
+}
+
+message SignTask {
+    bytes data = 2;
+}
+
+message Resp {
+    oneof variant {
+        string success = 1;
+        string failure = 2;
+    }
+}
