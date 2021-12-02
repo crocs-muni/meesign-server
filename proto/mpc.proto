@@ -5,7 +5,8 @@ service MPC {
     rpc Register(RegistrationRequest) returns (Resp);
     rpc Sign(SignRequest) returns (Resp);
     rpc GetTask(TaskRequest) returns (Task);
-    rpc UpdateTask(Task) returns (Resp);
+    rpc UpdateTask(TaskUpdate) returns (Resp);
+    rpc GetInfo(InfoRequest) returns (Info);
 }
 
 message RegistrationRequest {
@@ -18,15 +19,33 @@ message SignRequest {
 }
 
 message TaskRequest {
-    bytes device_id = 1;
+     uint32 task_id = 1;
 }
 
 message Task {
-    bytes task_id = 1;
+    uint32 task_id = 1;
+    oneof state {
+        bytes created = 2;
+        bytes active = 3;
+        bytes result = 4;
+    }
+}
+
+message TaskUpdate {
+    bytes device_id = 1;
+    uint32 task_id = 2;
 }
 
 message SignTask {
     bytes data = 2;
+}
+
+message InfoRequest {
+    bytes device_id = 1;
+}
+
+message Info {
+    repeated uint32 task_ids = 1;
 }
 
 message Resp {
