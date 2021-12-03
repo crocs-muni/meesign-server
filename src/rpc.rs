@@ -4,6 +4,7 @@ use tonic::{Request, Status, Response};
 use tonic::transport::Server;
 use crate::State;
 use tokio::sync::Mutex;
+use crate::task::TaskStatus;
 
 pub struct MPCService {
     state: Mutex<State>
@@ -18,7 +19,7 @@ impl MPCService {
 #[tonic::async_trait]
 impl Mpc for MPCService {
     async fn register(&self, request: Request<RegistrationRequest>) -> Result<Response<Resp>, Status> {
-        let mut request = request.into_inner();
+        let request = request.into_inner();
         let device_id = request.device_id;
 
         let mut state = self.state.lock().await;
@@ -32,11 +33,12 @@ impl Mpc for MPCService {
     }
 
     async fn sign(&self, request: Request<SignRequest>) -> Result<Response<Resp>, Status> {
-        let mut request = request.into_inner();
+        let request = request.into_inner();
         let device_ids = request.device_ids;
+        let data = request.data;
 
         let mut state = self.state.lock().await;
-        state.add_task(&device_ids);
+        state.add_sign_task(&device_ids, &data);
 
         let resp = Resp {
             variant: Some(resp::Variant::Success("OK".into()))
@@ -46,23 +48,29 @@ impl Mpc for MPCService {
     }
 
     async fn get_task(&self, request: Request<TaskRequest>) -> Result<Response<Task>, Status> {
-        let mut request = request.into_inner();
+        let request = request.into_inner();
         let task_id = request.task_id;
+
+        let state = self.state.lock().await;
+        let data = match state.get_task(task_id) {
+            TaskStatus::Waiting(_, data) => task::State::Waiting(data),
+            TaskStatus::Finished(data) => task::State::Finished(data),
+        };
 
         let resp = Task {
             task_id,
-            state: Some(task::State::Created(Vec::new()))
+            state: Some(data),
         };
 
         Ok(Response::new(resp))
     }
 
     async fn update_task(&self, request: Request<TaskUpdate>) -> Result<Response<Resp>, Status> {
-        let mut request = request.into_inner();
+        let request = request.into_inner();
         let task_id = request.task_id;
         let device_id = request.device_id;
 
-        self.state.lock().await.update_task(task_id, &device_id);
+        self.state.lock().await.update_task(task_id, &device_id, &Vec::new());
 
         let resp = Resp {
             variant: Some(resp::Variant::Success("OK".into()))
@@ -72,7 +80,7 @@ impl Mpc for MPCService {
     }
 
     async fn get_info(&self, request: Request<InfoRequest>) -> Result<Response<Info>, Status> {
-        let mut request = request.into_inner();
+        let request = request.into_inner();
         let device_id = request.device_id;
 
         let resp = Info {

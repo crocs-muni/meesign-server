@@ -25,9 +25,8 @@ message TaskRequest {
 message Task {
     uint32 task_id = 1;
     oneof state {
-        bytes created = 2;
-        bytes active = 3;
-        bytes result = 4;
+        bytes waiting = 2;
+        bytes finished = 3;
     }
 }
 
