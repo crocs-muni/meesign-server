@@ -1,6 +1,10 @@
+use crate::group::Group;
+
 pub enum TaskStatus {
-    Waiting(Vec<Vec<u8>>, Vec<u8>),
-    Finished(Vec<u8>)
+    Waiting(Vec<(Vec<u8>, Vec<u8>)>),
+    GroupEstablished(Group),
+    Signed(Vec<u8>),
+    Failed(Vec<u8>),
 }
 
 pub trait Task {
