@@ -50,20 +50,23 @@ impl Mpc for MPCService {
     async fn get_task(&self, request: Request<TaskRequest>) -> Result<Response<Task>, Status> {
         let request = request.into_inner();
         let task_id = request.task_id;
+        let device_id = request.device_id;
+
 
         let state = self.state.lock().await;
         let (task_state, data) = match state.get_task(task_id) {
-            TaskStatus::Waiting(data) => (task::TaskState::Waiting, data.get(0).unwrap().1.clone()),
-            TaskStatus::Signed(data) => (task::TaskState::Finished, data),
-            TaskStatus::GroupEstablished(data) => (task::TaskState::Finished, data.identifier().to_vec()),
-            TaskStatus::Failed(data) => (task::TaskState::Failed, data),
+            TaskStatus::Waiting(data) => (task::TaskState::Waiting, data.clone()),
+            TaskStatus::Signed(data) => (task::TaskState::Finished, vec![data]),
+            TaskStatus::GroupEstablished(data) => (task::TaskState::Finished, vec![data.identifier().to_vec()]),
+            TaskStatus::Failed(data) => (task::TaskState::Failed, vec![data]),
         };
 
         let resp = Task {
             id: task_id,
             state: task_state as i32,
             data,
-            progress: 0
+            progress: 0,
+            work: device_id.and_then(|device_id| state.get_work(task_id, &device_id))
         };
 
         Ok(Response::new(resp))
@@ -71,10 +74,11 @@ impl Mpc for MPCService {
 
     async fn update_task(&self, request: Request<TaskUpdate>) -> Result<Response<Resp>, Status> {
         let request = request.into_inner();
-        let task_id = request.task_id;
-        let device_id = request.device_id;
+        let task = request.task;
+        let device = request.device;
+        let data = request.data;
 
-        self.state.lock().await.update_task(task_id, &device_id, &Vec::new());
+        self.state.lock().await.update_task(task, &device, &data);
 
         let resp = Resp {
             variant: Some(resp::Variant::Success("OK".into()))
@@ -106,6 +110,7 @@ impl Mpc for MPCService {
                 },
                 data: Vec::new(),
                 progress: 0,
+                work: None
             }
         }).collect();
 

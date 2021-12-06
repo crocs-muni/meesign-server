@@ -76,6 +76,10 @@ impl State {
         self.tasks.get(task as usize).unwrap().get_status()
     }
 
+    pub fn get_work(&self, task: u32, device: &[u8]) -> Option<Vec<u8>> {
+        self.tasks.get(task as usize).unwrap().get_work(device)
+    }
+
     pub fn update_task(&mut self, task: u32, device: &[u8], data: &[u8]) -> TaskStatus {
         let task = self.tasks.get_mut(task as usize).unwrap();
         let status = task.update(device, data).unwrap();
@@ -109,7 +113,7 @@ impl Task for SignTask {
     fn get_status(&self) -> TaskStatus {
         let waiting: Vec<_> = self.subtasks.iter()
             .filter(|(_, value)| !*value)
-            .map(|(key, _)| (key.clone(), self.data.clone()))
+            .map(|(key, _)| key.clone())
             .collect();
 
         if waiting.is_empty() {
@@ -128,8 +132,12 @@ impl Task for SignTask {
         }
     }
 
-    fn waiting_for(&self, device_id: &[u8]) -> bool {
-        self.subtasks.get(device_id).map(|x| !*x).unwrap_or(false)
+    fn get_work(&self, device_id: &[u8]) -> Option<Vec<u8>> {
+        if !self.subtasks.get(device_id).unwrap_or(&false) {
+            None
+        } else {
+            Some(self.data.clone())
+        }
     }
 }
 
@@ -169,7 +177,7 @@ impl Task for GroupTask {
     fn get_status(&self) -> TaskStatus {
         let waiting: Vec<_> = self.subtasks.iter()
             .filter(|(_, value)| !*value)
-            .map(|(key, _)| (key.clone(), Vec::new()))
+            .map(|(key, _)| key.clone())
             .collect();
 
         if waiting.is_empty() {
@@ -189,8 +197,12 @@ impl Task for GroupTask {
         }
     }
 
-    fn waiting_for(&self, device_id: &[u8]) -> bool {
-        self.subtasks.get(device_id).map(|x| !*x).unwrap_or(false)
+    fn get_work(&self, device_id: &[u8]) -> Option<Vec<u8>> {
+        if !self.subtasks.get(device_id).unwrap_or(&false) {
+            None
+        } else {
+            Some(vec![1,2,3,4])
+        }
     }
 }
 
