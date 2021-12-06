@@ -144,6 +144,14 @@ impl Mpc for MPCService {
 
         Ok(Response::new(resp))
     }
+
+    async fn get_devices(&self, request: Request<DevicesRequest>) -> Result<Response<Devices>, Status> {
+        let resp = Devices {
+            ids: self.state.lock().await.get_devices()
+        };
+
+        Ok(Response::new(resp))
+    }
 }
 
 pub async fn run_rpc(state: State) -> Result<(), String> {

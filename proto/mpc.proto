@@ -8,6 +8,7 @@ service MPC {
     rpc GetTask(TaskRequest) returns (Task);
     rpc UpdateTask(TaskUpdate) returns (Resp);
     rpc GetInfo(InfoRequest) returns (Info);
+    rpc GetDevices(DevicesRequest) returns (Devices);
 }
 
 message RegistrationRequest {
@@ -23,6 +24,14 @@ message Group {
     bytes id = 1;
     uint32 threshold = 2;
     repeated bytes device_ids = 3;
+}
+
+message DevicesRequest {
+    // Protocol
+}
+
+message Devices {
+    repeated bytes ids = 1;
 }
 
 message SignRequest {

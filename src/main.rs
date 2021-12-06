@@ -94,6 +94,10 @@ impl State {
         }
         status
     }
+
+    pub fn get_devices(&self) -> Vec<Vec<u8>> {
+        self.devices.iter().map(|x| x.identifier().to_vec()).collect()
+    }
 }
 
 pub struct SignTask {
