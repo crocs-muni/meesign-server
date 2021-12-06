@@ -4,7 +4,7 @@ use tonic::{Request, Status, Response};
 use tonic::transport::Server;
 use crate::State;
 use tokio::sync::Mutex;
-use crate::task::TaskStatus;
+use crate::task::{TaskStatus, TaskType};
 
 pub struct MPCService {
     state: Mutex<State>
@@ -54,7 +54,8 @@ impl Mpc for MPCService {
 
 
         let state = self.state.lock().await;
-        let (task_state, data) = match state.get_task(task_id) {
+        let (task_type, task_state) = state.get_task(task_id);
+        let (task_state, data) = match task_state {
             TaskStatus::Waiting(data) => (task::TaskState::Waiting, data.clone()),
             TaskStatus::Signed(data) => (task::TaskState::Finished, vec![data]),
             TaskStatus::GroupEstablished(data) => (task::TaskState::Finished, vec![data.identifier().to_vec()]),
@@ -63,6 +64,10 @@ impl Mpc for MPCService {
 
         let resp = Task {
             id: task_id,
+            r#type: match task_type {
+                TaskType::Group => task::TaskType::Group as i32,
+                TaskType::Sign => task::TaskType::Sign as i32,
+            },
             state: task_state as i32,
             data,
             progress: 0,
@@ -99,9 +104,13 @@ impl Mpc for MPCService {
             }
         }).collect();
 
-        let tasks = self.state.lock().await.get_device_tasks(&device_id).iter().map(|(task_id, task_status)| {
+        let tasks = self.state.lock().await.get_device_tasks(&device_id).iter().map(|(task_id, (task_type, task_status))| {
             Task {
                 id: *task_id,
+                r#type: match task_type {
+                    TaskType::Group => task::TaskType::Group as i32,
+                    TaskType::Sign => task::TaskType::Sign as i32,
+                },
                 state: match task_status {
                     TaskStatus::Waiting(_) => task::TaskState::Waiting as i32,
                     TaskStatus::GroupEstablished(_) => task::TaskState::Finished as i32,

@@ -37,15 +37,20 @@ message TaskRequest {
 
 message Task {
     uint32 id = 1;
+    enum TaskType {
+        GROUP = 0;
+        SIGN = 1;
+    }
+    TaskType type = 2;
     enum TaskState {
         WAITING = 0;
         FINISHED = 1;
         FAILED = 2;
     }
-    TaskState state = 2;
-    int32 progress = 3;
-    repeated bytes data = 4;
-    optional bytes work = 5;
+    TaskState state = 3;
+    int32 progress = 4;
+    repeated bytes data = 5;
+    optional bytes work = 6;
 }
 
 message TaskUpdate {

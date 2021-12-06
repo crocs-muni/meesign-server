@@ -9,7 +9,7 @@ mod proto {
     tonic::include_proto!("mpcoord");
 }
 
-use task::{Task, TaskStatus};
+use crate::task::{Task, TaskStatus, TaskType};
 use crate::group::Group;
 use crate::device::Device;
 
@@ -55,7 +55,7 @@ impl State {
         self.tasks.push(task);
     }
 
-    pub fn get_device_tasks(&self, device: &Vec<u8>) -> Vec<(u32, TaskStatus)> {
+    pub fn get_device_tasks(&self, device: &Vec<u8>) -> Vec<(u32, (TaskType, TaskStatus))> {
         let mut tasks = Vec::new();
         for (idx, task) in self.tasks.iter().enumerate() {
             if task.waiting_for(device) {
@@ -75,7 +75,7 @@ impl State {
         groups
     }
 
-    pub fn get_task(&self, task: u32) -> TaskStatus {
+    pub fn get_task(&self, task: u32) -> (TaskType, TaskStatus) {
         self.tasks.get(task as usize).unwrap().get_status()
     }
 
@@ -113,23 +113,23 @@ impl SignTask {
 }
 
 impl Task for SignTask {
-    fn get_status(&self) -> TaskStatus {
+    fn get_status(&self) -> (TaskType, TaskStatus) {
         let waiting: Vec<_> = self.subtasks.iter()
             .filter(|(_, value)| !*value)
             .map(|(key, _)| key.clone())
             .collect();
 
         if waiting.is_empty() {
-            TaskStatus::Waiting(waiting)
+            (TaskType::Sign, TaskStatus::Waiting(waiting))
         } else {
-            TaskStatus::Signed(self.result.clone())
+            (TaskType::Sign, TaskStatus::Signed(self.result.clone()))
         }
     }
 
     fn update(&mut self, device_id: &[u8], _data: &[u8]) -> Result<TaskStatus, String> {
         if self.subtasks.contains_key(device_id) {
             self.subtasks.insert(device_id.to_vec(), true);
-            Ok(self.get_status())
+            Ok(self.get_status().1)
         } else {
             Err("Incompatible device ID".into())
         }
@@ -177,16 +177,16 @@ impl GroupTask {
 }
 
 impl Task for GroupTask {
-    fn get_status(&self) -> TaskStatus {
+    fn get_status(&self) -> (TaskType, TaskStatus) {
         let waiting: Vec<_> = self.subtasks.iter()
             .filter(|(_, value)| !*value)
             .map(|(key, _)| key.clone())
             .collect();
 
         if waiting.is_empty() {
-            TaskStatus::Waiting(waiting)
+            (TaskType::Group, TaskStatus::Waiting(waiting))
         } else {
-            TaskStatus::GroupEstablished(self.result.as_ref().unwrap().clone())
+            (TaskType::Group, TaskStatus::GroupEstablished(self.result.as_ref().unwrap().clone()))
         }
     }
 
@@ -194,7 +194,7 @@ impl Task for GroupTask {
         if self.subtasks.contains_key(device_id) {
             self.subtasks.insert(device_id.to_vec(), true);
             self.try_advance();
-            Ok(self.get_status())
+            Ok(self.get_status().1)
         } else {
             Err("Incompatible device ID".into())
         }
