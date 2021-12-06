@@ -23,7 +23,7 @@ impl Mpc for MPCService {
         let device_id = request.device_id;
 
         let mut state = self.state.lock().await;
-        state.add_device(device_id);
+        state.add_device(&device_id);
 
         let resp = Resp {
             variant: Some(resp::Variant::Success("OK".into()))

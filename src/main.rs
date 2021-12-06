@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 mod rpc;
 mod task;
 mod group;
+mod device;
 
 mod proto {
     tonic::include_proto!("mpcoord");
@@ -10,9 +11,10 @@ mod proto {
 
 use task::{Task, TaskStatus};
 use crate::group::Group;
+use crate::device::Device;
 
 pub struct State {
-    devices: HashMap<Vec<u8>, Vec<u8>>,
+    devices: HashSet<Device>,
     groups: HashSet<Group>,
     tasks: Vec<Box<dyn Task + Send + Sync>>,
 }
@@ -20,14 +22,15 @@ pub struct State {
 impl State {
     pub fn new() -> Self {
         State {
-            devices: HashMap::new(),
+            devices: HashSet::new(),
             groups: HashSet::new(),
             tasks: Vec::new(),
         }
     }
 
-    pub fn add_device(&mut self, device: Vec<u8>) {
-        self.devices.insert(device, Vec::new());
+    pub fn add_device(&mut self, device: &[u8]) {
+        let device = Device::new(device.to_vec());
+        self.devices.insert(device);
     }
 
     pub fn add_group_task(&mut self, devices: &[Vec<u8>], threshold: u32) -> bool {
@@ -35,7 +38,7 @@ impl State {
             return false;
         }
         for device in devices {
-            if !self.devices.contains_key(device) {
+            if !self.devices.contains(device.as_slice()) {
                 return false;
             }
         }
