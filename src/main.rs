@@ -209,7 +209,13 @@ impl Task for GroupTask {
         if !self.subtasks.get(device_id).unwrap_or(&false) {
             None
         } else {
-            Some(vec![1,2,3,4])
+            let mut data = Vec::new();
+            data.extend(self.name.as_bytes());
+            data.push(0x00);
+            for device in self.subtasks.keys() {
+                data.extend(device);
+            }
+            Some(data)
         }
     }
 }

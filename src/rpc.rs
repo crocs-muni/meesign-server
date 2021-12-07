@@ -5,7 +5,6 @@ use tonic::transport::Server;
 use crate::State;
 use tokio::sync::Mutex;
 use crate::task::{TaskStatus, TaskType};
-use crate::device::Device;
 
 pub struct MPCService {
     state: Mutex<State>
