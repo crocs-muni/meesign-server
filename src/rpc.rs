@@ -5,6 +5,7 @@ use tonic::transport::Server;
 use crate::State;
 use tokio::sync::Mutex;
 use crate::task::{TaskStatus, TaskType};
+use crate::device::Device;
 
 pub struct MPCService {
     state: Mutex<State>
@@ -20,10 +21,11 @@ impl MPCService {
 impl Mpc for MPCService {
     async fn register(&self, request: Request<RegistrationRequest>) -> Result<Response<Resp>, Status> {
         let request = request.into_inner();
-        let device_id = request.device_id;
+        let id = request.id;
+        let name = request.name;
 
         let mut state = self.state.lock().await;
-        state.add_device(&device_id);
+        state.add_device(&id, &name);
 
         let resp = Resp {
             variant: Some(resp::Variant::Success("OK".into()))
@@ -99,6 +101,7 @@ impl Mpc for MPCService {
         let groups = self.state.lock().await.get_device_groups(&device_id).iter().map(|group| {
             Group {
                 id: group.identifier().to_vec(),
+                name: group.name().to_owned(),
                 threshold: group.threshold(),
                 device_ids: group.devices().clone(),
             }
@@ -133,10 +136,11 @@ impl Mpc for MPCService {
 
     async fn group(&self, request: Request<GroupRequest>) -> Result<Response<Resp>, Status> {
         let request = request.into_inner();
+        let name = request.name;
         let device_ids = request.device_ids;
         let threshold = request.threshold.unwrap_or(device_ids.len() as u32);
 
-        let resp = if self.state.lock().await.add_group_task(&device_ids, threshold) {
+        let resp = if self.state.lock().await.add_group_task(&name, &device_ids, threshold) {
             Resp { variant: Some(resp::Variant::Success("OK".into()))}
         } else {
             Resp { variant: Some(resp::Variant::Failure("NOK".into()))}
@@ -145,9 +149,14 @@ impl Mpc for MPCService {
         Ok(Response::new(resp))
     }
 
-    async fn get_devices(&self, request: Request<DevicesRequest>) -> Result<Response<Devices>, Status> {
+    async fn get_devices(&self, _request: Request<DevicesRequest>) -> Result<Response<Devices>, Status> {
         let resp = Devices {
-            ids: self.state.lock().await.get_devices()
+            devices: self.state.lock().await.get_devices().iter().map(|device|
+                crate::proto::Device {
+                    id: device.identifier().to_vec(),
+                    name: device.name().to_string()
+                }
+            ).collect()
         };
 
         Ok(Response::new(resp))

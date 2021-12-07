@@ -5,18 +5,23 @@ use std::borrow::Borrow;
 #[derive(Clone, Eq)]
 pub struct Group {
     identifier: Vec<u8>,
+    name: String,
     devices: Vec<Vec<u8>>,
     threshold: u32,
     // protocol: ProtocolType
 }
 
 impl Group {
-    pub fn new(identifier: Vec<u8>, devices: Vec<Vec<u8>>, threshold: u32) -> Self {
-        Group { identifier, devices: devices.iter().map(Vec::clone).collect(), threshold }
+    pub fn new(identifier: Vec<u8>, name: String, devices: Vec<Vec<u8>>, threshold: u32) -> Self {
+        Group { identifier, name, devices: devices.iter().map(Vec::clone).collect(), threshold }
     }
 
     pub fn identifier(&self) -> &[u8] {
         &self.identifier
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn threshold(&self) -> u32 {

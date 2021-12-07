@@ -28,12 +28,12 @@ impl State {
         }
     }
 
-    pub fn add_device(&mut self, device: &[u8]) {
-        let device = Device::new(device.to_vec());
+    pub fn add_device(&mut self, id: &[u8], name: &str) {
+        let device = Device::new(id.to_vec(), name.to_owned());
         self.devices.insert(device);
     }
 
-    pub fn add_group_task(&mut self, devices: &[Vec<u8>], threshold: u32) -> bool {
+    pub fn add_group_task(&mut self, name: &str, devices: &[Vec<u8>], threshold: u32) -> bool {
         if threshold > devices.len() as u32 {
             return false;
         }
@@ -42,7 +42,7 @@ impl State {
                 return false;
             }
         }
-        self.add_task(Box::new(GroupTask::new(devices, threshold)));
+        self.add_task(Box::new(GroupTask::new(name, devices, threshold)));
         return true
     }
 
@@ -95,8 +95,8 @@ impl State {
         status
     }
 
-    pub fn get_devices(&self) -> Vec<Vec<u8>> {
-        self.devices.iter().map(|x| x.identifier().to_vec()).collect()
+    pub fn get_devices(&self) -> Vec<Device> {
+        self.devices.iter().map(Device::clone).collect()
     }
 }
 
@@ -123,7 +123,7 @@ impl Task for SignTask {
             .map(|(key, _)| key.clone())
             .collect();
 
-        if waiting.is_empty() {
+        if !waiting.is_empty() {
             (TaskType::Sign, TaskStatus::Waiting(waiting))
         } else {
             (TaskType::Sign, TaskStatus::Signed(self.result.clone()))
@@ -149,13 +149,14 @@ impl Task for SignTask {
 }
 
 pub struct GroupTask {
+    name: String,
     subtasks: HashMap<Vec<u8>, bool>,
     threshold: u32,
     result: Option<Group>,
 }
 
 impl GroupTask {
-    pub fn new(devices: &[Vec<u8>], threshold: u32) -> Self {
+    pub fn new(name: &str, devices: &[Vec<u8>], threshold: u32) -> Self {
         assert!(threshold <= devices.len() as u32);
 
         let mut subtasks = HashMap::new();
@@ -163,7 +164,7 @@ impl GroupTask {
             subtasks.insert(device.clone(), false);
         }
 
-        GroupTask { subtasks, threshold, result: None }
+        GroupTask { name: name.to_owned(), subtasks, threshold, result: None }
     }
 
     fn try_advance(&mut self) -> bool {
@@ -172,7 +173,7 @@ impl GroupTask {
             for device in self.subtasks.keys() {
                 identifier.extend_from_slice(device);
             }
-            self.result = Some(Group::new(identifier, self.subtasks.keys().map(Vec::clone).collect(), self.threshold));
+            self.result = Some(Group::new(identifier,  self.name.clone(), self.subtasks.keys().map(Vec::clone).collect(), self.threshold));
             true
         } else {
             false
@@ -187,7 +188,7 @@ impl Task for GroupTask {
             .map(|(key, _)| key.clone())
             .collect();
 
-        if waiting.is_empty() {
+        if !waiting.is_empty() {
             (TaskType::Group, TaskStatus::Waiting(waiting))
         } else {
             (TaskType::Group, TaskStatus::GroupEstablished(self.result.as_ref().unwrap().clone()))
