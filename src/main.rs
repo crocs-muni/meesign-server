@@ -33,26 +33,27 @@ impl State {
         self.devices.insert(device);
     }
 
-    pub fn add_group_task(&mut self, name: &str, devices: &[Vec<u8>], threshold: u32) -> bool {
+    pub fn add_group_task(&mut self, name: &str, devices: &[Vec<u8>], threshold: u32) -> Option<u32> {
         if threshold > devices.len() as u32 {
-            return false;
+            return None
         }
         for device in devices {
             if !self.devices.contains(device.as_slice()) {
-                return false;
+                return None
             }
         }
         self.add_task(Box::new(GroupTask::new(name, devices, threshold)));
-        return true
+        Some((self.tasks.len() - 1) as u32)
     }
 
-    pub fn add_sign_task(&mut self, group: &[u8], data: &[u8]) {
+    pub fn add_sign_task(&mut self, group: &[u8], data: &[u8]) -> u32 {
         let devices = self.groups.get(group).unwrap().devices().clone();
-        self.add_task(Box::new(SignTask::new(&devices, data.to_vec())));
+        self.add_task(Box::new(SignTask::new(&devices, data.to_vec())))
     }
 
-    fn add_task(&mut self, task: Box<dyn Task + Send + Sync>) {
+    fn add_task(&mut self, task: Box<dyn Task + Send + Sync>) -> u32 {
         self.tasks.push(task);
+        (self.tasks.len() - 1) as u32
     }
 
     pub fn get_device_tasks(&self, device: &Vec<u8>) -> Vec<(u32, (TaskType, TaskStatus))> {

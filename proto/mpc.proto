@@ -3,8 +3,8 @@ package mpcoord;
 
 service MPC {
     rpc Register(RegistrationRequest) returns (Resp);
-    rpc Sign(SignRequest) returns (Resp);
-    rpc Group(GroupRequest) returns (Resp);
+    rpc Sign(SignRequest) returns (Task);
+    rpc Group(GroupRequest) returns (Task);
     rpc GetTask(TaskRequest) returns (Task);
     rpc UpdateTask(TaskUpdate) returns (Resp);
     rpc GetInfo(InfoRequest) returns (Info);

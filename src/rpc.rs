@@ -33,17 +33,16 @@ impl Mpc for MPCService {
         Ok(Response::new(resp))
     }
 
-    async fn sign(&self, request: Request<SignRequest>) -> Result<Response<Resp>, Status> {
+    async fn sign(&self, request: Request<SignRequest>) -> Result<Response<Task>, Status> {
         let request = request.into_inner();
         let group_id = request.group_id;
         let data = request.data;
 
         let mut state = self.state.lock().await;
-        state.add_sign_task(&group_id, &data);
+        let task_id = state.add_sign_task(&group_id, &data);
+        let (task_type, task_status) = state.get_task(task_id);
 
-        let resp = Resp {
-            variant: Some(resp::Variant::Success("OK".into()))
-        };
+        let resp = format_task(task_id, task_type, task_status);
 
         Ok(Response::new(resp))
     }
@@ -133,17 +132,17 @@ impl Mpc for MPCService {
         Ok(Response::new(resp))
     }
 
-    async fn group(&self, request: Request<GroupRequest>) -> Result<Response<Resp>, Status> {
+    async fn group(&self, request: Request<GroupRequest>) -> Result<Response<Task>, Status> {
         let request = request.into_inner();
         let name = request.name;
         let device_ids = request.device_ids;
         let threshold = request.threshold.unwrap_or(device_ids.len() as u32);
 
-        let resp = if self.state.lock().await.add_group_task(&name, &device_ids, threshold) {
-            Resp { variant: Some(resp::Variant::Success("OK".into()))}
-        } else {
-            Resp { variant: Some(resp::Variant::Failure("NOK".into()))}
-        };
+        let mut state = self.state.lock().await;
+        let task_id = state.add_group_task(&name, &device_ids, threshold).unwrap();
+        let (task_type, task_status) = state.get_task(task_id);
+
+        let resp = format_task(task_id, task_type, task_status);
 
         Ok(Response::new(resp))
     }
@@ -159,6 +158,27 @@ impl Mpc for MPCService {
         };
 
         Ok(Response::new(resp))
+    }
+}
+
+pub fn format_task(task_id: u32, task_type: TaskType, task_status: TaskStatus) -> Task {
+    let (task_status, data) = match task_status {
+        TaskStatus::Waiting(data) => (task::TaskState::Waiting, data.clone()),
+        TaskStatus::Signed(data) => (task::TaskState::Finished, vec![data]),
+        TaskStatus::GroupEstablished(data) => (task::TaskState::Finished, vec![data.identifier().to_vec()]),
+        TaskStatus::Failed(data) => (task::TaskState::Failed, vec![data]),
+    };
+
+    Task {
+        id: task_id,
+        r#type: match task_type {
+            TaskType::Group => task::TaskType::Group as i32,
+            TaskType::Sign => task::TaskType::Sign as i32,
+        },
+        state: task_status as i32,
+        data,
+        progress: 0,
+        work: None
     }
 }
 
