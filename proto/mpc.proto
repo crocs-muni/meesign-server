@@ -1,5 +1,5 @@
 syntax = "proto3";
-package mpcoord;
+package meesign;
 
 service MPC {
     rpc Register(RegistrationRequest) returns (Resp);

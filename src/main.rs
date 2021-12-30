@@ -6,7 +6,7 @@ mod group;
 mod device;
 
 mod proto {
-    tonic::include_proto!("mpcoord");
+    tonic::include_proto!("meesign");
 }
 
 use crate::task::{Task, TaskStatus, TaskType};
@@ -141,7 +141,7 @@ impl Task for SignTask {
     }
 
     fn get_work(&self, device_id: &[u8]) -> Option<Vec<u8>> {
-        if self.subtasks.get(device_id).unwrap_or(&false) {
+        if *self.subtasks.get(device_id).unwrap_or(&false) {
             None
         } else {
             Some(self.data.clone())
@@ -207,7 +207,7 @@ impl Task for GroupTask {
     }
 
     fn get_work(&self, device_id: &[u8]) -> Option<Vec<u8>> {
-        if self.subtasks.get(device_id).unwrap_or(&false) {
+        if *self.subtasks.get(device_id).unwrap_or(&false) {
             None
         } else {
             let mut data = Vec::new();
