@@ -4,12 +4,14 @@ pub enum TaskStatus {
     Waiting(Vec<Vec<u8>>),
     GroupEstablished(Group),
     Signed(Vec<u8>),
+    KeysGenerated(Vec<u8>),
     Failed(Vec<u8>),
 }
 
 pub enum TaskType {
     Group,
-    Sign
+    Sign,
+    KeyGen,
 }
 
 pub trait Task {
