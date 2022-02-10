@@ -47,8 +47,8 @@ impl State {
     }
 
     pub fn add_sign_task(&mut self, group: &[u8], data: &[u8]) -> Uuid {
-        let devices = self.groups.get(group).unwrap().devices().clone();
-        self.add_task(Box::new(SignTask::new(&devices, data.to_vec())))
+        let group = self.groups.get(group).unwrap().clone();
+        self.add_task(Box::new(SignTask::new(group, data.to_vec())))
     }
 
     fn add_task(&mut self, task: Box<dyn Task + Send + Sync>) -> Uuid {
@@ -61,6 +61,16 @@ impl State {
         let mut tasks = Vec::new();
         for (uuid, task) in self.tasks.iter() {
             if task.waiting_for(device) {
+                tasks.push((uuid.clone(), task.get_status()));
+            }
+        }
+        tasks
+    }
+
+    pub fn get_device_archived(&self, device: &Vec<u8>) -> Vec<(Uuid, (TaskType, TaskStatus))> {
+        let mut tasks = Vec::new();
+        for (uuid, task) in self.tasks.iter() {
+            if !task.is_waiting() && task.has_device(device) {
                 tasks.push((uuid.clone(), task.get_status()));
             }
         }
@@ -104,17 +114,23 @@ impl State {
 
 pub struct SignTask {
     subtasks: HashMap<Vec<u8>, bool>,
+    group: Group,
     data: Vec<u8>,
     result: Vec<u8>,
 }
 
 impl SignTask {
-    pub fn new(devices: &[Vec<u8>], data: Vec<u8>) -> Self {
+    pub fn new(group: Group,  data: Vec<u8>) -> Self {
         let mut subtasks = HashMap::new();
-        for device in devices.iter() {
+        for device in group.devices().iter() {
             subtasks.insert(device.clone(), false);
         }
-        SignTask { subtasks, data, result: Vec::new() }
+        SignTask {
+            subtasks,
+            group,
+            data,
+            result: Vec::new()
+        }
     }
 }
 
@@ -148,10 +164,15 @@ impl Task for SignTask {
             Some(self.data.clone())
         }
     }
+
+    fn has_device(&self, device_id: &[u8]) -> bool {
+        self.group.devices().contains(device_id)
+    }
 }
 
 pub struct GroupTask {
     name: String,
+    devices: HashSet<Vec<u8>>,
     subtasks: HashMap<Vec<u8>, bool>,
     threshold: u32,
     result: Option<Group>,
@@ -166,7 +187,9 @@ impl GroupTask {
             subtasks.insert(device.clone(), false);
         }
 
-        GroupTask { name: name.to_owned(), subtasks, threshold, result: None }
+        let devices = devices.iter().map(Vec::clone).collect();
+
+        GroupTask { name: name.to_owned(), devices, subtasks, threshold, result: None }
     }
 
     fn try_advance(&mut self) -> bool {
@@ -219,6 +242,10 @@ impl Task for GroupTask {
             }
             Some(data)
         }
+    }
+
+    fn has_device(&self, device_id: &[u8]) -> bool {
+        self.devices.contains(device_id)
     }
 }
 

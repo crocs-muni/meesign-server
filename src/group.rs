@@ -1,12 +1,13 @@
 use std::cmp::Eq;
 use std::hash::{Hash, Hasher};
 use std::borrow::Borrow;
+use std::collections::HashSet;
 
 #[derive(Clone, Eq)]
 pub struct Group {
     identifier: Vec<u8>,
     name: String,
-    devices: Vec<Vec<u8>>,
+    devices: HashSet<Vec<u8>>,
     threshold: u32,
     // protocol: ProtocolType
 }
@@ -28,7 +29,7 @@ impl Group {
         self.threshold
     }
 
-    pub fn devices(&self) -> &Vec<Vec<u8>> {
+    pub fn devices(&self) -> &HashSet<Vec<u8>> {
         &self.devices
     }
 

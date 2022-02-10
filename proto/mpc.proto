@@ -9,6 +9,7 @@ service MPC {
     rpc UpdateTask(TaskUpdate) returns (Resp);
     rpc GetInfo(InfoRequest) returns (Info);
     rpc GetDevices(DevicesRequest) returns (Devices);
+    rpc GetArchived(ArchivedRequest) returns (Archived);
 }
 
 message RegistrationRequest {
@@ -90,4 +91,12 @@ message Resp {
         string success = 1;
         string failure = 2;
     }
+}
+
+message ArchivedRequest {
+    bytes device_id = 1;
+}
+
+message Archived {
+    repeated Task tasks = 1;
 }

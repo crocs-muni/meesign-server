@@ -102,7 +102,7 @@ impl Mpc for MPCService {
                 id: group.identifier().to_vec(),
                 name: group.name().to_owned(),
                 threshold: group.threshold(),
-                device_ids: group.devices().clone(),
+                device_ids: group.devices().iter().map(Vec::clone).collect(),
             }
         }).collect();
 
@@ -156,6 +156,34 @@ impl Mpc for MPCService {
                     name: device.name().to_string()
                 }
             ).collect()
+        };
+
+        Ok(Response::new(resp))
+    }
+
+    async fn get_archived(&self, request: Request<ArchivedRequest>) -> Result<Response<Archived>, Status> {
+        let request = request.into_inner();
+        let device_id = request.device_id;
+
+        let resp = Archived {
+            tasks: self.state.lock().await.get_device_archived(&device_id).iter().map(|(task_id, (task_type, task_status))| {
+                Task {
+                    id: task_id.as_bytes().to_vec(),
+                    r#type: match task_type {
+                        TaskType::Group => task::TaskType::Group as i32,
+                        TaskType::Sign => task::TaskType::Sign as i32,
+                    },
+                    state: match task_status {
+                        TaskStatus::Waiting(_) => task::TaskState::Waiting as i32,
+                        TaskStatus::GroupEstablished(_) => task::TaskState::Finished as i32,
+                        TaskStatus::Signed(_) => task::TaskState::Finished as i32,
+                        TaskStatus::Failed(_) => task::TaskState::Failed as i32,
+                    },
+                    data: Vec::new(),
+                    progress: 0,
+                    work: None
+                }
+            }).collect()
         };
 
         Ok(Response::new(resp))
