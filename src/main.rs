@@ -12,11 +12,12 @@ mod proto {
 use crate::task::{Task, TaskStatus, TaskType};
 use crate::group::Group;
 use crate::device::Device;
+use uuid::Uuid;
 
 pub struct State {
     devices: HashSet<Device>,
     groups: HashSet<Group>,
-    tasks: Vec<Box<dyn Task + Send + Sync>>,
+    tasks: HashMap<Uuid, Box<dyn Task + Send + Sync>>,
 }
 
 impl State {
@@ -24,7 +25,7 @@ impl State {
         State {
             devices: HashSet::new(),
             groups: HashSet::new(),
-            tasks: Vec::new(),
+            tasks: HashMap::new(),
         }
     }
 
@@ -33,7 +34,7 @@ impl State {
         self.devices.insert(device);
     }
 
-    pub fn add_group_task(&mut self, name: &str, devices: &[Vec<u8>], threshold: u32) -> Option<u32> {
+    pub fn add_group_task(&mut self, name: &str, devices: &[Vec<u8>], threshold: u32) -> Option<Uuid> {
         if threshold > devices.len() as u32 {
             return None
         }
@@ -42,25 +43,25 @@ impl State {
                 return None
             }
         }
-        self.add_task(Box::new(GroupTask::new(name, devices, threshold)));
-        Some((self.tasks.len() - 1) as u32)
+        Some(self.add_task(Box::new(GroupTask::new(name, devices, threshold))))
     }
 
-    pub fn add_sign_task(&mut self, group: &[u8], data: &[u8]) -> u32 {
+    pub fn add_sign_task(&mut self, group: &[u8], data: &[u8]) -> Uuid {
         let devices = self.groups.get(group).unwrap().devices().clone();
         self.add_task(Box::new(SignTask::new(&devices, data.to_vec())))
     }
 
-    fn add_task(&mut self, task: Box<dyn Task + Send + Sync>) -> u32 {
-        self.tasks.push(task);
-        (self.tasks.len() - 1) as u32
+    fn add_task(&mut self, task: Box<dyn Task + Send + Sync>) -> Uuid {
+        let uuid = Uuid::new_v4();
+        self.tasks.insert(uuid, task);
+        uuid
     }
 
-    pub fn get_device_tasks(&self, device: &Vec<u8>) -> Vec<(u32, (TaskType, TaskStatus))> {
+    pub fn get_device_tasks(&self, device: &Vec<u8>) -> Vec<(Uuid, (TaskType, TaskStatus))> {
         let mut tasks = Vec::new();
-        for (idx, task) in self.tasks.iter().enumerate() {
+        for (uuid, task) in self.tasks.iter() {
             if task.waiting_for(device) {
-                tasks.push((idx as u32, task.get_status()));
+                tasks.push((uuid.clone(), task.get_status()));
             }
         }
         tasks
@@ -76,16 +77,16 @@ impl State {
         groups
     }
 
-    pub fn get_task(&self, task: u32) -> (TaskType, TaskStatus) {
-        self.tasks.get(task as usize).unwrap().get_status()
+    pub fn get_task(&self, task: &Uuid) -> (TaskType, TaskStatus) {
+        self.tasks.get(task).unwrap().get_status()
     }
 
-    pub fn get_work(&self, task: u32, device: &[u8]) -> Option<Vec<u8>> {
-        self.tasks.get(task as usize).unwrap().get_work(device)
+    pub fn get_work(&self, task: &Uuid, device: &[u8]) -> Option<Vec<u8>> {
+        self.tasks.get(task).unwrap().get_work(device)
     }
 
-    pub fn update_task(&mut self, task: u32, device: &[u8], data: &[u8]) -> TaskStatus {
-        let task = self.tasks.get_mut(task as usize).unwrap();
+    pub fn update_task(&mut self, task: &Uuid, device: &[u8], data: &[u8]) -> TaskStatus {
+        let task = self.tasks.get_mut(task).unwrap();
         let status = task.update(device, data).unwrap();
         match &status {
             TaskStatus::GroupEstablished(group) => {

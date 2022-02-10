@@ -314,6 +314,7 @@ dependencies = [
  "tokio",
  "tonic",
  "tonic-build",
+ "uuid",
 ]
 
 [[package]]
@@ -809,6 +810,16 @@ name = "unicode-xid"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ccb82d61f80a663efe1f787a51b16b5a51e3314d6ac365b08639f52387b33f3"
+
+[[package]]
+name = "uuid"
+version = "1.0.0-alpha.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb3ab47baa004111b323696c6eaa2752e7356f7f77cf6b6dc7a2087368ce1ca4"
+dependencies = [
+ "getrandom",
+ "rand",
+]
 
 [[package]]
 name = "want"

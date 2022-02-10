@@ -5,6 +5,7 @@ use tonic::transport::Server;
 use crate::State;
 use tokio::sync::Mutex;
 use crate::task::{TaskStatus, TaskType};
+use uuid::Uuid;
 
 pub struct MPCService {
     state: Mutex<State>
@@ -40,21 +41,21 @@ impl Mpc for MPCService {
 
         let mut state = self.state.lock().await;
         let task_id = state.add_sign_task(&group_id, &data);
-        let (task_type, task_status) = state.get_task(task_id);
+        let (task_type, task_status) = state.get_task(&task_id);
 
-        let resp = format_task(task_id, task_type, task_status);
+        let resp = format_task(&task_id, task_type, task_status);
 
         Ok(Response::new(resp))
     }
 
     async fn get_task(&self, request: Request<TaskRequest>) -> Result<Response<Task>, Status> {
         let request = request.into_inner();
-        let task_id = request.task_id;
+        let task_id = Uuid::from_slice(&request.task_id).unwrap();
         let device_id = request.device_id;
 
 
         let state = self.state.lock().await;
-        let (task_type, task_state) = state.get_task(task_id);
+        let (task_type, task_state) = state.get_task(&task_id);
         let (task_state, data) = match task_state {
             TaskStatus::Waiting(data) => (task::TaskState::Waiting, data.clone()),
             TaskStatus::Signed(data) => (task::TaskState::Finished, vec![data]),
@@ -63,7 +64,7 @@ impl Mpc for MPCService {
         };
 
         let resp = Task {
-            id: task_id,
+            id: task_id.as_bytes().to_vec(),
             r#type: match task_type {
                 TaskType::Group => task::TaskType::Group as i32,
                 TaskType::Sign => task::TaskType::Sign as i32,
@@ -71,7 +72,7 @@ impl Mpc for MPCService {
             state: task_state as i32,
             data,
             progress: 0,
-            work: device_id.and_then(|device_id| state.get_work(task_id, &device_id))
+            work: device_id.and_then(|device_id| state.get_work(&task_id, &device_id))
         };
 
         Ok(Response::new(resp))
@@ -79,11 +80,11 @@ impl Mpc for MPCService {
 
     async fn update_task(&self, request: Request<TaskUpdate>) -> Result<Response<Resp>, Status> {
         let request = request.into_inner();
-        let task = request.task;
+        let task = Uuid::from_slice(&request.task).unwrap();
         let device = request.device;
         let data = request.data;
 
-        self.state.lock().await.update_task(task, &device, &data);
+        self.state.lock().await.update_task(&task, &device, &data);
 
         let resp = Resp {
             variant: Some(resp::Variant::Success("OK".into()))
@@ -107,7 +108,7 @@ impl Mpc for MPCService {
 
         let tasks = self.state.lock().await.get_device_tasks(&device_id).iter().map(|(task_id, (task_type, task_status))| {
             Task {
-                id: *task_id,
+                id: task_id.as_bytes().to_vec(),
                 r#type: match task_type {
                     TaskType::Group => task::TaskType::Group as i32,
                     TaskType::Sign => task::TaskType::Sign as i32,
@@ -140,9 +141,9 @@ impl Mpc for MPCService {
 
         let mut state = self.state.lock().await;
         let task_id = state.add_group_task(&name, &device_ids, threshold).unwrap();
-        let (task_type, task_status) = state.get_task(task_id);
+        let (task_type, task_status) = state.get_task(&task_id);
 
-        let resp = format_task(task_id, task_type, task_status);
+        let resp = format_task(&task_id, task_type, task_status);
 
         Ok(Response::new(resp))
     }
@@ -161,7 +162,7 @@ impl Mpc for MPCService {
     }
 }
 
-pub fn format_task(task_id: u32, task_type: TaskType, task_status: TaskStatus) -> Task {
+pub fn format_task(task_id: &Uuid, task_type: TaskType, task_status: TaskStatus) -> Task {
     let (task_status, data) = match task_status {
         TaskStatus::Waiting(data) => (task::TaskState::Waiting, data.clone()),
         TaskStatus::Signed(data) => (task::TaskState::Finished, vec![data]),
@@ -170,7 +171,7 @@ pub fn format_task(task_id: u32, task_type: TaskType, task_status: TaskStatus) -
     };
 
     Task {
-        id: task_id,
+        id: task_id.as_bytes().to_vec(),
         r#type: match task_type {
             TaskType::Group => task::TaskType::Group as i32,
             TaskType::Sign => task::TaskType::Sign as i32,
