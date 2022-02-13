@@ -9,6 +9,7 @@ service MPC {
     rpc UpdateTask(TaskUpdate) returns (Resp);
     rpc GetInfo(InfoRequest) returns (Info);
     rpc GetDevices(DevicesRequest) returns (Devices);
+    rpc GetArchived(ArchivedRequest) returns (Archived);
 }
 
 message RegistrationRequest {
@@ -48,15 +49,16 @@ message SignRequest {
 }
 
 message TaskRequest {
-     uint32 task_id = 1;
+     bytes task_id = 1;
      optional bytes device_id = 2;
 }
 
 message Task {
-    uint32 id = 1;
+    bytes id = 1;
     enum TaskType {
         GROUP = 0;
         SIGN = 1;
+        KEY_GEN = 2;
     }
     TaskType type = 2;
     enum TaskState {
@@ -72,7 +74,7 @@ message Task {
 
 message TaskUpdate {
     bytes device = 1;
-    uint32 task = 2;
+    bytes task = 2;
     bytes data = 3;
 }
 
@@ -90,4 +92,29 @@ message Resp {
         string success = 1;
         string failure = 2;
     }
+}
+
+message ArchivedRequest {
+    bytes device_id = 1;
+}
+
+message Archived {
+    repeated Task tasks = 1;
+}
+
+message GG18KeyGenInit {
+  uint32 index = 1;
+  uint32 parties = 2;
+  uint32 threshold = 3;
+}
+
+message GG18SignInit {
+  repeated uint32 indices = 1;
+  uint32 index = 2;
+  bytes hash = 3;
+
+}
+
+message GG18Message {
+  repeated bytes message = 1;
 }
