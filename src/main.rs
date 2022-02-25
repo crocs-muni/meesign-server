@@ -4,6 +4,7 @@ mod rpc;
 mod task;
 mod group;
 mod device;
+mod protocols;
 
 mod proto {
     tonic::include_proto!("meesign");

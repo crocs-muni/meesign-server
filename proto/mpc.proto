@@ -58,6 +58,7 @@ message Task {
     enum TaskType {
         GROUP = 0;
         SIGN = 1;
+        KEY_GEN = 2;
     }
     TaskType type = 2;
     enum TaskState {
@@ -99,4 +100,21 @@ message ArchivedRequest {
 
 message Archived {
     repeated Task tasks = 1;
+}
+
+message GG18KeyGenInit {
+  uint32 index = 1;
+  uint32 parties = 2;
+  uint32 threshold = 3;
+}
+
+message GG18SignInit {
+  repeated uint32 indices = 1;
+  uint32 index = 2;
+  bytes hash = 3;
+
+}
+
+message GG18Message {
+  repeated bytes message = 1;
 }

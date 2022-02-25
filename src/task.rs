@@ -5,11 +5,14 @@ pub enum TaskStatus {
     GroupEstablished(Group),
     Signed(Vec<u8>),
     Failed(Vec<u8>),
+    KeysGenerated(Vec<u8>),
 }
 
+#[derive(Clone, PartialEq)]
 pub enum TaskType {
     Group,
-    Sign
+    Sign,
+    KeyGen,
 }
 
 pub trait Task {
