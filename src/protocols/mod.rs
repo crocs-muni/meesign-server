@@ -1,6 +1,6 @@
 pub mod gg18;
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub enum ProtocolType {
     MultiSignature,
     GG18,

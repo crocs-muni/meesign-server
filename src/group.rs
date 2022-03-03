@@ -10,7 +10,7 @@ pub struct Group {
     name: String,
     devices: HashSet<Vec<u8>>,
     threshold: u32,
-    protocol: ProtocolType
+    protocol: ProtocolType,
 }
 
 impl Group {
@@ -37,6 +37,8 @@ impl Group {
     pub fn contains(&self, device: &Vec<u8>) -> bool {
         self.devices.contains(device)
     }
+
+    pub fn protocol(&self) -> ProtocolType { self.protocol }
 }
 
 impl PartialEq for Group {

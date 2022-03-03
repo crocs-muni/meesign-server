@@ -15,7 +15,7 @@ use crate::group::Group;
 use crate::device::Device;
 use uuid::Uuid;
 use crate::protocols::ProtocolType;
-use crate::protocols::gg18::GG18;
+use crate::protocols::gg18::{GG18Group, GG18Sign};
 
 pub struct State {
     devices: HashSet<Device>,
@@ -49,7 +49,7 @@ impl State {
 
         let task: Box<dyn Task + Send + Sync + 'static> = match protocol {
             ProtocolType::MultiSignature => Box::new(GroupTask::new(name, devices, threshold)),
-            ProtocolType::GG18 => Box::new(GG18::new_group(name, devices, threshold)),
+            ProtocolType::GG18 => Box::new(GG18Group::new(name, devices, threshold)),
         };
 
         Some(self.add_task(task))
@@ -57,7 +57,11 @@ impl State {
 
     pub fn add_sign_task(&mut self, group: &[u8], data: &[u8]) -> Uuid {
         let group = self.groups.get(group).unwrap().clone();
-        self.add_task(Box::new(SignTask::new(group, data.to_vec())))
+        let task: Box<dyn Task + Send + Sync + 'static> = match group.protocol() {
+            ProtocolType::MultiSignature => Box::new(SignTask::new(group, data.to_vec())),
+            ProtocolType::GG18 => Box::new(GG18Sign::new(group, data.to_vec()))
+        };
+        self.add_task(task)
     }
 
     fn add_task(&mut self, task: Box<dyn Task + Send + Sync>) -> Uuid {
