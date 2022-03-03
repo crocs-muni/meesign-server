@@ -2,6 +2,7 @@ use std::cmp::Eq;
 use std::hash::{Hash, Hasher};
 use std::borrow::Borrow;
 use std::collections::HashSet;
+use crate::protocols::ProtocolType;
 
 #[derive(Clone, Eq)]
 pub struct Group {
@@ -9,12 +10,12 @@ pub struct Group {
     name: String,
     devices: HashSet<Vec<u8>>,
     threshold: u32,
-    // protocol: ProtocolType
+    protocol: ProtocolType
 }
 
 impl Group {
-    pub fn new(identifier: Vec<u8>, name: String, devices: Vec<Vec<u8>>, threshold: u32) -> Self {
-        Group { identifier, name, devices: devices.iter().map(Vec::clone).collect(), threshold }
+    pub fn new(identifier: Vec<u8>, name: String, devices: Vec<Vec<u8>>, threshold: u32, protocol: ProtocolType) -> Self {
+        Group { identifier, name, devices: devices.iter().map(Vec::clone).collect(), threshold, protocol }
     }
 
     pub fn identifier(&self) -> &[u8] {

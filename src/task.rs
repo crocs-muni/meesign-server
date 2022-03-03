@@ -12,7 +12,7 @@ pub enum TaskStatus {
 pub enum TaskType {
     Group,
     Sign,
-    KeyGen,
+    GG18Group,
 }
 
 pub trait Task {

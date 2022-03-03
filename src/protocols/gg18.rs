@@ -4,8 +4,10 @@ use prost::Message;
 use prost::DecodeError;
 
 const LAST_ROUND_KEYGEN: u16 = 6;
-const LAST_ROUND_SING: u16 = 10;
+const LAST_ROUND_SIGN: u16 = 10;
+
 pub struct GG18 {
+    name: Option<String>,
     sorted_ids: Vec<Vec<u8>>,
     messages_in: Vec<Vec<Option<Vec<u8>>>>,
     messages_out: Vec<Vec<u8>>,
@@ -16,9 +18,10 @@ pub struct GG18 {
 }
 
 impl GG18 {
-    pub fn new_keygen(mut ids: Vec<Vec<u8>>, threshold: u32) -> Self {
+    pub fn new_group(name: &str, mut ids: &[Vec<u8>], threshold: u32) -> Self {
         assert!(threshold <= ids.len() as u32);
 
+        let mut ids = ids.clone().to_vec();
         ids.sort();
         let mut messages_in : Vec<Vec<Option<Vec<u8>>>> = Vec::new();
         let mut messages_out : Vec<Vec<u8>> = Vec::new();
@@ -31,12 +34,13 @@ impl GG18 {
         }
 
         GG18 {
+            name: Some(name.into()),
             sorted_ids: ids,
             messages_in,
             messages_out,
             result: None,
             round: 1,
-            task_type: TaskType::KeyGen,
+            task_type: TaskType::GG18Group,
             last_round: LAST_ROUND_KEYGEN,
         }
     }
@@ -62,13 +66,14 @@ impl GG18 {
         }
 
         GG18 {
+            name: None,
             sorted_ids: signing_ids,
             messages_in,
             messages_out,
             result: None,
             round: 1,
             task_type: TaskType::Sign,
-            last_round: LAST_ROUND_SING,
+            last_round: LAST_ROUND_SIGN,
         }
     }
 
@@ -110,22 +115,23 @@ impl GG18 {
 }
 
 impl Task for GG18 {
+
     fn get_status(&self) -> (TaskType, TaskStatus) {
         if self.result.is_none() {
             return (self.task_type.clone(), TaskStatus::Waiting(self.waiting_for()))
         }
 
-        if self.task_type == TaskType::KeyGen {
+        if self.task_type == TaskType::GG18Group {
             match self.result.clone() {
                 Some(pk) => (self.task_type.clone(), TaskStatus::KeysGenerated(pk)),
                 None => (self.task_type.clone(),
-                         TaskStatus::Failed("Served did not recieve a public key.".as_bytes().to_vec()))
+                         TaskStatus::Failed("Served did not receive a public key.".as_bytes().to_vec()))
             }
         } else {
             match self.result.clone() {
                 Some(pk) => (TaskType::Sign, TaskStatus::KeysGenerated(pk)),
                 None => (TaskType::Sign,
-                         TaskStatus::Failed("Served did not recieve a signature.".as_bytes().to_vec()))
+                         TaskStatus::Failed("Served did not receive a signature.".as_bytes().to_vec()))
             }
 
         }
@@ -144,25 +150,28 @@ impl Task for GG18 {
         }
 
         let mut data : Vec<Option<Vec<u8>>> = m.unwrap().message.into_iter()
-                                          .map(|x| Some(x.as_slice().to_vec()))
-                                          .collect();
+            .map(|x| Some(x.as_slice().to_vec()))
+            .collect();
 
         match self.id_to_index(device_id) {
-            Some(i) => {data.insert(i, None);
-                        self.messages_in[i] = data},
+            Some(i) => {
+                data.insert(i, None);
+                self.messages_in[i] = data
+            },
             None => return Err("Device ID not found.".to_string())
         }
 
         if self.waiting_for().is_empty() {
             if self.round == self.last_round {
                 if self.messages_in[0][1].is_none() {
-                    return Err("Failed to recieve a last message.".to_string())
+                    return Err("Failed to receive a last message.".to_string())
                 }
-                if self.task_type == TaskType::KeyGen {
-                    return Ok(TaskStatus::KeysGenerated(self.messages_in[0][1].clone().unwrap()))
+
+                return Ok(if self.task_type == TaskType::GG18Group {
+                    TaskStatus::KeysGenerated(self.messages_in[0][1].clone().unwrap())
                 } else {
-                    return Ok(TaskStatus::Signed(self.messages_in[0][1].clone().unwrap()))
-                }
+                    TaskStatus::Signed(self.messages_in[0][1].clone().unwrap())
+                })
             }
             self.new_round();
             self.round += 1;
@@ -171,7 +180,6 @@ impl Task for GG18 {
     }
 
     fn get_work(&self, device_id: &[u8]) -> Option<Vec<u8>> {
-
         let waiting_for = self.waiting_for();
         if !waiting_for.contains(&device_id.to_vec()) {
             return None

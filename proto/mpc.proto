@@ -12,6 +12,11 @@ service MPC {
     rpc GetArchived(ArchivedRequest) returns (Archived);
 }
 
+enum Protocol {
+    MULTISIGNATURE = 0;
+    GG18 = 1;
+}
+
 message RegistrationRequest {
     bytes id = 1;
     string name = 2;
@@ -21,6 +26,7 @@ message GroupRequest {
     repeated bytes device_ids = 1;
     string name = 2;
     optional uint32 threshold = 3;
+    optional Protocol protocol = 4;
 }
 
 message Group {

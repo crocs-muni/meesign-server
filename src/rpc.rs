@@ -6,6 +6,7 @@ use crate::State;
 use tokio::sync::Mutex;
 use crate::task::{TaskStatus, TaskType};
 use uuid::Uuid;
+use crate::protocols::ProtocolType;
 
 pub struct MPCService {
     state: Mutex<State>
@@ -69,7 +70,7 @@ impl Mpc for MPCService {
             r#type: match task_type {
                 TaskType::Group => task::TaskType::Group as i32,
                 TaskType::Sign => task::TaskType::Sign as i32,
-                TaskType::KeyGen => task::TaskType::KeyGen as i32,
+                TaskType::GG18Group => task::TaskType::KeyGen as i32,
             },
             state: task_state as i32,
             data,
@@ -114,7 +115,7 @@ impl Mpc for MPCService {
                 r#type: match task_type {
                     TaskType::Group => task::TaskType::Group as i32,
                     TaskType::Sign => task::TaskType::Sign as i32,
-                    TaskType::KeyGen => task::TaskType::KeyGen as i32,
+                    TaskType::GG18Group => task::TaskType::KeyGen as i32,
                 },
                 state: match task_status {
                     TaskStatus::Waiting(_) => task::TaskState::Waiting as i32,
@@ -142,9 +143,14 @@ impl Mpc for MPCService {
         let name = request.name;
         let device_ids = request.device_ids;
         let threshold = request.threshold.unwrap_or(device_ids.len() as u32);
+        let protocol = match request.protocol.unwrap_or(0) {
+            0 => ProtocolType::MultiSignature,
+            1 => ProtocolType::GG18,
+            _ => unreachable!(),
+        };
 
         let mut state = self.state.lock().await;
-        let task_id = state.add_group_task(&name, &device_ids, threshold).unwrap();
+        let task_id = state.add_group_task(&name, &device_ids, threshold, protocol).unwrap();
         let (task_type, task_status) = state.get_task(&task_id);
 
         let resp = format_task(&task_id, task_type, task_status);
@@ -176,7 +182,7 @@ impl Mpc for MPCService {
                     r#type: match task_type {
                         TaskType::Group => task::TaskType::Group as i32,
                         TaskType::Sign => task::TaskType::Sign as i32,
-                        TaskType::KeyGen => task::TaskType::KeyGen as i32,
+                        TaskType::GG18Group => task::TaskType::KeyGen as i32,
                     },
                     state: match task_status {
                         TaskStatus::Waiting(_) => task::TaskState::Waiting as i32,
@@ -210,7 +216,7 @@ pub fn format_task(task_id: &Uuid, task_type: TaskType, task_status: TaskStatus)
         r#type: match task_type {
             TaskType::Group => task::TaskType::Group as i32,
             TaskType::Sign => task::TaskType::Sign as i32,
-            TaskType::KeyGen => task::TaskType::KeyGen as i32,
+            TaskType::GG18Group => task::TaskType::KeyGen as i32,
         },
         state: task_status as i32,
         data,

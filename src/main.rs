@@ -14,6 +14,8 @@ use crate::task::{Task, TaskStatus, TaskType};
 use crate::group::Group;
 use crate::device::Device;
 use uuid::Uuid;
+use crate::protocols::ProtocolType;
+use crate::protocols::gg18::GG18;
 
 pub struct State {
     devices: HashSet<Device>,
@@ -35,7 +37,7 @@ impl State {
         self.devices.insert(device);
     }
 
-    pub fn add_group_task(&mut self, name: &str, devices: &[Vec<u8>], threshold: u32) -> Option<Uuid> {
+    pub fn add_group_task(&mut self, name: &str, devices: &[Vec<u8>], threshold: u32, protocol: ProtocolType) -> Option<Uuid> {
         if threshold > devices.len() as u32 {
             return None
         }
@@ -44,7 +46,13 @@ impl State {
                 return None
             }
         }
-        Some(self.add_task(Box::new(GroupTask::new(name, devices, threshold))))
+
+        let task: Box<dyn Task + Send + Sync + 'static> = match protocol {
+            ProtocolType::MultiSignature => Box::new(GroupTask::new(name, devices, threshold)),
+            ProtocolType::GG18 => Box::new(GG18::new_group(name, devices, threshold)),
+        };
+
+        Some(self.add_task(task))
     }
 
     pub fn add_sign_task(&mut self, group: &[u8], data: &[u8]) -> Uuid {
@@ -199,7 +207,7 @@ impl GroupTask {
             for device in self.subtasks.keys() {
                 identifier.extend_from_slice(device);
             }
-            self.result = Some(Group::new(identifier,  self.name.clone(), self.subtasks.keys().map(Vec::clone).collect(), self.threshold));
+            self.result = Some(Group::new(identifier,  self.name.clone(), self.subtasks.keys().map(Vec::clone).collect(), self.threshold, ProtocolType::MultiSignature));
             true
         } else {
             false
