@@ -62,7 +62,6 @@ impl Mpc for MPCService {
             TaskStatus::Signed(data) => (task::TaskState::Finished, vec![data]),
             TaskStatus::GroupEstablished(data) => (task::TaskState::Finished, vec![data.identifier().to_vec()]),
             TaskStatus::Failed(data) => (task::TaskState::Failed, vec![data]),
-            TaskStatus::KeysGenerated(data) => (task::TaskState::Finished, vec![data]),
         };
 
         let resp = Task {
@@ -122,7 +121,6 @@ impl Mpc for MPCService {
                     TaskStatus::GroupEstablished(_) => task::TaskState::Finished as i32,
                     TaskStatus::Signed(_) => task::TaskState::Finished as i32,
                     TaskStatus::Failed(_) => task::TaskState::Failed as i32,
-                    TaskStatus::KeysGenerated(_) => task::TaskState::Finished as i32,
                 },
                 data: Vec::new(),
                 progress: 0,
@@ -189,7 +187,6 @@ impl Mpc for MPCService {
                         TaskStatus::GroupEstablished(_) => task::TaskState::Finished as i32,
                         TaskStatus::Signed(_) => task::TaskState::Finished as i32,
                         TaskStatus::Failed(_) => task::TaskState::Failed as i32,
-                        TaskStatus::KeysGenerated(_) => task::TaskState::Finished as i32,
                     },
                     data: Vec::new(),
                     progress: 0,
@@ -208,7 +205,6 @@ pub fn format_task(task_id: &Uuid, task_type: TaskType, task_status: TaskStatus)
         TaskStatus::Signed(data) => (task::TaskState::Finished, vec![data]),
         TaskStatus::GroupEstablished(data) => (task::TaskState::Finished, vec![data.identifier().to_vec()]),
         TaskStatus::Failed(data) => (task::TaskState::Failed, vec![data]),
-        TaskStatus::KeysGenerated(data) => (task::TaskState::Finished, vec![data]),
     };
 
     Task {

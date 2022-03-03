@@ -14,9 +14,8 @@ pub struct GG18Group {
     sorted_ids: Vec<Vec<u8>>,
     messages_in: Vec<Vec<Option<Vec<u8>>>>,
     messages_out: Vec<Vec<u8>>,
-    result: Option<Vec<u8>>,
+    result: Option<Group>,
     round: u16,
-    task_type: TaskType,
 }
 
 impl GG18Group {
@@ -28,7 +27,7 @@ impl GG18Group {
         let mut messages_in : Vec<Vec<Option<Vec<u8>>>> = Vec::new();
         let mut messages_out : Vec<Vec<u8>> = Vec::new();
 
-        for i in 0..ids.len() {
+        for i in ..ids.len() {
             messages_in.push(vec![None; ids.len()]);
 
             let m = Gg18KeyGenInit {index: i as u32, parties: ids.len() as u32, threshold};
@@ -43,7 +42,6 @@ impl GG18Group {
             messages_out,
             result: None,
             round: 1,
-            task_type: TaskType::GG18Group,
         }
     }
 
@@ -63,19 +61,19 @@ impl GG18Group {
     fn new_round(&mut self) {
         let mut messages_out : Vec<Vec<u8>> = Vec::new();
         
-        for i in 0..self.sorted_ids.len() {
+        for i in ..self.sorted_ids.len() {
             let mut message_out : Vec<Vec<u8>> = Vec::new();
-            for j in 0..self.sorted_ids.len() {
+            for j in ..self.sorted_ids.len() {
                 if i != j {
                     message_out.push(self.messages_in[j][i].clone().unwrap());
                 }
             }
-            let m = Gg18Message {message: message_out};
+            let m = Gg18Message { message: message_out };
             messages_out[i] = m.encode_to_vec();
         }
 
-        let mut messages_in : Vec<Vec<Option<Vec<u8>>>> = Vec::new();
-        for _ in 0..self.sorted_ids.len() {
+        let mut messages_in = Vec::new();
+        for _ in ..self.sorted_ids.len() {
             messages_in.push(vec![None; self.sorted_ids.len()]);
         }
 
@@ -87,19 +85,15 @@ impl GG18Group {
 impl Task for GG18Group {
     fn get_status(&self) -> (TaskType, TaskStatus) {
         if self.result.is_none() {
-            return (self.task_type.clone(), TaskStatus::Waiting(self.waiting_for()))
+            return (TaskType::GG18Group, TaskStatus::Waiting(self.waiting_for()))
         }
 
-        match self.result.clone() {
-            Some(pk) => (self.task_type.clone(), TaskStatus::KeysGenerated(pk)),
-            None => (self.task_type.clone(),
-                     TaskStatus::Failed("Served did not receive a public key.".as_bytes().to_vec()))
-        }
+        (TaskType::GG18Group, self.result.as_ref().map(|x| TaskStatus::GroupEstablished(x.clone())).unwrap_or(
+            TaskStatus::Failed("Server did not receive a public key.".as_bytes().to_vec())))
     }
 
     fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<TaskStatus, String> {
-        let waiting_for = self.waiting_for();
-        if !waiting_for.contains(&device_id.to_vec()) {
+        if !self.waiting_for().contains(&device_id.to_vec()) {
             return Err("Wasn't waiting for a message from this ID.".to_string())
         }
 
@@ -110,7 +104,7 @@ impl Task for GG18Group {
         }
 
         let mut data : Vec<Option<Vec<u8>>> = m.unwrap().message.into_iter()
-            .map(|x| Some(x.as_slice().to_vec()))
+            .map(|x| Some(x.to_vec()))
             .collect();
 
         match self.id_to_index(device_id) {
@@ -121,10 +115,10 @@ impl Task for GG18Group {
             None => return Err("Device ID not found.".to_string())
         }
 
-        if self.waiting_for().is_empty() {
+        if !self.is_waiting() {
             if self.round == LAST_ROUND_KEYGEN {
                 if self.messages_in[0][1].is_none() {
-                    return Err("Failed to receive a last message.".to_string())
+                    return Err("Failed to receive the last message.".to_string())
                 }
 
                 // TODO add group identifier (group key)
@@ -136,6 +130,7 @@ impl Task for GG18Group {
                     ProtocolType::GG18
                 );
 
+                self.result = Some(group.clone());
                 return Ok(TaskStatus::GroupEstablished(group))
             }
             self.new_round();
@@ -145,15 +140,11 @@ impl Task for GG18Group {
     }
 
     fn get_work(&self, device_id: &[u8]) -> Option<Vec<u8>> {
-        let waiting_for = self.waiting_for();
-        if !waiting_for.contains(&device_id.to_vec()) {
+        if !self.waiting_for().contains(&device_id.to_vec()) {
             return None
         }
 
-        match self.id_to_index(device_id) {
-            Some(x) => Some(self.messages_out[x].clone()),
-            None => None
-        }
+        self.id_to_index(device_id).map(|idx| self.messages_out[idx].clone())
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
@@ -167,7 +158,6 @@ pub struct GG18Sign {
     messages_out: Vec<Vec<u8>>,
     result: Option<Vec<u8>>,
     round: u16,
-    task_type: TaskType,
 }
 
 impl GG18Sign {
@@ -179,17 +169,17 @@ impl GG18Sign {
 
         let mut messages_in : Vec<Vec<Option<Vec<u8>>>> = Vec::new();
 
-        for _ in 0..signing_ids.len() {
+        for _ in ..signing_ids.len() {
             messages_in.push(vec![None; signing_ids.len()]);
         }
 
         let mut indices : Vec<u32> = Vec::new();
-        for i in 0..signing_ids.len() {
+        for i in ..signing_ids.len() {
             indices.push(all_ids.iter().position(|x| x == &signing_ids[i]).unwrap() as u32);
         }
 
         let mut messages_out : Vec<Vec<u8>> = Vec::new();
-        for i in 0..signing_ids.len() {
+        for i in ..signing_ids.len() {
             let m = Gg18SignInit{indices:indices.clone(), index: i as u32, hash: data.clone()};
             messages_out.push(m.encode_to_vec())
         }
@@ -200,7 +190,6 @@ impl GG18Sign {
             messages_out,
             result: None,
             round: 1,
-            task_type: TaskType::Sign,
         }
     }
 
@@ -220,9 +209,9 @@ impl GG18Sign {
     fn new_round(&mut self) {
         let mut messages_out : Vec<Vec<u8>> = Vec::new();
 
-        for i in 0..self.sorted_ids.len() {
+        for i in ..self.sorted_ids.len() {
             let mut message_out : Vec<Vec<u8>> = Vec::new();
-            for j in 0..self.sorted_ids.len() {
+            for j in ..self.sorted_ids.len() {
                 if i != j {
                     message_out.push(self.messages_in[j][i].clone().unwrap());
                 }
@@ -232,7 +221,7 @@ impl GG18Sign {
         }
 
         let mut messages_in : Vec<Vec<Option<Vec<u8>>>> = Vec::new();
-        for _ in 0..self.sorted_ids.len() {
+        for _ in ..self.sorted_ids.len() {
             messages_in.push(vec![None; self.sorted_ids.len()]);
         }
 
@@ -244,28 +233,16 @@ impl GG18Sign {
 impl Task for GG18Sign {
     fn get_status(&self) -> (TaskType, TaskStatus) {
         if self.result.is_none() {
-            return (self.task_type.clone(), TaskStatus::Waiting(self.waiting_for()))
+            return (TaskType::Sign, TaskStatus::Waiting(self.waiting_for()))
         }
 
-        if self.task_type == TaskType::GG18Group {
-            match self.result.clone() {
-                Some(pk) => (self.task_type.clone(), TaskStatus::KeysGenerated(pk)),
-                None => (self.task_type.clone(),
-                         TaskStatus::Failed("Served did not receive a public key.".as_bytes().to_vec()))
-            }
-        } else {
-            match self.result.clone() {
-                Some(pk) => (TaskType::Sign, TaskStatus::KeysGenerated(pk)),
-                None => (TaskType::Sign,
-                         TaskStatus::Failed("Served did not receive a signature.".as_bytes().to_vec()))
-            }
-
-        }
+        (TaskType::Sign, self.result.as_ref().map(|x| TaskStatus::Signed(x.clone())).unwrap_or(
+            TaskStatus::Failed("Server did not receive a signature.".as_bytes().to_vec())
+        ))
     }
 
     fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<TaskStatus, String> {
-        let waiting_for = self.waiting_for();
-        if !waiting_for.contains(&device_id.to_vec()) {
+        if !self.waiting_for().contains(&device_id.to_vec()) {
             return Err("Wasn't waiting for a message from this ID.".to_string())
         }
 
@@ -276,7 +253,7 @@ impl Task for GG18Sign {
         }
 
         let mut data : Vec<Option<Vec<u8>>> = m.unwrap().message.into_iter()
-            .map(|x| Some(x.as_slice().to_vec()))
+            .map(|x| Some(x.to_vec()))
             .collect();
 
         match self.id_to_index(device_id) {
@@ -287,17 +264,16 @@ impl Task for GG18Sign {
             None => return Err("Device ID not found.".to_string())
         }
 
-        if self.waiting_for().is_empty() {
+        if !self.is_waiting() {
             if self.round == LAST_ROUND_SIGN {
                 if self.messages_in[0][1].is_none() {
                     return Err("Failed to receive a last message.".to_string())
                 }
 
-                return Ok(if self.task_type == TaskType::GG18Group {
-                    TaskStatus::KeysGenerated(self.messages_in[0][1].clone().unwrap())
-                } else {
-                    TaskStatus::Signed(self.messages_in[0][1].clone().unwrap())
-                })
+                // TODO check if client really includes the signature here
+                let signature = self.messages_in[0][1].as_ref().unwrap().clone();
+                self.result = Some(signature.clone());
+                return Ok(TaskStatus::Signed(signature))
             }
             self.new_round();
             self.round += 1;
@@ -306,15 +282,11 @@ impl Task for GG18Sign {
     }
 
     fn get_work(&self, device_id: &[u8]) -> Option<Vec<u8>> {
-        let waiting_for = self.waiting_for();
-        if !waiting_for.contains(&device_id.to_vec()) {
+        if !self.waiting_for().contains(&device_id.to_vec()) {
             return None
         }
 
-        match self.id_to_index(device_id) {
-            Some(x) => Some(self.messages_out[x].clone()),
-            None => None
-        }
+        self.id_to_index(device_id).map(|idx| self.messages_out[idx].clone())
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
