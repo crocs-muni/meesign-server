@@ -115,7 +115,7 @@ impl Task for GG18Group {
             None => return Err("Device ID not found.".to_string())
         }
 
-        if !self.is_waiting() {
+        if self.waiting_for().is_empty() {
             if self.round == LAST_ROUND_KEYGEN {
                 if self.messages_in[0][1].is_none() {
                     return Err("Failed to receive the last message.".to_string())
@@ -264,7 +264,7 @@ impl Task for GG18Sign {
             None => return Err("Device ID not found.".to_string())
         }
 
-        if !self.is_waiting() {
+        if self.waiting_for().is_empty() {
             if self.round == LAST_ROUND_SIGN {
                 if self.messages_in[0][1].is_none() {
                     return Err("Failed to receive a last message.".to_string())
