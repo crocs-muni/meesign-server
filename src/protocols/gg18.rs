@@ -69,7 +69,7 @@ impl GG18Group {
                 }
             }
             let m = Gg18Message { message: message_out };
-            messages_out[i] = m.encode_to_vec();
+            messages_out.push(m.encode_to_vec());
         }
 
         let mut messages_in = Vec::new();
@@ -217,7 +217,7 @@ impl GG18Sign {
                 }
             }
             let m = Gg18Message { message: message_out };
-            messages_out[i] = m.encode_to_vec();
+            messages_out.push(m.encode_to_vec());
         }
 
         let mut messages_in : Vec<Vec<Option<Vec<u8>>>> = Vec::new();
