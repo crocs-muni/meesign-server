@@ -27,7 +27,7 @@ impl GG18Group {
         let mut messages_in : Vec<Vec<Option<Vec<u8>>>> = Vec::new();
         let mut messages_out : Vec<Vec<u8>> = Vec::new();
 
-        for i in ..ids.len() {
+        for i in 0..ids.len() {
             messages_in.push(vec![None; ids.len()]);
 
             let m = Gg18KeyGenInit {index: i as u32, parties: ids.len() as u32, threshold};
@@ -60,20 +60,20 @@ impl GG18Group {
 
     fn new_round(&mut self) {
         let mut messages_out : Vec<Vec<u8>> = Vec::new();
-        
-        for i in ..self.sorted_ids.len() {
+
+        for i in 0..self.sorted_ids.len() {
             let mut message_out : Vec<Vec<u8>> = Vec::new();
-            for j in ..self.sorted_ids.len() {
+            for j in 0..self.sorted_ids.len() {
                 if i != j {
                     message_out.push(self.messages_in[j][i].clone().unwrap());
                 }
             }
             let m = Gg18Message { message: message_out };
-            messages_out[i] = m.encode_to_vec();
+            messages_out.push(m.encode_to_vec());
         }
 
         let mut messages_in = Vec::new();
-        for _ in ..self.sorted_ids.len() {
+        for _ in 0..self.sorted_ids.len() {
             messages_in.push(vec![None; self.sorted_ids.len()]);
         }
 
@@ -115,7 +115,7 @@ impl Task for GG18Group {
             None => return Err("Device ID not found.".to_string())
         }
 
-        if !self.is_waiting() {
+        if self.waiting_for().is_empty() {
             if self.round == LAST_ROUND_KEYGEN {
                 if self.messages_in[0][1].is_none() {
                     return Err("Failed to receive the last message.".to_string())
@@ -169,17 +169,17 @@ impl GG18Sign {
 
         let mut messages_in : Vec<Vec<Option<Vec<u8>>>> = Vec::new();
 
-        for _ in ..signing_ids.len() {
+        for _ in 0..signing_ids.len() {
             messages_in.push(vec![None; signing_ids.len()]);
         }
 
         let mut indices : Vec<u32> = Vec::new();
-        for i in ..signing_ids.len() {
+        for i in 0..signing_ids.len() {
             indices.push(all_ids.iter().position(|x| x == &signing_ids[i]).unwrap() as u32);
         }
 
         let mut messages_out : Vec<Vec<u8>> = Vec::new();
-        for i in ..signing_ids.len() {
+        for i in 0..signing_ids.len() {
             let m = Gg18SignInit{indices:indices.clone(), index: i as u32, hash: data.clone()};
             messages_out.push(m.encode_to_vec())
         }
@@ -209,19 +209,19 @@ impl GG18Sign {
     fn new_round(&mut self) {
         let mut messages_out : Vec<Vec<u8>> = Vec::new();
 
-        for i in ..self.sorted_ids.len() {
+        for i in 0..self.sorted_ids.len() {
             let mut message_out : Vec<Vec<u8>> = Vec::new();
-            for j in ..self.sorted_ids.len() {
+            for j in 0..self.sorted_ids.len() {
                 if i != j {
                     message_out.push(self.messages_in[j][i].clone().unwrap());
                 }
             }
             let m = Gg18Message { message: message_out };
-            messages_out[i] = m.encode_to_vec();
+            messages_out.push(m.encode_to_vec());
         }
 
         let mut messages_in : Vec<Vec<Option<Vec<u8>>>> = Vec::new();
-        for _ in ..self.sorted_ids.len() {
+        for _ in 0..self.sorted_ids.len() {
             messages_in.push(vec![None; self.sorted_ids.len()]);
         }
 
@@ -264,7 +264,7 @@ impl Task for GG18Sign {
             None => return Err("Device ID not found.".to_string())
         }
 
-        if !self.is_waiting() {
+        if self.waiting_for().is_empty() {
             if self.round == LAST_ROUND_SIGN {
                 if self.messages_in[0][1].is_none() {
                     return Err("Failed to receive a last message.".to_string())
