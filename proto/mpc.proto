@@ -13,8 +13,7 @@ service MPC {
 }
 
 enum Protocol {
-    MULTISIGNATURE = 0;
-    GG18 = 1;
+    GG18 = 0;
 }
 
 message RegistrationRequest {
@@ -64,7 +63,6 @@ message Task {
     enum TaskType {
         GROUP = 0;
         SIGN = 1;
-        KEY_GEN = 2;
     }
     TaskType type = 2;
     enum TaskState {

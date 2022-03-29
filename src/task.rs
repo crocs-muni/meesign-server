@@ -11,7 +11,6 @@ pub enum TaskStatus {
 pub enum TaskType {
     Group,
     Sign,
-    GG18Group,
 }
 
 pub trait Task {

@@ -48,8 +48,7 @@ impl State {
         }
 
         let task: Box<dyn Task + Send + Sync + 'static> = match protocol {
-            ProtocolType::MultiSignature => Box::new(GroupTask::new(name, devices, threshold)),
-            ProtocolType::GG18 => Box::new(GG18Group::new(name, devices, threshold)),
+            ProtocolType::GG18 => Box::new(GG18Group::new(name, devices, threshold))
         };
 
         Some(self.add_task(task))
@@ -58,8 +57,7 @@ impl State {
     pub fn add_sign_task(&mut self, group: &[u8], data: &[u8]) -> Uuid {
         let group = self.groups.get(group).unwrap().clone();
         let task: Box<dyn Task + Send + Sync + 'static> = match group.protocol() {
-            ProtocolType::MultiSignature => Box::new(SignTask::new(group, data.to_vec())),
-            ProtocolType::GG18 => Box::new(GG18Sign::new(group, data.to_vec()))
+            ProtocolType::GG18 => Box::new(GG18Sign::new(group, data.to_vec())),
         };
         self.add_task(task)
     }
@@ -122,143 +120,6 @@ impl State {
 
     pub fn get_devices(&self) -> Vec<Device> {
         self.devices.iter().map(Device::clone).collect()
-    }
-}
-
-pub struct SignTask {
-    subtasks: HashMap<Vec<u8>, bool>,
-    group: Group,
-    data: Vec<u8>,
-    result: Vec<u8>,
-}
-
-impl SignTask {
-    pub fn new(group: Group,  data: Vec<u8>) -> Self {
-        let mut subtasks = HashMap::new();
-        for device in group.devices().iter() {
-            subtasks.insert(device.clone(), false);
-        }
-        SignTask {
-            subtasks,
-            group,
-            data,
-            result: Vec::new()
-        }
-    }
-}
-
-impl Task for SignTask {
-    fn get_status(&self) -> (TaskType, TaskStatus) {
-        let waiting: Vec<_> = self.subtasks.iter()
-            .filter(|(_, value)| !*value)
-            .map(|(key, _)| key.clone())
-            .collect();
-
-        if !waiting.is_empty() {
-            (TaskType::Sign, TaskStatus::Waiting(waiting))
-        } else {
-            (TaskType::Sign, TaskStatus::Signed(self.result.clone()))
-        }
-    }
-
-    fn update(&mut self, device_id: &[u8], _data: &[u8]) -> Result<TaskStatus, String> {
-        if self.subtasks.contains_key(device_id) {
-            self.subtasks.insert(device_id.to_vec(), true);
-            Ok(self.get_status().1)
-        } else {
-            Err("Incompatible device ID".into())
-        }
-    }
-
-    fn get_work(&self, device_id: &[u8]) -> Option<Vec<u8>> {
-        if *self.subtasks.get(device_id).unwrap_or(&false) {
-            None
-        } else {
-            Some(self.data.clone())
-        }
-    }
-
-    fn has_device(&self, device_id: &[u8]) -> bool {
-        self.group.devices().contains(device_id)
-    }
-}
-
-pub struct GroupTask {
-    name: String,
-    devices: HashSet<Vec<u8>>,
-    subtasks: HashMap<Vec<u8>, bool>,
-    threshold: u32,
-    result: Option<Group>,
-}
-
-impl GroupTask {
-    pub fn new(name: &str, devices: &[Vec<u8>], threshold: u32) -> Self {
-        assert!(threshold <= devices.len() as u32);
-
-        let mut subtasks = HashMap::new();
-        for device in devices.iter() {
-            subtasks.insert(device.clone(), false);
-        }
-
-        let devices = devices.iter().map(Vec::clone).collect();
-
-        GroupTask { name: name.to_owned(), devices, subtasks, threshold, result: None }
-    }
-
-    fn try_advance(&mut self) -> bool {
-        if self.result.is_none() && self.subtasks.values().all(|x| *x) {
-            let mut identifier = Vec::new();
-            for device in self.subtasks.keys() {
-                identifier.extend_from_slice(device);
-            }
-            self.result = Some(Group::new(identifier,  self.name.clone(), self.subtasks.keys().map(Vec::clone).collect(), self.threshold, ProtocolType::MultiSignature));
-            true
-        } else {
-            false
-        }
-    }
-}
-
-impl Task for GroupTask {
-    fn get_status(&self) -> (TaskType, TaskStatus) {
-        let waiting: Vec<_> = self.subtasks.iter()
-            .filter(|(_, value)| !*value)
-            .map(|(key, _)| key.clone())
-            .collect();
-
-        if !waiting.is_empty() {
-            (TaskType::Group, TaskStatus::Waiting(waiting))
-        } else {
-            (TaskType::Group, TaskStatus::GroupEstablished(self.result.as_ref().unwrap().clone()))
-        }
-    }
-
-    fn update(&mut self, device_id: &[u8], _data: &[u8]) -> Result<TaskStatus, String> {
-        if self.subtasks.contains_key(device_id) {
-            self.subtasks.insert(device_id.to_vec(), true);
-            self.try_advance();
-            Ok(self.get_status().1)
-        } else {
-            Err("Incompatible device ID".into())
-        }
-    }
-
-    fn get_work(&self, device_id: &[u8]) -> Option<Vec<u8>> {
-        if *self.subtasks.get(device_id).unwrap_or(&false) {
-            None
-        } else {
-            let mut data = Vec::new();
-            data.extend(self.name.as_bytes());
-            data.push(0x00);
-            for device in self.subtasks.keys() {
-                data.extend(device);
-            }
-            Some(data)
-        }
-    }
-
-    fn has_device(&self, device_id: &[u8]) -> bool {
-        self.devices.contains(device_id)
     }
 }
 

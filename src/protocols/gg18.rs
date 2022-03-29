@@ -85,10 +85,10 @@ impl GG18Group {
 impl Task for GG18Group {
     fn get_status(&self) -> (TaskType, TaskStatus) {
         if self.result.is_none() {
-            return (TaskType::GG18Group, TaskStatus::Waiting(self.waiting_for()))
+            return (TaskType::Group, TaskStatus::Waiting(self.waiting_for()))
         }
 
-        (TaskType::GG18Group, self.result.as_ref().map(|x| TaskStatus::GroupEstablished(x.clone())).unwrap_or(
+        (TaskType::Group, self.result.as_ref().map(|x| TaskStatus::GroupEstablished(x.clone())).unwrap_or(
             TaskStatus::Failed("Server did not receive a public key.".as_bytes().to_vec())))
     }
 
