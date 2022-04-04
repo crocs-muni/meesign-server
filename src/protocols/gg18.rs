@@ -4,6 +4,7 @@ use prost::Message;
 use prost::DecodeError;
 use crate::group::Group;
 use crate::protocols::ProtocolType;
+use crate::task::TaskResult;
 
 const LAST_ROUND_KEYGEN: u16 = 6;
 const LAST_ROUND_SIGN: u16 = 10;
@@ -41,17 +42,8 @@ impl GG18Group {
             messages_in,
             messages_out,
             result: None,
-            round: 1,
+            round: 0,
         }
-    }
-
-    fn waiting_for(&self) -> Vec<Vec<u8>> {
-        (&self.sorted_ids)
-            .into_iter()
-            .zip((&self.messages_in).into_iter())
-            .filter(|(_a, b)| b.iter().all(|x| x.is_none()))
-            .map(|(a, _b)| a.clone())
-            .collect()
     }
 
     fn id_to_index(&self, device_id: &[u8]) -> Option<usize> {
@@ -59,6 +51,8 @@ impl GG18Group {
     }
 
     fn new_round(&mut self) {
+        // TODO create round management
+
         let mut messages_out : Vec<Vec<u8>> = Vec::new();
 
         for i in 0..self.sorted_ids.len() {
@@ -80,20 +74,45 @@ impl GG18Group {
         self.messages_in = messages_in;
         self.messages_out = messages_out;
     }
+
+    fn round_received(&self) -> bool {
+        (&self.sorted_ids)
+            .into_iter()
+            .zip((&self.messages_in).into_iter())
+            .filter(|(_a, b)| b.iter().all(|x| x.is_none()))
+            .count() > 0
+    }
 }
 
 impl Task for GG18Group {
-    fn get_status(&self) -> (TaskType, TaskStatus) {
-        if self.result.is_none() {
-            return (TaskType::Group, TaskStatus::Waiting(self.waiting_for()))
+    fn get_status(&self) -> TaskStatus {
+        match self.round {
+            0 => TaskStatus::Created,
+            1..=LAST_ROUND_SIGN => TaskStatus::Running(self.round),
+            u16::MAX => self.result.as_ref().map(|_| TaskStatus::Finished)
+                .unwrap_or(TaskStatus::Failed(String::from("Server did not receive a signature."))),
+            _ => unreachable!()
+        }
+    }
+
+    fn get_type(&self) -> TaskType {
+        TaskType::Group
+    }
+
+    fn get_work(&self, device_id: Option<&[u8]>) -> Option<Vec<u8>> {
+        if device_id.is_none() || !self.waiting_for(device_id.unwrap()) {
+            return None
         }
 
-        (TaskType::Group, self.result.as_ref().map(|x| TaskStatus::GroupEstablished(x.clone())).unwrap_or(
-            TaskStatus::Failed("Server did not receive a public key.".as_bytes().to_vec())))
+        self.id_to_index(device_id.unwrap()).map(|idx| self.messages_out[idx].clone())
+    }
+
+    fn get_result(&self) -> Option<TaskResult> {
+        self.result.as_ref().map(|x| TaskResult::GroupEstablished(x.clone()))
     }
 
     fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<TaskStatus, String> {
-        if !self.waiting_for().contains(&device_id.to_vec()) {
+        if self.round == u16::MAX || !self.waiting_for(device_id) {
             return Err("Wasn't waiting for a message from this ID.".to_string())
         }
 
@@ -115,7 +134,7 @@ impl Task for GG18Group {
             None => return Err("Device ID not found.".to_string())
         }
 
-        if self.waiting_for().is_empty() {
+        if self.round_received() {
             if self.round == LAST_ROUND_KEYGEN {
                 if self.messages_in[0][1].is_none() {
                     return Err("Failed to receive the last message.".to_string())
@@ -131,24 +150,26 @@ impl Task for GG18Group {
                 );
 
                 self.result = Some(group.clone());
-                return Ok(TaskStatus::GroupEstablished(group))
+                self.round = u16::MAX;
+                return Ok(TaskStatus::Finished)
             }
             self.new_round();
             self.round += 1;
         }
-        Ok(TaskStatus::Waiting(self.waiting_for()))
-    }
-
-    fn get_work(&self, device_id: &[u8]) -> Option<Vec<u8>> {
-        if !self.waiting_for().contains(&device_id.to_vec()) {
-            return None
-        }
-
-        self.id_to_index(device_id).map(|idx| self.messages_out[idx].clone())
+        Ok(TaskStatus::Running(self.round))
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
         return self.sorted_ids.contains(&device_id.to_vec())
+    }
+
+    fn waiting_for(&self, device: &[u8]) -> bool {
+        (&self.sorted_ids)
+            .into_iter()
+            .zip((&self.messages_in).into_iter())
+            .filter(|(_a, b)| b.iter().all(|x| x.is_none()))
+            .map(|(a, _b)| a.as_slice())
+            .any(|x| x == device)
     }
 }
 
@@ -189,17 +210,8 @@ impl GG18Sign {
             messages_in,
             messages_out,
             result: None,
-            round: 1,
+            round: 0,
         }
-    }
-
-    fn waiting_for(&self) -> Vec<Vec<u8>> {
-        (&self.sorted_ids)
-            .into_iter()
-            .zip((&self.messages_in).into_iter())
-            .filter(|(_a, b)| b.iter().all(|x| x.is_none()))
-            .map(|(a, _b)| a.clone())
-            .collect()
     }
 
     fn id_to_index(&self, device_id: &[u8]) -> Option<usize> {
@@ -207,6 +219,8 @@ impl GG18Sign {
     }
 
     fn new_round(&mut self) {
+        // TODO create round management
+
         let mut messages_out : Vec<Vec<u8>> = Vec::new();
 
         for i in 0..self.sorted_ids.len() {
@@ -228,21 +242,45 @@ impl GG18Sign {
         self.messages_in = messages_in;
         self.messages_out = messages_out;
     }
+
+    fn round_received(&self) -> bool {
+        (&self.sorted_ids)
+            .into_iter()
+            .zip((&self.messages_in).into_iter())
+            .filter(|(_a, b)| b.iter().all(|x| x.is_none()))
+            .count() > 0
+    }
 }
 
 impl Task for GG18Sign {
-    fn get_status(&self) -> (TaskType, TaskStatus) {
-        if self.result.is_none() {
-            return (TaskType::Sign, TaskStatus::Waiting(self.waiting_for()))
+    fn get_status(&self) -> TaskStatus {
+        match self.round {
+            0 => TaskStatus::Created,
+            1..=LAST_ROUND_SIGN => TaskStatus::Running(self.round),
+            u16::MAX => self.result.as_ref().map(|_| TaskStatus::Finished)
+                .unwrap_or(TaskStatus::Failed(String::from("Server did not receive a signature."))),
+            _ => unreachable!()
+        }
+    }
+
+    fn get_type(&self) -> TaskType {
+        TaskType::Sign
+    }
+
+    fn get_work(&self, device_id: Option<&[u8]>) -> Option<Vec<u8>> {
+        if device_id.is_none() || !self.waiting_for(device_id.unwrap()) {
+            return None
         }
 
-        (TaskType::Sign, self.result.as_ref().map(|x| TaskStatus::Signed(x.clone())).unwrap_or(
-            TaskStatus::Failed("Server did not receive a signature.".as_bytes().to_vec())
-        ))
+        self.id_to_index(device_id.unwrap()).map(|idx| self.messages_out[idx].clone())
+    }
+
+    fn get_result(&self) -> Option<TaskResult> {
+        self.result.as_ref().map(|x| TaskResult::Signed(x.clone()))
     }
 
     fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<TaskStatus, String> {
-        if !self.waiting_for().contains(&device_id.to_vec()) {
+        if self.round == u16::MAX || !self.waiting_for(device_id) {
             return Err("Wasn't waiting for a message from this ID.".to_string())
         }
 
@@ -264,7 +302,7 @@ impl Task for GG18Sign {
             None => return Err("Device ID not found.".to_string())
         }
 
-        if self.waiting_for().is_empty() {
+        if self.round_received() {
             if self.round == LAST_ROUND_SIGN {
                 if self.messages_in[0][1].is_none() {
                     return Err("Failed to receive a last message.".to_string())
@@ -273,23 +311,25 @@ impl Task for GG18Sign {
                 // TODO check if client really includes the signature here
                 let signature = self.messages_in[0][1].as_ref().unwrap().clone();
                 self.result = Some(signature.clone());
-                return Ok(TaskStatus::Signed(signature))
+                self.round = u16::MAX;
+                return Ok(TaskStatus::Finished)
             }
             self.new_round();
             self.round += 1;
         }
-        Ok(TaskStatus::Waiting(self.waiting_for()))
-    }
-
-    fn get_work(&self, device_id: &[u8]) -> Option<Vec<u8>> {
-        if !self.waiting_for().contains(&device_id.to_vec()) {
-            return None
-        }
-
-        self.id_to_index(device_id).map(|idx| self.messages_out[idx].clone())
+        Ok(TaskStatus::Running(self.round))
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
         return self.sorted_ids.contains(&device_id.to_vec())
+    }
+
+    fn waiting_for(&self, device: &[u8]) -> bool {
+        (&self.sorted_ids)
+            .into_iter()
+            .zip((&self.messages_in).into_iter())
+            .filter(|(_a, b)| b.iter().all(|x| x.is_none()))
+            .map(|(a, _b)| a.as_slice())
+            .any(|x| x == device)
     }
 }

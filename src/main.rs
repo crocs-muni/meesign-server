@@ -10,7 +10,7 @@ mod proto {
     tonic::include_proto!("meesign");
 }
 
-use crate::task::{Task, TaskStatus, TaskType};
+use crate::task::{Task, TaskStatus, TaskType, TaskResult};
 use crate::group::Group;
 use crate::device::Device;
 use uuid::Uuid;
@@ -68,21 +68,11 @@ impl State {
         uuid
     }
 
-    pub fn get_device_tasks(&self, device: &Vec<u8>) -> Vec<(Uuid, (TaskType, TaskStatus))> {
+    pub fn get_device_tasks(&self, device: &[u8]) -> Vec<(Uuid, &Box<dyn Task + Send + Sync>)> {
         let mut tasks = Vec::new();
         for (uuid, task) in self.tasks.iter() {
             if task.waiting_for(device) {
-                tasks.push((uuid.clone(), task.get_status()));
-            }
-        }
-        tasks
-    }
-
-    pub fn get_device_archived(&self, device: &Vec<u8>) -> Vec<(Uuid, (TaskType, TaskStatus))> {
-        let mut tasks = Vec::new();
-        for (uuid, task) in self.tasks.iter() {
-            if !task.is_waiting() && task.has_device(device) {
-                tasks.push((uuid.clone(), task.get_status()));
+                tasks.push((uuid.clone(), task));
             }
         }
         tasks
@@ -98,24 +88,26 @@ impl State {
         groups
     }
 
-    pub fn get_task(&self, task: &Uuid) -> (TaskType, TaskStatus) {
-        self.tasks.get(task).unwrap().get_status()
+    pub fn get_task(&self, task: &Uuid) -> Option<&Box<dyn Task + Send + Sync>> {
+        self.tasks.get(task)
     }
 
     pub fn get_work(&self, task: &Uuid, device: &[u8]) -> Option<Vec<u8>> {
-        self.tasks.get(task).unwrap().get_work(device)
+        self.tasks.get(task).unwrap().get_work(Some(device))
     }
 
-    pub fn update_task(&mut self, task: &Uuid, device: &[u8], data: &[u8]) -> TaskStatus {
+    pub fn update_task(&mut self, task: &Uuid, device: &[u8], data: &[u8]) -> Result<TaskStatus, String> {
         let task = self.tasks.get_mut(task).unwrap();
-        let status = task.update(device, data).unwrap();
+        let status = task.update(device, data)?;
         match &status {
-            TaskStatus::GroupEstablished(group) => {
-                self.groups.insert(group.clone());
+            TaskStatus::Finished => {
+                if let TaskResult::GroupEstablished(group) = task.get_result().unwrap() {
+                    self.groups.insert(group);
+                }
             },
             _ => ()
         }
-        status
+        Ok(status)
     }
 
     pub fn get_devices(&self) -> Vec<Device> {

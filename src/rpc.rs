@@ -4,7 +4,7 @@ use tonic::{Request, Status, Response};
 use tonic::transport::Server;
 use crate::State;
 use tokio::sync::Mutex;
-use crate::task::{TaskStatus, TaskType};
+use crate::task::{TaskStatus, TaskType, Task};
 use uuid::Uuid;
 use crate::protocols::ProtocolType;
 
@@ -35,47 +35,30 @@ impl Mpc for MPCService {
         Ok(Response::new(resp))
     }
 
-    async fn sign(&self, request: Request<SignRequest>) -> Result<Response<Task>, Status> {
+    async fn sign(&self, request: Request<SignRequest>) -> Result<Response<crate::proto::Task>, Status> {
         let request = request.into_inner();
         let group_id = request.group_id;
         let data = request.data;
 
         let mut state = self.state.lock().await;
         let task_id = state.add_sign_task(&group_id, &data);
-        let (task_type, task_status) = state.get_task(&task_id);
+        let task = state.get_task(&task_id).unwrap();
 
-        let resp = format_task(&task_id, task_type, task_status);
-
+        let resp = format_task(&task_id, task, None);
         Ok(Response::new(resp))
     }
 
-    async fn get_task(&self, request: Request<TaskRequest>) -> Result<Response<Task>, Status> {
+    async fn get_task(&self, request: Request<TaskRequest>) -> Result<Response<crate::proto::Task>, Status> {
         let request = request.into_inner();
         let task_id = Uuid::from_slice(&request.task_id).unwrap();
         let device_id = request.device_id;
+        let device_id = if device_id.is_none() { None } else { Some(device_id.as_ref().unwrap().as_slice()) };
 
 
         let state = self.state.lock().await;
-        let (task_type, task_state) = state.get_task(&task_id);
-        let (task_state, data) = match task_state {
-            TaskStatus::Waiting(data) => (task::TaskState::Waiting, data.clone()),
-            TaskStatus::Signed(data) => (task::TaskState::Finished, vec![data]),
-            TaskStatus::GroupEstablished(data) => (task::TaskState::Finished, vec![data.identifier().to_vec()]),
-            TaskStatus::Failed(data) => (task::TaskState::Failed, vec![data]),
-        };
+        let task = state.get_task(&task_id).unwrap();
 
-        let resp = Task {
-            id: task_id.as_bytes().to_vec(),
-            r#type: match task_type {
-                TaskType::Group => task::TaskType::Group as i32,
-                TaskType::Sign => task::TaskType::Sign as i32,
-            },
-            state: task_state as i32,
-            data,
-            progress: 0,
-            work: device_id.and_then(|device_id| state.get_work(&task_id, &device_id))
-        };
-
+        let resp = format_task(&task_id, task, device_id);
         Ok(Response::new(resp))
     }
 
@@ -85,12 +68,14 @@ impl Mpc for MPCService {
         let device = request.device;
         let data = request.data;
 
-        self.state.lock().await.update_task(&task, &device, &data);
+        let result = self.state.lock().await.update_task(&task, &device, &data);
 
         let resp = Resp {
-            variant: Some(resp::Variant::Success("OK".into()))
+            variant: Some(match result {
+                Ok(_) => resp::Variant::Success(String::from("OK")),
+                Err(e) => resp::Variant::Failure(e),
+            })
         };
-
         Ok(Response::new(resp))
     }
 
@@ -107,34 +92,18 @@ impl Mpc for MPCService {
             }
         }).collect();
 
-        let tasks = self.state.lock().await.get_device_tasks(&device_id).iter().map(|(task_id, (task_type, task_status))| {
-            Task {
-                id: task_id.as_bytes().to_vec(),
-                r#type: match task_type {
-                    TaskType::Group => task::TaskType::Group as i32,
-                    TaskType::Sign => task::TaskType::Sign as i32,
-                },
-                state: match task_status {
-                    TaskStatus::Waiting(_) => task::TaskState::Waiting as i32,
-                    TaskStatus::GroupEstablished(_) => task::TaskState::Finished as i32,
-                    TaskStatus::Signed(_) => task::TaskState::Finished as i32,
-                    TaskStatus::Failed(_) => task::TaskState::Failed as i32,
-                },
-                data: Vec::new(),
-                progress: 0,
-                work: None
-            }
-        }).collect();
+        let tasks = self.state.lock().await.get_device_tasks(&device_id).iter()
+            .map(|(task_id, task)| format_task(task_id, task, Some(&device_id)))
+            .collect();
 
         let resp = Info {
             tasks,
             groups
         };
-
         Ok(Response::new(resp))
     }
 
-    async fn group(&self, request: Request<GroupRequest>) -> Result<Response<Task>, Status> {
+    async fn group(&self, request: Request<GroupRequest>) -> Result<Response<crate::proto::Task>, Status> {
         let request = request.into_inner();
         let name = request.name;
         let device_ids = request.device_ids;
@@ -146,10 +115,9 @@ impl Mpc for MPCService {
 
         let mut state = self.state.lock().await;
         let task_id = state.add_group_task(&name, &device_ids, threshold, protocol).unwrap();
-        let (task_type, task_status) = state.get_task(&task_id);
+        let task = state.get_task(&task_id).unwrap();
 
-        let resp = format_task(&task_id, task_type, task_status);
-
+        let resp = format_task(&task_id, task, None);
         Ok(Response::new(resp))
     }
 
@@ -162,57 +130,29 @@ impl Mpc for MPCService {
                 }
             ).collect()
         };
-
-        Ok(Response::new(resp))
-    }
-
-    async fn get_archived(&self, request: Request<ArchivedRequest>) -> Result<Response<Archived>, Status> {
-        let request = request.into_inner();
-        let device_id = request.device_id;
-
-        let resp = Archived {
-            tasks: self.state.lock().await.get_device_archived(&device_id).iter().map(|(task_id, (task_type, task_status))| {
-                Task {
-                    id: task_id.as_bytes().to_vec(),
-                    r#type: match task_type {
-                        TaskType::Group => task::TaskType::Group as i32,
-                        TaskType::Sign => task::TaskType::Sign as i32,
-                    },
-                    state: match task_status {
-                        TaskStatus::Waiting(_) => task::TaskState::Waiting as i32,
-                        TaskStatus::GroupEstablished(_) => task::TaskState::Finished as i32,
-                        TaskStatus::Signed(_) => task::TaskState::Finished as i32,
-                        TaskStatus::Failed(_) => task::TaskState::Failed as i32,
-                    },
-                    data: Vec::new(),
-                    progress: 0,
-                    work: None
-                }
-            }).collect()
-        };
-
         Ok(Response::new(resp))
     }
 }
 
-pub fn format_task(task_id: &Uuid, task_type: TaskType, task_status: TaskStatus) -> Task {
-    let (task_status, data) = match task_status {
-        TaskStatus::Waiting(data) => (task::TaskState::Waiting, data.clone()),
-        TaskStatus::Signed(data) => (task::TaskState::Finished, vec![data]),
-        TaskStatus::GroupEstablished(data) => (task::TaskState::Finished, vec![data.identifier().to_vec()]),
-        TaskStatus::Failed(data) => (task::TaskState::Failed, vec![data]),
+fn format_task(task_id: &Uuid, task: &Box<dyn Task + Send + Sync>, device_id: Option<&[u8]>) -> crate::proto::Task {
+    let task_status = task.get_status();
+
+    let (task_status, round, data) = match task_status {
+        TaskStatus::Created => (task::TaskState::Created, 0, task.get_work(device_id)),
+        TaskStatus::Running(round) => (task::TaskState::Running, round, task.get_work(device_id)),
+        TaskStatus::Finished => (task::TaskState::Finished, u16::MAX, Some(task.get_result().unwrap().as_bytes().to_vec())),
+        TaskStatus::Failed(data) => (task::TaskState::Failed, u16::MAX, Some(data.as_bytes().to_vec())),
     };
 
-    Task {
+    crate::proto::Task {
         id: task_id.as_bytes().to_vec(),
-        r#type: match task_type {
+        r#type: match task.get_type() {
             TaskType::Group => task::TaskType::Group as i32,
             TaskType::Sign => task::TaskType::Sign as i32,
         },
         state: task_status as i32,
         data,
-        progress: 0,
-        work: None
+        round: round.into(),
     }
 }
 

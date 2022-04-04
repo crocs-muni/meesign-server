@@ -9,7 +9,6 @@ service MPC {
     rpc UpdateTask(TaskUpdate) returns (Resp);
     rpc GetInfo(InfoRequest) returns (Info);
     rpc GetDevices(DevicesRequest) returns (Devices);
-    rpc GetArchived(ArchivedRequest) returns (Archived);
 }
 
 enum Protocol {
@@ -66,14 +65,14 @@ message Task {
     }
     TaskType type = 2;
     enum TaskState {
-        WAITING = 0;
-        FINISHED = 1;
-        FAILED = 2;
+        CREATED = 0;
+        RUNNING = 1;
+        FINISHED = 2;
+        FAILED = 3;
     }
     TaskState state = 3;
-    int32 progress = 4;
-    repeated bytes data = 5;
-    optional bytes work = 6;
+    uint32 round = 4;
+    optional bytes data = 5;
 }
 
 message TaskUpdate {
@@ -96,14 +95,6 @@ message Resp {
         string success = 1;
         string failure = 2;
     }
-}
-
-message ArchivedRequest {
-    bytes device_id = 1;
-}
-
-message Archived {
-    repeated Task tasks = 1;
 }
 
 message GG18KeyGenInit {
