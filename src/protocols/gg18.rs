@@ -31,7 +31,7 @@ impl GG18Group {
         for i in 0..ids.len() {
             messages_in.push(vec![None; ids.len()]);
 
-            let m = Gg18KeyGenInit {index: i as u32, parties: ids.len() as u32, threshold};
+            let m = Gg18KeyGenInit { index: i as u32, parties: ids.len() as u32, threshold };
             messages_out.push(m.encode_to_vec());
         }
 

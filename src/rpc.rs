@@ -79,7 +79,21 @@ impl Mpc for MPCService {
         Ok(Response::new(resp))
     }
 
-    async fn get_info(&self, request: Request<InfoRequest>) -> Result<Response<Info>, Status> {
+    async fn get_tasks(&self, request: Request<TasksRequest>) -> Result<Response<Tasks>, Status> {
+        let request = request.into_inner();
+        let device_id = request.device_id;
+
+        let tasks = self.state.lock().await.get_device_tasks(&device_id).iter()
+            .map(|(task_id, task)| format_task(task_id, task, Some(&device_id)))
+            .collect();
+
+        let resp = Tasks {
+            tasks
+        };
+        Ok(Response::new(resp))
+    }
+
+    async fn get_groups(&self, request: Request<GroupsRequest>) -> Result<Response<Groups>, Status> {
         let request = request.into_inner();
         let device_id = request.device_id;
 
@@ -92,12 +106,7 @@ impl Mpc for MPCService {
             }
         }).collect();
 
-        let tasks = self.state.lock().await.get_device_tasks(&device_id).iter()
-            .map(|(task_id, task)| format_task(task_id, task, Some(&device_id)))
-            .collect();
-
-        let resp = Info {
-            tasks,
+        let resp = Groups {
             groups
         };
         Ok(Response::new(resp))

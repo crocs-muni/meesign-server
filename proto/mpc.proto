@@ -7,7 +7,8 @@ service MPC {
     rpc Group(GroupRequest) returns (Task);
     rpc GetTask(TaskRequest) returns (Task);
     rpc UpdateTask(TaskUpdate) returns (Resp);
-    rpc GetInfo(InfoRequest) returns (Info);
+    rpc GetTasks(TasksRequest) returns (Tasks);
+    rpc GetGroups(GroupsRequest) returns (Groups);
     rpc GetDevices(DevicesRequest) returns (Devices);
 }
 
@@ -81,13 +82,20 @@ message TaskUpdate {
     bytes data = 3;
 }
 
-message InfoRequest {
+message TasksRequest {
     bytes device_id = 1;
 }
 
-message Info {
+message Tasks {
+    repeated Task tasks = 1;
+}
+
+message GroupsRequest {
+    bytes device_id = 1;
+}
+
+message Groups {
     repeated Group groups = 1;
-    repeated Task tasks = 2;
 }
 
 message Resp {
