@@ -8,12 +8,76 @@ use crate::task::TaskResult;
 const LAST_ROUND_KEYGEN: u16 = 6;
 const LAST_ROUND_SIGN: u16 = 10;
 
+struct Communicator {
+    parties: usize,
+    pub input: Vec<Vec<Option<Vec<u8>>>>, // TODO remove pub
+    pub output: Vec<Vec<u8>>, // TODO remove pub
+}
+
+impl Communicator {
+    pub fn new(parties: usize) -> Self {
+        Communicator {
+            parties,
+            input: Vec::new(),
+            output: Vec::new(),
+        }
+    }
+
+    pub fn clear_input(&mut self) {
+        self.input.clear();
+        for _ in 0..self.parties {
+            self.input.push(vec![None; self.parties]);
+        }
+    }
+
+    pub fn broadcast(&mut self, message: Vec<u8>) {
+        self.output.clear();
+
+        for _ in 0..self.parties {
+            self.output.push(message.clone());
+        }
+    }
+
+    pub fn relay(&mut self) {
+        self.output.clear();
+
+        for i in 0..self.parties {
+            let mut out: Vec<Vec<u8>> = Vec::new();
+            for j in 0..self.parties {
+                if i != j {
+                    out.push(self.input[j][i].clone().unwrap());
+                }
+            }
+            let message = Gg18Message { message: out };
+            self.output.push(message.encode_to_vec());
+        }
+    }
+
+    pub fn send_all<F>(&mut self, f: F) where F: Fn(usize) -> Vec<u8> {
+        self.output.clear();
+
+        for i in 0..self.parties {
+            self.output.push(f(i));
+        }
+    }
+
+    pub fn round_received(&self, ids: &[Vec<u8>]) -> bool {
+        ids.into_iter()
+            .zip((&self.input).into_iter())
+            .filter(|(_a, b)| b.iter().all(|x| x.is_none()))
+            .count() > 0
+    }
+
+    pub fn get_message(&self, idx: usize) -> Option<&Vec<u8>> {
+        self.output.get(idx)
+    }
+}
+
 pub struct GG18Group {
     name: String,
     threshold: u32,
     ids: Vec<Vec<u8>>,
-    messages_in: Vec<Vec<Option<Vec<u8>>>>,
-    messages_out: Vec<Vec<u8>>,
+    communicator: Communicator,
     result: Option<Group>,
     round: u16,
 }
@@ -25,27 +89,21 @@ impl GG18Group {
         let mut ids = ids.clone().to_vec();
         ids.sort();
 
-        let mut messages_in : Vec<Vec<Option<Vec<u8>>>> = Vec::new();
-        let mut messages_out : Vec<Vec<u8>> = Vec::new();
-
-        let m = GroupRequest {
+        let mut communicator = Communicator::new(ids.len());
+        communicator.clear_input();
+        let message = GroupRequest {
             device_ids: ids.iter().map(|x| x.to_vec()).collect(),
             name: String::from(name),
             threshold: Some(threshold),
             protocol: Some(0)
         };
-
-        for _ in 0..ids.len() {
-            messages_in.push(vec![None; ids.len()]);
-            messages_out.push(m.encode_to_vec());
-        }
+        communicator.broadcast(message.encode_to_vec());
 
         GG18Group {
             name: name.into(),
             threshold,
             ids,
-            messages_in,
-            messages_out,
+            communicator,
             result: None,
             round: 0,
         }
@@ -55,58 +113,20 @@ impl GG18Group {
         self.ids.iter().position(|x| x == device_id)
     }
 
-    fn clear_receive(&mut self) {
-        self.messages_in.clear();
-        for _ in 0..self.ids.len() {
-            self.messages_in.push(vec![None; self.ids.len()]);
-        }
-    }
-
-    fn broadcast(&mut self, message: Vec<u8>) {
-        self.messages_out.clear();
-
-        for _ in 0..self.ids.len() {
-            self.messages_out.push(message.clone());
-        }
-    }
-
-    fn relay(&mut self) {
-        self.messages_out.clear();
-
-        for i in 0..self.ids.len() {
-            let mut message_out: Vec<Vec<u8>> = Vec::new();
-            for j in 0..self.ids.len() {
-                if i != j {
-                    message_out.push(self.messages_in[j][i].clone().unwrap());
-                }
-            }
-            let m = Gg18Message { message: message_out };
-            self.messages_out.push(m.encode_to_vec());
-        }
-    }
-
-    fn send_all<F>(&mut self, f: F) where F: Fn(usize) -> Vec<u8> {
-        self.messages_out.clear();
-
-        for i in 0..self.ids.len() {
-            self.messages_out.push(f(i));
-        }
-    }
-
     fn start_task(&mut self) {
         assert_eq!(self.round, 0);
 
         let parties = self.ids.len() as u32;
         let threshold = self.threshold;
-        self.send_all(|idx| (Gg18KeyGenInit { index: idx as u32, parties, threshold }).encode_to_vec());
-        self.clear_receive();
+        self.communicator.send_all(|idx| (Gg18KeyGenInit { index: idx as u32, parties, threshold }).encode_to_vec());
+        self.communicator.clear_input();
     }
 
     fn advance_task(&mut self) {
         assert!((0..LAST_ROUND_KEYGEN).contains(&self.round));
 
-        self.relay();
-        self.clear_receive();
+        self.communicator.relay();
+        self.communicator.clear_input();
     }
 
     fn finalize_task(&mut self) {
@@ -114,7 +134,7 @@ impl GG18Group {
 
         if self.round == LAST_ROUND_KEYGEN {
             self.result = Some(Group::new(
-                self.messages_in[0][1].clone().unwrap(),
+                self.communicator.input[0][1].clone().unwrap(),
                 self.name.clone(),
                 self.ids.clone(),
                 self.threshold,
@@ -131,8 +151,8 @@ impl GG18Group {
             device_ids: group.devices().iter().map(Vec::clone).collect()
         };
 
-        self.broadcast(message.encode_to_vec());
-        self.clear_receive();
+        self.communicator.broadcast(message.encode_to_vec());
+        self.communicator.clear_input();
     }
 
     fn next_round(&mut self) {
@@ -142,14 +162,6 @@ impl GG18Group {
             LAST_ROUND_KEYGEN..=u16::MAX => self.finalize_task() // Running -> Finished
         }
         self.round += 1;
-    }
-
-    fn round_received(&self) -> bool {
-        (&self.ids)
-            .into_iter()
-            .zip((&self.messages_in).into_iter())
-            .filter(|(_a, b)| b.iter().all(|x| x.is_none()))
-            .count() > 0
     }
 }
 
@@ -172,7 +184,7 @@ impl Task for GG18Group {
             return None
         }
 
-        self.id_to_index(device_id.unwrap()).map(|idx| self.messages_out[idx].clone())
+        self.id_to_index(device_id.unwrap()).map(|idx| self.communicator.get_message(idx).unwrap().clone())
     }
 
     fn get_result(&self) -> Option<TaskResult> {
@@ -189,9 +201,9 @@ impl Task for GG18Group {
 
         let idx = self.id_to_index(device_id).ok_or("Device ID not found.".to_string())?;
         data.insert(idx, None);
-        self.messages_in[idx] = data;
+        self.communicator.input[idx] = data;
 
-        if self.round_received() {
+        if self.communicator.round_received(&self.ids) {
             self.next_round();
             if self.round > LAST_ROUND_KEYGEN {
                 return Ok(TaskStatus::Finished);
@@ -205,9 +217,8 @@ impl Task for GG18Group {
     }
 
     fn waiting_for(&self, device: &[u8]) -> bool {
-        (&self.ids)
-            .into_iter()
-            .zip((&self.messages_in).into_iter())
+        self.ids.iter()
+            .zip((&self.communicator.input).into_iter())
             .filter(|(_a, b)| b.iter().all(|x| x.is_none()))
             .map(|(a, _b)| a.as_slice())
             .any(|x| x == device)
@@ -216,8 +227,7 @@ impl Task for GG18Group {
 
 pub struct GG18Sign {
     ids: Vec<Vec<u8>>,
-    messages_in: Vec<Vec<Option<Vec<u8>>>>,
-    messages_out: Vec<Vec<u8>>,
+    communicator: Communicator,
     data: Vec<u8>,
     result: Option<Vec<u8>>,
     indices: Vec<u32>,
@@ -231,31 +241,22 @@ impl GG18Sign {
         all_ids.sort();
         let signing_ids = all_ids.clone();
 
-        let mut messages_in : Vec<Vec<Option<Vec<u8>>>> = Vec::new();
-
-        for _ in 0..signing_ids.len() {
-            messages_in.push(vec![None; signing_ids.len()]);
-        }
-
         let mut indices : Vec<u32> = Vec::new();
         for i in 0..signing_ids.len() {
             indices.push(all_ids.iter().position(|x| x == &signing_ids[i]).unwrap() as u32);
         }
 
-        let mut messages_out : Vec<Vec<u8>> = Vec::new();
-        let m = SignRequest {
+        let mut communicator = Communicator::new(signing_ids.len());
+        communicator.clear_input();
+        let message = SignRequest {
             group_id: group.identifier().to_vec(),
             data: data.clone(),
         };
-
-        for _ in 0..signing_ids.len() {
-            messages_out.push(m.encode_to_vec())
-        }
+        communicator.broadcast(message.encode_to_vec());
 
         GG18Sign {
             ids: signing_ids,
-            messages_in,
-            messages_out,
+            communicator,
             data,
             result: None,
             indices,
@@ -267,69 +268,31 @@ impl GG18Sign {
         self.ids.iter().position(|x| x == device_id)
     }
 
-    fn clear_receive(&mut self) {
-        self.messages_in.clear();
-        for _ in 0..self.ids.len() {
-            self.messages_in.push(vec![None; self.ids.len()]);
-        }
-    }
-
-    fn broadcast(&mut self, message: Vec<u8>) {
-        self.messages_out.clear();
-
-        for _ in 0..self.ids.len() {
-            self.messages_out.push(message.clone());
-        }
-    }
-
-    fn relay(&mut self) {
-        self.messages_out.clear();
-
-        for i in 0..self.ids.len() {
-            let mut message_out: Vec<Vec<u8>> = Vec::new();
-            for j in 0..self.ids.len() {
-                if i != j {
-                    message_out.push(self.messages_in[j][i].clone().unwrap());
-                }
-            }
-            let m = Gg18Message { message: message_out };
-            self.messages_out.push(m.encode_to_vec());
-        }
-    }
-
-    fn send_all<F>(&mut self, f: F) where F: Fn(usize) -> Vec<u8> {
-        self.messages_out.clear();
-
-        for i in 0..self.ids.len() {
-            self.messages_out.push(f(i));
-        }
-    }
-
     fn start_task(&mut self) {
         assert_eq!(self.round, 0);
 
         let indices = self.indices.clone();
         let hash = self.data.clone();
-        self.send_all(|idx| (Gg18SignInit { indices: indices.clone(), index: idx as u32, hash: hash.clone() }).encode_to_vec());
-        self.clear_receive();
+        self.communicator.send_all(|idx| (Gg18SignInit { indices: indices.clone(), index: idx as u32, hash: hash.clone() }).encode_to_vec());
+        self.communicator.clear_input();
     }
 
     fn advance_task(&mut self) {
         assert!((0..LAST_ROUND_SIGN).contains(&self.round));
 
-        self.relay();
-        self.clear_receive();
+        self.communicator.relay();
+        self.communicator.clear_input();
     }
 
     fn finalize_task(&mut self) {
         assert!(self.round >= LAST_ROUND_SIGN);
 
         if self.round == LAST_ROUND_SIGN {
-            self.result = Some(self.messages_in[0][1].as_ref().unwrap().clone());
+            self.result = Some(self.communicator.input[0][1].as_ref().unwrap().clone());
         }
 
-        self.broadcast(self.result.as_ref().unwrap().clone());
-        self.clear_receive();
+        self.communicator.broadcast(self.result.as_ref().unwrap().clone());
+        self.communicator.clear_input();
     }
 
     fn next_round(&mut self) {
@@ -339,14 +302,6 @@ impl GG18Sign {
             LAST_ROUND_SIGN..=u16::MAX => self.finalize_task() // Running -> Finished
         }
         self.round += 1;
-    }
-
-    fn round_received(&self) -> bool {
-        (&self.ids)
-            .into_iter()
-            .zip((&self.messages_in).into_iter())
-            .filter(|(_a, b)| b.iter().all(|x| x.is_none()))
-            .count() > 0
     }
 }
 
@@ -370,7 +325,7 @@ impl Task for GG18Sign {
             return None
         }
 
-        self.id_to_index(device_id.unwrap()).map(|idx| self.messages_out[idx].clone())
+        self.id_to_index(device_id.unwrap()).map(|idx| self.communicator.get_message(idx).unwrap().clone())
     }
 
     fn get_result(&self) -> Option<TaskResult> {
@@ -387,9 +342,9 @@ impl Task for GG18Sign {
 
         let idx = self.id_to_index(device_id).ok_or("Device ID not found.".to_string())?;
         data.insert(idx, None);
-        self.messages_in[idx] = data;
+        self.communicator.input[idx] = data;
 
-        if self.round_received() {
+        if self.communicator.round_received(&self.ids) {
             self.next_round();
             if self.round > LAST_ROUND_SIGN {
                 return Ok(TaskStatus::Finished);
@@ -403,9 +358,8 @@ impl Task for GG18Sign {
     }
 
     fn waiting_for(&self, device: &[u8]) -> bool {
-        (&self.ids)
-            .into_iter()
-            .zip((&self.messages_in).into_iter())
+        self.ids.iter()
+            .zip((&self.communicator.input).into_iter())
             .filter(|(_a, b)| b.iter().all(|x| x.is_none()))
             .map(|(a, _b)| a.as_slice())
             .any(|x| x == device)
