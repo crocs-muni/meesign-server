@@ -7,6 +7,7 @@ use tokio::sync::Mutex;
 use crate::task::{TaskStatus, TaskType, Task};
 use uuid::Uuid;
 use crate::protocols::ProtocolType;
+use log::info;
 
 pub struct MPCService {
     state: Mutex<State>
@@ -24,6 +25,7 @@ impl Mpc for MPCService {
         let request = request.into_inner();
         let id = request.id;
         let name = request.name;
+        info!("RegistrationRequest device_id={} name={:?}", hex::encode(&id), name);
 
         let mut state = self.state.lock().await;
         state.add_device(&id, &name);
@@ -39,6 +41,7 @@ impl Mpc for MPCService {
         let request = request.into_inner();
         let group_id = request.group_id;
         let data = request.data;
+        info!("SignRequest group_id={} data={}", hex::encode(&group_id), hex::encode(&data));
 
         let mut state = self.state.lock().await;
         let task_id = state.add_sign_task(&group_id, &data);
@@ -53,7 +56,7 @@ impl Mpc for MPCService {
         let task_id = Uuid::from_slice(&request.task_id).unwrap();
         let device_id = request.device_id;
         let device_id = if device_id.is_none() { None } else { Some(device_id.as_ref().unwrap().as_slice()) };
-
+        info!("TaskRequest task_id={} device_id={}", hex::encode(&task_id), hex::encode(&device_id.clone().unwrap_or(&[])));
 
         let state = self.state.lock().await;
         let task = state.get_task(&task_id).unwrap();
@@ -67,6 +70,7 @@ impl Mpc for MPCService {
         let task = Uuid::from_slice(&request.task).unwrap();
         let device = request.device;
         let data = request.data;
+        info!("TaskUpdate task_id={} device_id={} data={}", hex::encode(&task), hex::encode(&device), hex::encode(&data));
 
         let result = self.state.lock().await.update_task(&task, &device, &data);
 
@@ -82,6 +86,7 @@ impl Mpc for MPCService {
     async fn get_tasks(&self, request: Request<TasksRequest>) -> Result<Response<Tasks>, Status> {
         let request = request.into_inner();
         let device_id = request.device_id;
+        info!("TasksRequest device_id={}", hex::encode(&device_id));
 
         let tasks = self.state.lock().await.get_device_tasks(&device_id).iter()
             .map(|(task_id, task)| format_task(task_id, task, Some(&device_id)))
@@ -96,6 +101,7 @@ impl Mpc for MPCService {
     async fn get_groups(&self, request: Request<GroupsRequest>) -> Result<Response<Groups>, Status> {
         let request = request.into_inner();
         let device_id = request.device_id;
+        info!("GroupsRequest device_id={}", hex::encode(&device_id));
 
         let groups = self.state.lock().await.get_device_groups(&device_id).iter().map(|group| {
             Group {
@@ -121,6 +127,7 @@ impl Mpc for MPCService {
             0 => ProtocolType::GG18,
             _ => unreachable!(),
         };
+        info!("GroupRequest name={:?} device_ids={:?} threshold={}", &name, device_ids.iter().map(hex::encode).collect::<Vec<String>>(), threshold);
 
         let mut state = self.state.lock().await;
         let task_id = state.add_group_task(&name, &device_ids, threshold, protocol).unwrap();
@@ -131,6 +138,7 @@ impl Mpc for MPCService {
     }
 
     async fn get_devices(&self, _request: Request<DevicesRequest>) -> Result<Response<Devices>, Status> {
+        info!("DevicesRequest");
         let resp = Devices {
             devices: self.state.lock().await.get_devices().iter().map(|device|
                 crate::proto::Device {

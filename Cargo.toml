@@ -8,6 +8,9 @@ tonic = "0.6"
 prost = "0.9"
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
 uuid = { version = "1.0.0-alpha.1", features = ["v4", "fast-rng"] }
+log = "0.4.16"
+env_logger = "0.9.0"
+hex = "0.4.3"
 
 [build-dependencies]
 tonic-build = "0.6"

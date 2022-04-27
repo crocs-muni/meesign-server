@@ -119,5 +119,6 @@ impl State {
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
+    env_logger::init();
     rpc::run_rpc(State::new()).await
 }
