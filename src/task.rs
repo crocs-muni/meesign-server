@@ -34,7 +34,7 @@ pub trait Task {
     fn get_type(&self) -> TaskType;
     fn get_work(&self, device_id: Option<&[u8]>) -> Option<Vec<u8>>;
     fn get_result(&self) -> Option<TaskResult>;
-    fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<TaskStatus, String>;
+    fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<(), String>;
     fn has_device(&self, device_id: &[u8]) -> bool;
     fn waiting_for(&self, device_id: &[u8]) -> bool;
 }

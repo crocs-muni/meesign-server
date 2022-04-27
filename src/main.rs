@@ -1,4 +1,5 @@
 #![feature(exclusive_range_pattern)]
+#![feature(let_chains)]
 
 use std::collections::{HashMap, HashSet};
 
@@ -98,18 +99,16 @@ impl State {
         self.tasks.get(task).unwrap().get_work(Some(device))
     }
 
-    pub fn update_task(&mut self, task: &Uuid, device: &[u8], data: &[u8]) -> Result<TaskStatus, String> {
+    pub fn update_task(&mut self, task: &Uuid, device: &[u8], data: &[u8]) -> Result<(), String> {
         let task = self.tasks.get_mut(task).unwrap();
-        let status = task.update(device, data)?;
-        match &status {
-            TaskStatus::Finished => {
-                if let TaskResult::GroupEstablished(group) = task.get_result().unwrap() {
-                    self.groups.insert(group);
-                }
-            },
-            _ => ()
+        let previous_status = task.get_status();
+        task.update(device, data)?;
+        if previous_status != TaskStatus::Finished
+            && task.get_status() == TaskStatus::Finished
+            && let TaskResult::GroupEstablished(group) = task.get_result().unwrap() {
+            self.groups.insert(group);
         }
-        Ok(status)
+        Ok(())
     }
 
     pub fn get_devices(&self) -> Vec<Device> {

@@ -124,7 +124,7 @@ impl Task for GG18Group {
         self.result.as_ref().map(|x| TaskResult::GroupEstablished(x.clone()))
     }
 
-    fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<TaskStatus, String> {
+    fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<(), String> {
         if !self.waiting_for(device_id) {
             return Err("Wasn't waiting for a message from this ID.".to_string())
         }
@@ -150,11 +150,7 @@ impl Task for GG18Group {
             self.next_round();
         }
 
-        Ok(match self.round {
-            0 => TaskStatus::Created,
-            1..=LAST_ROUND_GROUP => TaskStatus::Running(self.round),
-            _ => TaskStatus::Finished,
-        })
+        Ok(())
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
@@ -277,7 +273,7 @@ impl Task for GG18Sign {
         self.result.as_ref().map(|x| TaskResult::Signed(x.clone()))
     }
 
-    fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<TaskStatus, String> {
+    fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<(), String> {
         if !self.waiting_for(device_id) {
             return Err("Wasn't waiting for a message from this ID.".to_string())
         }
@@ -302,12 +298,7 @@ impl Task for GG18Sign {
         if self.communicator.round_received(&self.ids) && self.round <= LAST_ROUND_SIGN {
             self.next_round();
         }
-
-        Ok(match self.round {
-            0 => TaskStatus::Created,
-            1..=LAST_ROUND_SIGN => TaskStatus::Running(self.round),
-            _ => TaskStatus::Finished,
-        })
+        Ok(())
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
