@@ -3,6 +3,7 @@ use std::hash::{Hash, Hasher};
 use std::borrow::Borrow;
 use std::collections::HashSet;
 use crate::protocols::ProtocolType;
+use prost::Message;
 
 #[derive(Clone, Eq)]
 pub struct Group {
@@ -39,6 +40,15 @@ impl Group {
     }
 
     pub fn protocol(&self) -> ProtocolType { self.protocol }
+
+    pub fn encode(&self) -> Vec<u8> {
+        (crate::proto::Group {
+            id: self.identifier().to_vec(),
+            name: self.name().to_string(),
+            threshold: self.threshold(),
+            device_ids: self.devices().iter().map(Vec::clone).collect()
+        }).encode_to_vec()
+    }
 }
 
 impl PartialEq for Group {

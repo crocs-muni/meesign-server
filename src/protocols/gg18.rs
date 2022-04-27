@@ -5,13 +5,15 @@ use crate::group::Group;
 use crate::protocols::ProtocolType;
 use crate::task::TaskResult;
 
-const LAST_ROUND_KEYGEN: u16 = 6;
+// TODO add logging
+
+const LAST_ROUND_GROUP: u16 = 6;
 const LAST_ROUND_SIGN: u16 = 10;
 
 struct Communicator {
     parties: usize,
-    pub input: Vec<Vec<Option<Vec<u8>>>>, // TODO remove pub
-    pub output: Vec<Vec<u8>>, // TODO remove pub
+    input: Vec<Vec<Option<Vec<u8>>>>,
+    output: Vec<Vec<u8>>,
 }
 
 impl Communicator {
@@ -65,7 +67,7 @@ impl Communicator {
         ids.into_iter()
             .zip((&self.input).into_iter())
             .filter(|(_a, b)| b.iter().all(|x| x.is_none()))
-            .count() > 0
+            .count() == 0
     }
 
     pub fn get_message(&self, idx: usize) -> Option<&Vec<u8>> {
@@ -123,16 +125,16 @@ impl GG18Group {
     }
 
     fn advance_task(&mut self) {
-        assert!((0..LAST_ROUND_KEYGEN).contains(&self.round));
+        assert!((0..LAST_ROUND_GROUP).contains(&self.round));
 
         self.communicator.relay();
         self.communicator.clear_input();
     }
 
     fn finalize_task(&mut self) {
-        assert!(self.round >= LAST_ROUND_KEYGEN);
+        assert_eq!(self.round, LAST_ROUND_GROUP);
 
-        if self.round == LAST_ROUND_KEYGEN {
+        if self.round == LAST_ROUND_GROUP {
             self.result = Some(Group::new(
                 self.communicator.input[0][1].clone().unwrap(),
                 self.name.clone(),
@@ -144,22 +146,18 @@ impl GG18Group {
 
         let group = self.result.as_ref().unwrap();
 
-        let message = crate::proto::Group {
-            id: group.identifier().to_vec(),
-            name: group.name().to_string(),
-            threshold: group.threshold(),
-            device_ids: group.devices().iter().map(Vec::clone).collect()
-        };
-
-        self.communicator.broadcast(message.encode_to_vec());
+        self.communicator.broadcast(group.encode());
         self.communicator.clear_input();
     }
 
     fn next_round(&mut self) {
+        assert!(self.round <= LAST_ROUND_GROUP);
+
         match self.round {
             0 => self.start_task(), // Created -> Running
-            1..LAST_ROUND_KEYGEN => self.advance_task(), // Running -> Running
-            LAST_ROUND_KEYGEN..=u16::MAX => self.finalize_task() // Running -> Finished
+            1..LAST_ROUND_GROUP => self.advance_task(), // Running -> Running
+            LAST_ROUND_GROUP => self.finalize_task(), // Running -> Finished
+            _ => unreachable!()
         }
         self.round += 1;
     }
@@ -169,7 +167,7 @@ impl Task for GG18Group {
     fn get_status(&self) -> TaskStatus {
         match self.round {
             0 => TaskStatus::Created,
-            1..=LAST_ROUND_KEYGEN => TaskStatus::Running(self.round),
+            1..=LAST_ROUND_GROUP => TaskStatus::Running(self.round),
             _ => self.result.as_ref().map(|_| TaskStatus::Finished)
                 .unwrap_or(TaskStatus::Failed(String::from("The group was not established."))),
         }
@@ -196,20 +194,32 @@ impl Task for GG18Group {
             return Err("Wasn't waiting for a message from this ID.".to_string())
         }
 
-        let data: Gg18Message = Message::decode(data).map_err(|_| String::from("Failed to parse data."))?;
-        let mut data : Vec<Option<Vec<u8>>> = data.message.into_iter().map(Some).collect();
-
         let idx = self.id_to_index(device_id).ok_or("Device ID not found.".to_string())?;
-        data.insert(idx, None);
-        self.communicator.input[idx] = data;
 
-        if self.communicator.round_received(&self.ids) {
-            self.next_round();
-            if self.round > LAST_ROUND_KEYGEN {
-                return Ok(TaskStatus::Finished);
+        match self.round {
+            0 => {
+                let _data: TaskAgreement = Message::decode(data).map_err(|_| String::from("Expected TaskAgreement."))?;
+                // TODO handle disagreement
+            },
+            1..=LAST_ROUND_GROUP => {
+                let data: Gg18Message = Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
+                self.communicator.input[idx] = data.message.into_iter().map(Some).collect();
+                self.communicator.input[idx].insert(idx, None);
+            },
+            _ => {
+                let _data: TaskAcknowledgement = Message::decode(data).map_err(|_| String::from("Expected TaskAcknowledgement."))?;
             }
         }
-        Ok(TaskStatus::Running(self.round))
+
+        if self.communicator.round_received(&self.ids) && self.round <= LAST_ROUND_GROUP {
+            self.next_round();
+        }
+
+        Ok(match self.round {
+            0 => TaskStatus::Created,
+            1..=LAST_ROUND_GROUP => TaskStatus::Running(self.round),
+            _ => TaskStatus::Finished,
+        })
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
@@ -228,7 +238,6 @@ impl Task for GG18Group {
 pub struct GG18Sign {
     ids: Vec<Vec<u8>>,
     communicator: Communicator,
-    data: Vec<u8>,
     result: Option<Vec<u8>>,
     indices: Vec<u32>,
     round: u16,
@@ -237,6 +246,7 @@ pub struct GG18Sign {
 impl GG18Sign {
     pub fn new(group: Group, data: Vec<u8>) -> Self {
         // TODO add communication round in which signing ids are identified; currently assumes t=n
+
         let mut all_ids: Vec<Vec<u8>> = group.devices().iter().map(Vec::clone).collect();
         all_ids.sort();
         let signing_ids = all_ids.clone();
@@ -257,7 +267,6 @@ impl GG18Sign {
         GG18Sign {
             ids: signing_ids,
             communicator,
-            data,
             result: None,
             indices,
             round: 0,
@@ -272,8 +281,7 @@ impl GG18Sign {
         assert_eq!(self.round, 0);
 
         let indices = self.indices.clone();
-        let hash = self.data.clone();
-        self.communicator.send_all(|idx| (Gg18SignInit { indices: indices.clone(), index: idx as u32, hash: hash.clone() }).encode_to_vec());
+        self.communicator.send_all(|idx| (Gg18SignInit { indices: indices.clone(), index: idx as u32 }).encode_to_vec());
         self.communicator.clear_input();
     }
 
@@ -296,10 +304,13 @@ impl GG18Sign {
     }
 
     fn next_round(&mut self) {
+        assert!(self.round <= LAST_ROUND_SIGN);
+
         match self.round {
             0 => self.start_task(), // Created -> Running
             1..LAST_ROUND_SIGN => self.advance_task(), // Running -> Running
-            LAST_ROUND_SIGN..=u16::MAX => self.finalize_task() // Running -> Finished
+            LAST_ROUND_SIGN => self.finalize_task(), // Running -> Finished
+            _ => unreachable!()
         }
         self.round += 1;
     }
@@ -310,9 +321,8 @@ impl Task for GG18Sign {
         match self.round {
             0 => TaskStatus::Created,
             1..=LAST_ROUND_SIGN => TaskStatus::Running(self.round),
-            u16::MAX => self.result.as_ref().map(|_| TaskStatus::Finished)
+            _ => self.result.as_ref().map(|_| TaskStatus::Finished)
                 .unwrap_or(TaskStatus::Failed(String::from("Server did not receive a signature."))),
-            _ => unreachable!()
         }
     }
 
@@ -337,20 +347,32 @@ impl Task for GG18Sign {
             return Err("Wasn't waiting for a message from this ID.".to_string())
         }
 
-        let data: Gg18Message = Message::decode(data).map_err(|_| "Failed to parse data.".to_string())?;
-        let mut data : Vec<Option<Vec<u8>>> = data.message.into_iter().map(Some).collect();
-
         let idx = self.id_to_index(device_id).ok_or("Device ID not found.".to_string())?;
-        data.insert(idx, None);
-        self.communicator.input[idx] = data;
 
-        if self.communicator.round_received(&self.ids) {
-            self.next_round();
-            if self.round > LAST_ROUND_SIGN {
-                return Ok(TaskStatus::Finished);
-            }
+        match self.round {
+            0 => {
+                let _data: TaskAgreement = Message::decode(data).map_err(|_| String::from("Expected TaskAgreement."))?;
+                // TODO handle disagreement
+            },
+            1..LAST_ROUND_SIGN => {
+                let data: Gg18Message = Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
+                self.communicator.input[idx] = data.message.into_iter().map(Some).collect();
+                self.communicator.input[idx].insert(idx, None);
+            },
+            _ => {
+                let _data: TaskAcknowledgement = Message::decode(data).map_err(|_| String::from("Expected TaskAcknowledgement."))?;
+            },
         }
-        Ok(TaskStatus::Running(self.round))
+
+        if self.communicator.round_received(&self.ids) && self.round <= LAST_ROUND_SIGN {
+            self.next_round();
+        }
+
+        Ok(match self.round {
+            0 => TaskStatus::Created,
+            1..=LAST_ROUND_SIGN => TaskStatus::Running(self.round),
+            _ => TaskStatus::Finished,
+        })
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {

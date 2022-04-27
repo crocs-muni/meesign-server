@@ -15,10 +15,10 @@ pub enum TaskResult {
 }
 
 impl TaskResult {
-    pub fn as_bytes(&self) -> &[u8] {
+    pub fn as_bytes(&self) -> Vec<u8> {
         match self {
-            TaskResult::GroupEstablished(group) => group.identifier(),
-            TaskResult::Signed(data) => &data,
+            TaskResult::GroupEstablished(group) => group.encode(),
+            TaskResult::Signed(data) => data.clone(),
         }
     }
 }

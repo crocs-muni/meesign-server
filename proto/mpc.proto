@@ -105,6 +105,12 @@ message Resp {
     }
 }
 
+message TaskAgreement {
+    bool agreement = 1;
+};
+
+message TaskAcknowledgement {};
+
 message GG18KeyGenInit {
   uint32 index = 1;
   uint32 parties = 2;
@@ -114,10 +120,10 @@ message GG18KeyGenInit {
 message GG18SignInit {
   repeated uint32 indices = 1;
   uint32 index = 2;
-  bytes hash = 3;
-
 }
 
 message GG18Message {
   repeated bytes message = 1;
 }
+
+// TODO new message
