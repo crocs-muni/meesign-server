@@ -79,9 +79,6 @@ impl GG18Group {
             ));
         }
 
-        let group = self.result.as_ref().unwrap();
-
-        self.communicator.broadcast(group.encode());
         self.communicator.clear_input();
     }
 
@@ -135,6 +132,8 @@ impl Task for GG18Group {
             0 => {
                 let _data: TaskAgreement = Message::decode(data).map_err(|_| String::from("Expected TaskAgreement."))?;
                 // TODO handle disagreement
+                self.communicator.input[idx] = vec![Some(vec![]); self.communicator.parties - 1];
+                self.communicator.input[idx].insert(idx, None);
             },
             1..=LAST_ROUND_GROUP => {
                 let data: Gg18Message = Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
@@ -143,6 +142,8 @@ impl Task for GG18Group {
             },
             _ => {
                 let _data: TaskAcknowledgement = Message::decode(data).map_err(|_| String::from("Expected TaskAcknowledgement."))?;
+                self.communicator.input[idx] = vec![Some(vec![]); self.communicator.parties - 1];
+                self.communicator.input[idx].insert(idx, None);
             }
         }
 
@@ -230,7 +231,6 @@ impl GG18Sign {
             self.result = Some(self.communicator.input[0][1].as_ref().unwrap().clone());
         }
 
-        self.communicator.broadcast(self.result.as_ref().unwrap().clone());
         self.communicator.clear_input();
     }
 
@@ -284,14 +284,18 @@ impl Task for GG18Sign {
             0 => {
                 let _data: TaskAgreement = Message::decode(data).map_err(|_| String::from("Expected TaskAgreement."))?;
                 // TODO handle disagreement
+                self.communicator.input[idx] = vec![Some(vec![]); self.communicator.parties - 1];
+                self.communicator.input[idx].insert(idx, None);
             },
-            1..LAST_ROUND_SIGN => {
+            1..=LAST_ROUND_SIGN => {
                 let data: Gg18Message = Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
                 self.communicator.input[idx] = data.message.into_iter().map(Some).collect();
                 self.communicator.input[idx].insert(idx, None);
             },
             _ => {
                 let _data: TaskAcknowledgement = Message::decode(data).map_err(|_| String::from("Expected TaskAcknowledgement."))?;
+                self.communicator.input[idx] = vec![Some(vec![]); self.communicator.parties - 1];
+                self.communicator.input[idx].insert(idx, None);
             },
         }
 
