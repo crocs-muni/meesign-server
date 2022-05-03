@@ -50,7 +50,8 @@ message Device {
 
 message SignRequest {
     bytes group_id = 1;
-    bytes data = 2;
+    string name = 2;
+    bytes data = 3;
 }
 
 message TaskRequest {

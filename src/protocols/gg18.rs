@@ -176,7 +176,7 @@ pub struct GG18Sign {
 }
 
 impl GG18Sign {
-    pub fn new(group: Group, data: Vec<u8>) -> Self {
+    pub fn new(group: Group, name: String, data: Vec<u8>) -> Self {
         // TODO add communication round in which signing ids are identified; currently assumes t=n
 
         let mut all_ids: Vec<Vec<u8>> = group.devices().iter().map(Vec::clone).collect();
@@ -192,6 +192,7 @@ impl GG18Sign {
         communicator.clear_input();
         let message = SignRequest {
             group_id: group.identifier().to_vec(),
+            name: name.clone(),
             data: data.clone(),
         };
         communicator.broadcast(message.encode_to_vec());

@@ -40,11 +40,12 @@ impl Mpc for MPCService {
     async fn sign(&self, request: Request<SignRequest>) -> Result<Response<crate::proto::Task>, Status> {
         let request = request.into_inner();
         let group_id = request.group_id;
+        let name = request.name;
         let data = request.data;
         info!("SignRequest group_id={} data={}", hex::encode(&group_id), hex::encode(&data));
 
         let mut state = self.state.lock().await;
-        let task_id = state.add_sign_task(&group_id, &data);
+        let task_id = state.add_sign_task(&group_id, &name, &data);
         let task = state.get_task(&task_id).unwrap();
 
         let resp = format_task(&task_id, task, None);

@@ -57,10 +57,10 @@ impl State {
         Some(self.add_task(task))
     }
 
-    pub fn add_sign_task(&mut self, group: &[u8], data: &[u8]) -> Uuid {
+    pub fn add_sign_task(&mut self, group: &[u8], name: &str, data: &[u8]) -> Uuid {
         let group = self.groups.get(group).unwrap().clone();
         let task: Box<dyn Task + Send + Sync + 'static> = match group.protocol() {
-            ProtocolType::GG18 => Box::new(GG18Sign::new(group, data.to_vec())),
+            ProtocolType::GG18 => Box::new(GG18Sign::new(group, name.to_string(), data.to_vec())),
         };
         self.add_task(task)
     }
