@@ -12,11 +12,12 @@ pub struct Group {
     devices: HashSet<Vec<u8>>,
     threshold: u32,
     protocol: ProtocolType,
+    certificate: Vec<u8>
 }
 
 impl Group {
-    pub fn new(identifier: Vec<u8>, name: String, devices: Vec<Vec<u8>>, threshold: u32, protocol: ProtocolType) -> Self {
-        Group { identifier, name, devices: devices.iter().map(Vec::clone).collect(), threshold, protocol }
+    pub fn new(identifier: Vec<u8>, name: String, devices: Vec<Vec<u8>>, threshold: u32, protocol: ProtocolType, certificate: Vec<u8>) -> Self {
+        Group { identifier, name, devices: devices.iter().map(Vec::clone).collect(), threshold, protocol, certificate }
     }
 
     pub fn identifier(&self) -> &[u8] {
@@ -40,6 +41,8 @@ impl Group {
     }
 
     pub fn protocol(&self) -> ProtocolType { self.protocol }
+
+    pub fn certificate(&self) -> &[u8] { &self.certificate }
 
     pub fn encode(&self) -> Vec<u8> {
         (crate::proto::Group {

@@ -4,6 +4,9 @@ use prost::Message;
 use crate::group::Group;
 use crate::protocols::{Communicator, ProtocolType};
 use crate::task::TaskResult;
+use std::process::{Command, Stdio, Child};
+use std::io::{Read, Write};
+use std::fs::File;
 
 // TODO add logging
 
@@ -70,12 +73,16 @@ impl GG18Group {
         assert_eq!(self.round, LAST_ROUND_GROUP);
 
         if self.round == LAST_ROUND_GROUP {
+            let identifier = self.communicator.input[0][1].clone().unwrap();
+            let certificate = issue_certificate(&self.name, &identifier);
+
             self.result = Some(Group::new(
-                self.communicator.input[0][1].clone().unwrap(),
+                identifier,
                 self.name.clone(),
                 self.ids.clone(),
                 self.threshold,
-                ProtocolType::GG18
+                ProtocolType::GG18,
+                certificate
             ));
         }
 
@@ -169,10 +176,13 @@ impl Task for GG18Group {
 
 pub struct GG18Sign {
     ids: Vec<Vec<u8>>,
+    group: Group,
     communicator: Communicator,
     result: Option<Vec<u8>>,
     indices: Vec<u32>,
     round: u16,
+    document: Vec<u8>,
+    pdfhelper: Option<Child>,
 }
 
 impl GG18Sign {
@@ -199,10 +209,13 @@ impl GG18Sign {
 
         GG18Sign {
             ids: signing_ids,
+            group,
             communicator,
             result: None,
             indices,
             round: 0,
+            document: data.clone(),
+            pdfhelper: None
         }
     }
 
@@ -212,9 +225,28 @@ impl GG18Sign {
 
     fn start_task(&mut self) {
         assert_eq!(self.round, 0);
+        {
+            let mut file = File::create("document.pdf").unwrap();
+            file.write_all(&self.document).unwrap();
+        }
+
+        let mut pdfhelper = Command::new("java")
+            .arg("-jar")
+            .arg("MeeSignHelper.jar")
+            .arg("sign")
+            .arg("document.pdf")
+            .stdout(Stdio::piped())
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+
+
+        let hash = request_hash(&mut pdfhelper, self.group.certificate());
+        self.pdfhelper = Some(pdfhelper);
+        std::fs::remove_file("document.pdf").unwrap();
 
         let indices = self.indices.clone();
-        self.communicator.send_all(|idx| (Gg18SignInit { indices: indices.clone(), index: idx as u32 }).encode_to_vec());
+        self.communicator.send_all(|idx| (Gg18SignInit { indices: indices.clone(), index: idx as u32, hash: hash.clone() }).encode_to_vec());
         self.communicator.clear_input();
     }
 
@@ -229,7 +261,10 @@ impl GG18Sign {
         assert!(self.round >= LAST_ROUND_SIGN);
 
         if self.round == LAST_ROUND_SIGN {
-            self.result = Some(self.communicator.input[0][1].as_ref().unwrap().clone());
+            let signature = self.communicator.input[0][1].clone().unwrap();
+            let signed = include_signature(self.pdfhelper.as_mut().unwrap(), &signature);
+            self.pdfhelper = None;
+            self.result = Some(signed);
         }
 
         self.communicator.clear_input();
@@ -317,4 +352,49 @@ impl Task for GG18Sign {
             .map(|(a, _b)| a.as_slice())
             .any(|x| x == device)
     }
+}
+
+fn issue_certificate(name: &str, public_key: &[u8]) -> Vec<u8> {
+    assert_eq!(public_key.len(), 65);
+    let mut process = Command::new("java")
+        .arg("-jar")
+        .arg("MeeSignHelper.jar")
+        .arg("cert")
+        .arg(name)
+        .arg(hex::encode(public_key))
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let mut result = Vec::new();
+    process.stdout.as_mut().unwrap().read_to_end(&mut result).unwrap();
+    result
+}
+
+fn request_hash(process: &mut Child, certificate: &[u8]) -> Vec<u8> {
+    let process_stdin = process.stdin.as_mut().unwrap();
+    let process_stdout = process.stdout.as_mut().unwrap();
+
+    process_stdin.write(certificate).unwrap();
+    process_stdin.flush().unwrap();
+
+    let mut in_buffer = [0u8; 65]; // \n
+    process_stdout.read_exact(&mut in_buffer).unwrap();
+
+    hex::decode(String::from_utf8(Vec::from(&in_buffer[..64])).unwrap()).unwrap()
+}
+
+fn include_signature(process: &mut Child, signature: &[u8]) -> Vec<u8> {
+    let process_stdin = process.stdin.as_mut().unwrap();
+    let process_stdout = process.stdout.as_mut().unwrap();
+
+    let mut out_buffer = [0u8; 129];
+    out_buffer[..128].copy_from_slice(hex::encode(&signature).as_bytes());
+    out_buffer[128] = '\n' as u8;
+
+    process_stdin.write(&out_buffer).unwrap();
+
+    let mut result = Vec::new();
+    process_stdout.read_to_end(&mut result).unwrap();
+    hex::decode(&result).unwrap()
 }
