@@ -7,7 +7,7 @@ use tokio::sync::Mutex;
 use crate::task::{TaskStatus, TaskType, Task};
 use uuid::Uuid;
 use crate::protocols::ProtocolType;
-use log::info;
+use log::{debug, info};
 
 pub struct MPCService {
     state: Mutex<State>
@@ -57,7 +57,7 @@ impl Mpc for MPCService {
         let task_id = Uuid::from_slice(&request.task_id).unwrap();
         let device_id = request.device_id;
         let device_id = if device_id.is_none() { None } else { Some(device_id.as_ref().unwrap().as_slice()) };
-        info!("TaskRequest task_id={} device_id={}", hex::encode(&task_id), hex::encode(&device_id.clone().unwrap_or(&[])));
+        debug!("TaskRequest task_id={} device_id={}", hex::encode(&task_id), hex::encode(&device_id.clone().unwrap_or(&[])));
 
         let state = self.state.lock().await;
         let task = state.get_task(&task_id).unwrap();
@@ -87,7 +87,7 @@ impl Mpc for MPCService {
     async fn get_tasks(&self, request: Request<TasksRequest>) -> Result<Response<Tasks>, Status> {
         let request = request.into_inner();
         let device_id = request.device_id;
-        info!("TasksRequest device_id={}", hex::encode(&device_id));
+        debug!("TasksRequest device_id={}", hex::encode(&device_id));
 
         let tasks = self.state.lock().await.get_device_tasks(&device_id).iter()
             .map(|(task_id, task)| format_task(task_id, task, Some(&device_id)))
@@ -102,7 +102,7 @@ impl Mpc for MPCService {
     async fn get_groups(&self, request: Request<GroupsRequest>) -> Result<Response<Groups>, Status> {
         let request = request.into_inner();
         let device_id = request.device_id;
-        info!("GroupsRequest device_id={}", hex::encode(&device_id));
+        debug!("GroupsRequest device_id={}", hex::encode(&device_id));
 
         let groups = self.state.lock().await.get_device_groups(&device_id).iter().map(|group| {
             Group {
@@ -139,7 +139,7 @@ impl Mpc for MPCService {
     }
 
     async fn get_devices(&self, _request: Request<DevicesRequest>) -> Result<Response<Devices>, Status> {
-        info!("DevicesRequest");
+        debug!("DevicesRequest");
         let resp = Devices {
             devices: self.state.lock().await.get_devices().iter().map(|device|
                 crate::proto::Device {
