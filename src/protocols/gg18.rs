@@ -8,10 +8,12 @@ use std::process::{Command, Stdio, Child};
 use std::io::{Read, Write};
 use std::fs::File;
 
-// TODO add logging
-
 const LAST_ROUND_GROUP: u16 = 6;
 const LAST_ROUND_SIGN: u16 = 10;
+
+// TODO remove once #![feature(exclusive_range_pattern)] gets stabilized
+const LAST_ROUND_GROUP_MINUS_ONE: u16 = LAST_ROUND_GROUP - 1;
+const LAST_ROUND_SIGN_MINUS_ONE: u16 = LAST_ROUND_SIGN - 1;
 
 pub struct GG18Group {
     name: String,
@@ -94,7 +96,7 @@ impl GG18Group {
 
         match self.round {
             0 => self.start_task(), // Created -> Running
-            1..LAST_ROUND_GROUP => self.advance_task(), // Running -> Running
+            1..=LAST_ROUND_GROUP_MINUS_ONE => self.advance_task(), // Running -> Running
             LAST_ROUND_GROUP => self.finalize_task(), // Running -> Finished
             _ => unreachable!()
         }
@@ -275,7 +277,7 @@ impl GG18Sign {
 
         match self.round {
             0 => self.start_task(), // Created -> Running
-            1..LAST_ROUND_SIGN => self.advance_task(), // Running -> Running
+            1..=LAST_ROUND_SIGN_MINUS_ONE => self.advance_task(), // Running -> Running
             LAST_ROUND_SIGN => self.finalize_task(), // Running -> Finished
             _ => unreachable!()
         }

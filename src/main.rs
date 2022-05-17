@@ -1,6 +1,3 @@
-#![feature(exclusive_range_pattern)]
-#![feature(let_chains)]
-
 use std::collections::{HashMap, HashSet};
 
 mod rpc;
@@ -103,10 +100,11 @@ impl State {
         let task = self.tasks.get_mut(task).unwrap();
         let previous_status = task.get_status();
         task.update(device, data)?;
-        if previous_status != TaskStatus::Finished
-            && task.get_status() == TaskStatus::Finished
-            && let TaskResult::GroupEstablished(group) = task.get_result().unwrap() {
-            self.groups.insert(group);
+        if previous_status != TaskStatus::Finished && task.get_status() == TaskStatus::Finished {
+            // TODO join if statements once #![feature(let_chains)] gets stabilized
+            if let TaskResult::GroupEstablished(group) = task.get_result().unwrap() {
+                self.groups.insert(group);
+            }
         }
         Ok(())
     }
