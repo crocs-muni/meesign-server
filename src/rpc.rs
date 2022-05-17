@@ -150,6 +150,18 @@ impl Mpc for MPCService {
         };
         Ok(Response::new(resp))
     }
+
+    async fn log(&self, request: Request<LogRequest>) -> Result<Response<Resp>, Status> {
+        let request = request.into_inner();
+        let device_id = request.device_id.map(|x| hex::encode(&x)).unwrap_or("unknown".to_string());
+        let message = request.message;
+        info!("LogRequest device_id={} message={}", device_id, message);
+
+        let resp = Resp {
+            variant: Some(resp::Variant::Success("OK".into()))
+        };
+        Ok(Response::new(resp))
+    }
 }
 
 fn format_task(task_id: &Uuid, task: &Box<dyn Task + Send + Sync>, device_id: Option<&[u8]>) -> crate::proto::Task {

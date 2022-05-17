@@ -10,6 +10,7 @@ service MPC {
     rpc GetTasks(TasksRequest) returns (Tasks);
     rpc GetGroups(GroupsRequest) returns (Groups);
     rpc GetDevices(DevicesRequest) returns (Devices);
+    rpc Log(LogRequest) returns (Resp);
 }
 
 enum Protocol {
@@ -108,6 +109,11 @@ message Resp {
 
 message TaskAgreement {
     bool agreement = 1;
+};
+
+message LogRequest {
+    string message = 1;
+    optional bytes device_id = 2;
 };
 
 message TaskAcknowledgement {};
