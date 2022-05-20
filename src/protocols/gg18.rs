@@ -77,7 +77,7 @@ impl GG18Group {
 
         if self.round == LAST_ROUND_GROUP {
             let identifier = self.communicator.input[0][1].clone().unwrap();
-            let group_name = format!("{}({})", &self.name, &self.devices.iter().map(|x| x.name()).collect::<Vec<_>>().join(", "));
+            let group_name = format!("{} ({})", &self.name, &self.devices.iter().map(|x| x.name()).collect::<Vec<_>>().join(" and "));
             let certificate = issue_certificate(&group_name, &identifier);
 
             self.result = Some(Group::new(
