@@ -7,6 +7,7 @@ use crate::task::TaskResult;
 use std::process::{Command, Stdio, Child};
 use std::io::{Read, Write};
 use std::fs::File;
+use crate::device::Device;
 
 const LAST_ROUND_GROUP: u16 = 6;
 const LAST_ROUND_SIGN: u16 = 10;
@@ -18,23 +19,23 @@ const LAST_ROUND_SIGN_MINUS_ONE: u16 = LAST_ROUND_SIGN - 1;
 pub struct GG18Group {
     name: String,
     threshold: u32,
-    ids: Vec<Vec<u8>>,
+    devices: Vec<Device>,
     communicator: Communicator,
     result: Option<Group>,
     round: u16,
 }
 
 impl GG18Group {
-    pub fn new(name: &str, ids: &[Vec<u8>], threshold: u32) -> Self {
-        assert!(threshold <= ids.len() as u32);
+    pub fn new(name: &str, devices: &[Device], threshold: u32) -> Self {
+        assert!(threshold <= devices.len() as u32);
 
-        let mut ids = ids.clone().to_vec();
-        ids.sort();
+        let mut devices = devices.to_vec();
+        devices.sort_by_key(|x| x.identifier().to_vec());
 
-        let mut communicator = Communicator::new(ids.len());
+        let mut communicator = Communicator::new(devices.len());
         communicator.clear_input();
         let message = GroupRequest {
-            device_ids: ids.iter().map(|x| x.to_vec()).collect(),
+            device_ids: devices.iter().map(|x| x.identifier().to_vec()).collect(),
             name: String::from(name),
             threshold: Some(threshold),
             protocol: Some(0)
@@ -44,7 +45,7 @@ impl GG18Group {
         GG18Group {
             name: name.into(),
             threshold,
-            ids,
+            devices,
             communicator,
             result: None,
             round: 0,
@@ -52,13 +53,13 @@ impl GG18Group {
     }
 
     fn id_to_index(&self, device_id: &[u8]) -> Option<usize> {
-        self.ids.iter().position(|x| x == device_id)
+        self.devices.iter().position(|x| x.identifier() == device_id)
     }
 
     fn start_task(&mut self) {
         assert_eq!(self.round, 0);
 
-        let parties = self.ids.len() as u32;
+        let parties = self.devices.len() as u32;
         let threshold = self.threshold;
         self.communicator.send_all(|idx| (Gg18KeyGenInit { index: idx as u32, parties, threshold }).encode_to_vec());
         self.communicator.clear_input();
@@ -76,12 +77,13 @@ impl GG18Group {
 
         if self.round == LAST_ROUND_GROUP {
             let identifier = self.communicator.input[0][1].clone().unwrap();
-            let certificate = issue_certificate(&self.name, &identifier);
+            let group_name = format!("{}({})", &self.name, &self.devices.iter().map(|x| x.name()).collect::<Vec<_>>().join(", "));
+            let certificate = issue_certificate(&group_name, &identifier);
 
             self.result = Some(Group::new(
                 identifier,
                 self.name.clone(),
-                self.ids.clone(),
+                self.devices.iter().map(Device::clone).collect(),
                 self.threshold,
                 ProtocolType::GG18,
                 certificate
@@ -156,7 +158,7 @@ impl Task for GG18Group {
             }
         }
 
-        if self.communicator.round_received(&self.ids) && self.round <= LAST_ROUND_GROUP {
+        if self.communicator.round_received(&self.devices.iter().map(|x| x.identifier().to_vec()).collect::<Vec<_>>()) && self.round <= LAST_ROUND_GROUP {
             self.next_round();
         }
 
@@ -164,14 +166,15 @@ impl Task for GG18Group {
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
-        return self.ids.contains(&device_id.to_vec())
+        return self.devices.iter().map(Device::identifier).any(|x| x == device_id)
     }
 
     fn waiting_for(&self, device: &[u8]) -> bool {
-        self.ids.iter()
+        self.devices.iter()
+            .map(Device::identifier)
             .zip((&self.communicator.input).into_iter())
             .filter(|(_a, b)| b.iter().all(|x| x.is_none()))
-            .map(|(a, _b)| a.as_slice())
+            .map(|(a, _b)| a)
             .any(|x| x == device)
     }
 }
@@ -191,7 +194,7 @@ impl GG18Sign {
     pub fn new(group: Group, name: String, data: Vec<u8>) -> Self {
         // TODO add communication round in which signing ids are identified; currently assumes t=n
 
-        let mut all_ids: Vec<Vec<u8>> = group.devices().iter().map(Vec::clone).collect();
+        let mut all_ids: Vec<Vec<u8>> = group.devices().keys().map(Vec::clone).collect();
         all_ids.sort();
         let signing_ids = all_ids.clone();
 

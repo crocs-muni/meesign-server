@@ -109,7 +109,7 @@ impl Mpc for MPCService {
                 id: group.identifier().to_vec(),
                 name: group.name().to_owned(),
                 threshold: group.threshold(),
-                device_ids: group.devices().iter().map(Vec::clone).collect(),
+                device_ids: group.devices().keys().map(Vec::clone).collect(),
             }
         }).collect();
 
@@ -141,7 +141,7 @@ impl Mpc for MPCService {
     async fn get_devices(&self, _request: Request<DevicesRequest>) -> Result<Response<Devices>, Status> {
         debug!("DevicesRequest");
         let resp = Devices {
-            devices: self.state.lock().await.get_devices().iter().map(|device|
+            devices: self.state.lock().await.get_devices().values().map(|device|
                 crate::proto::Device {
                     id: device.identifier().to_vec(),
                     name: device.name().to_string()

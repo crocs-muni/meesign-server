@@ -1,23 +1,22 @@
 use std::cmp::Eq;
-use std::hash::{Hash, Hasher};
-use std::borrow::Borrow;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use crate::protocols::ProtocolType;
 use prost::Message;
+use crate::device::Device;
 
 #[derive(Clone, Eq)]
 pub struct Group {
     identifier: Vec<u8>,
     name: String,
-    devices: HashSet<Vec<u8>>,
+    devices: HashMap<Vec<u8>, Device>, // TODO use HashSet-like collection that can refer to its element fields?
     threshold: u32,
     protocol: ProtocolType,
     certificate: Vec<u8>
 }
 
 impl Group {
-    pub fn new(identifier: Vec<u8>, name: String, devices: Vec<Vec<u8>>, threshold: u32, protocol: ProtocolType, certificate: Vec<u8>) -> Self {
-        Group { identifier, name, devices: devices.iter().map(Vec::clone).collect(), threshold, protocol, certificate }
+    pub fn new(identifier: Vec<u8>, name: String, devices: Vec<Device>, threshold: u32, protocol: ProtocolType, certificate: Vec<u8>) -> Self {
+        Group { identifier, name, devices: devices.into_iter().map(|x| (x.identifier().to_vec(), x)).collect(), threshold, protocol, certificate }
     }
 
     pub fn identifier(&self) -> &[u8] {
@@ -32,12 +31,12 @@ impl Group {
         self.threshold
     }
 
-    pub fn devices(&self) -> &HashSet<Vec<u8>> {
+    pub fn devices(&self) -> &HashMap<Vec<u8>, Device> {
         &self.devices
     }
 
-    pub fn contains(&self, device: &Vec<u8>) -> bool {
-        self.devices.contains(device)
+    pub fn contains(&self, device_id: &[u8]) -> bool {
+        self.devices.contains_key(device_id)
     }
 
     pub fn protocol(&self) -> ProtocolType { self.protocol }
@@ -49,7 +48,7 @@ impl Group {
             id: self.identifier().to_vec(),
             name: self.name().to_string(),
             threshold: self.threshold(),
-            device_ids: self.devices().iter().map(Vec::clone).collect()
+            device_ids: self.devices().keys().map(Vec::clone).collect()
         }).encode_to_vec()
     }
 }
@@ -57,17 +56,5 @@ impl Group {
 impl PartialEq for Group {
     fn eq(&self, other: &Self) -> bool {
         self.identifier == other.identifier
-    }
-}
-
-impl Hash for Group {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.identifier.hash(state);
-    }
-}
-
-impl Borrow<[u8]> for Group {
-    fn borrow(&self) -> &[u8] {
-        &self.identifier
     }
 }
