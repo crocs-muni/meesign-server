@@ -47,6 +47,7 @@ message Devices {
 message Device {
     bytes id = 1;
     string name = 2;
+    uint64 last_active = 3;
 }
 
 message SignRequest {
@@ -79,7 +80,7 @@ message Task {
 }
 
 message TaskUpdate {
-    bytes device = 1;
+    bytes device_id = 1;
     bytes task = 2;
     bytes data = 3;
 }

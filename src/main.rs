@@ -16,6 +16,7 @@ use crate::device::Device;
 use uuid::Uuid;
 use crate::protocols::ProtocolType;
 use crate::protocols::gg18::{GG18Group, GG18Sign};
+use log::error;
 
 pub struct State {
     devices: HashMap<Vec<u8>, Device>,
@@ -113,6 +114,14 @@ impl State {
 
     pub fn get_devices(&self) -> &HashMap<Vec<u8>, Device> {
         &self.devices
+    }
+
+    pub fn device_activated(&mut self, device_id: &[u8]) {
+        if let Some(device) = self.devices.get_mut(device_id) {
+            device.activated();
+        } else {
+            error!("Unknown device ID {}", hex::encode(device_id));
+        }
     }
 }
 

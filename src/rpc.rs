@@ -59,7 +59,10 @@ impl Mpc for MPCService {
         let device_id = if device_id.is_none() { None } else { Some(device_id.as_ref().unwrap().as_slice()) };
         debug!("TaskRequest task_id={} device_id={}", hex::encode(&task_id), hex::encode(&device_id.clone().unwrap_or(&[])));
 
-        let state = self.state.lock().await;
+        let mut state = self.state.lock().await;
+        if device_id.is_some() {
+            state.device_activated(device_id.as_ref().unwrap());
+        }
         let task = state.get_task(&task_id).unwrap();
 
         let resp = format_task(&task_id, task, device_id);
@@ -69,11 +72,13 @@ impl Mpc for MPCService {
     async fn update_task(&self, request: Request<TaskUpdate>) -> Result<Response<Resp>, Status> {
         let request = request.into_inner();
         let task = Uuid::from_slice(&request.task).unwrap();
-        let device = request.device;
+        let device_id = request.device_id;
         let data = request.data;
-        info!("TaskUpdate task_id={} device_id={} data={}", hex::encode(&task), hex::encode(&device), hex::encode(&data));
+        info!("TaskUpdate task_id={} device_id={} data={}", hex::encode(&task), hex::encode(&device_id), hex::encode(&data));
 
-        let result = self.state.lock().await.update_task(&task, &device, &data);
+        let mut state = self.state.lock().await;
+        state.device_activated(&device_id);
+        let result = state.update_task(&task, &device_id, &data);
 
         let resp = Resp {
             variant: Some(match result {
@@ -89,7 +94,9 @@ impl Mpc for MPCService {
         let device_id = request.device_id;
         debug!("TasksRequest device_id={}", hex::encode(&device_id));
 
-        let tasks = self.state.lock().await.get_device_tasks(&device_id).iter()
+        let mut state = self.state.lock().await;
+        state.device_activated(&device_id);
+        let tasks = state.get_device_tasks(&device_id).iter()
             .map(|(task_id, task)| format_task(task_id, task, Some(&device_id)))
             .collect();
 
@@ -104,7 +111,9 @@ impl Mpc for MPCService {
         let device_id = request.device_id;
         debug!("GroupsRequest device_id={}", hex::encode(&device_id));
 
-        let groups = self.state.lock().await.get_device_groups(&device_id).iter().map(|group| {
+        let mut state = self.state.lock().await;
+        state.device_activated(&device_id);
+        let groups = state.get_device_groups(&device_id).iter().map(|group| {
             Group {
                 id: group.identifier().to_vec(),
                 name: group.name().to_owned(),
@@ -144,7 +153,8 @@ impl Mpc for MPCService {
             devices: self.state.lock().await.get_devices().values().map(|device|
                 crate::proto::Device {
                     id: device.identifier().to_vec(),
-                    name: device.name().to_string()
+                    name: device.name().to_string(),
+                    last_active: device.last_active()
                 }
             ).collect()
         };
@@ -153,9 +163,14 @@ impl Mpc for MPCService {
 
     async fn log(&self, request: Request<LogRequest>) -> Result<Response<Resp>, Status> {
         let request = request.into_inner();
-        let device_id = request.device_id.map(|x| hex::encode(&x)).unwrap_or("unknown".to_string());
+        let device_id = request.device_id;
+        let device_str = device_id.as_ref().map(|x| hex::encode(&x)).unwrap_or("unknown".to_string());
         let message = request.message;
-        info!("LogRequest device_id={} message={}", device_id, message);
+        info!("LogRequest device_id={} message={}", device_str, message);
+
+        if device_id.is_some() {
+            self.state.lock().await.device_activated(device_id.as_ref().unwrap());
+        }
 
         let resp = Resp {
             variant: Some(resp::Variant::Success("OK".into()))
