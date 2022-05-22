@@ -1,4 +1,4 @@
-use crate::{Task, TaskStatus, TaskType};
+use crate::task::{Task, TaskStatus, TaskType};
 use crate::proto::*;
 use prost::Message;
 use crate::group::Group;

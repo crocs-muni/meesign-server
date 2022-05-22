@@ -2,7 +2,7 @@ use crate::proto::*;
 use crate::proto::mpc_server::{Mpc, MpcServer};
 use tonic::{Request, Status, Response};
 use tonic::transport::Server;
-use crate::State;
+use crate::state::State;
 use tokio::sync::Mutex;
 use crate::task::{TaskStatus, TaskType, Task};
 use uuid::Uuid;
@@ -201,15 +201,17 @@ fn format_task(task_id: &Uuid, task: &Box<dyn Task + Send + Sync>, device_id: Op
     }
 }
 
-pub async fn run_rpc(state: State) -> Result<(), String> {
-    let addr = "127.0.0.1:1337".parse().unwrap();
+pub async fn run_rpc(state: State, addr: &str, port: u16) -> Result<(), String> {
+    let addr = format!("{}:{}", addr, port)
+        .parse()
+        .map_err(|_| String::from("Unable to parse server address"))?;
     let node = MPCService::new(state);
 
     Server::builder()
         .add_service(MpcServer::new(node))
         .serve(addr)
         .await
-        .unwrap();
+        .map_err(|_| String::from("Unable to run server"))?;
 
     Ok(())
 }
