@@ -1,7 +1,6 @@
 use std::cmp::Eq;
 use std::collections::HashMap;
 use crate::protocols::ProtocolType;
-use prost::Message;
 use crate::device::Device;
 
 #[derive(Clone, Eq)]
@@ -42,19 +41,21 @@ impl Group {
     pub fn protocol(&self) -> ProtocolType { self.protocol }
 
     pub fn certificate(&self) -> &[u8] { &self.certificate }
-
-    pub fn encode(&self) -> Vec<u8> {
-        (crate::proto::Group {
-            id: self.identifier().to_vec(),
-            name: self.name().to_string(),
-            threshold: self.threshold(),
-            device_ids: self.devices().keys().map(Vec::clone).collect()
-        }).encode_to_vec()
-    }
 }
 
 impl PartialEq for Group {
     fn eq(&self, other: &Self) -> bool {
         self.identifier == other.identifier
+    }
+}
+
+impl From<&Group> for crate::proto::Group {
+    fn from(group: &Group) -> Self {
+        crate::proto::Group {
+            id: group.identifier().to_vec(),
+            name: group.name().to_owned(),
+            threshold: group.threshold(),
+            device_ids: group.devices().keys().map(Vec::clone).collect(),
+        }
     }
 }

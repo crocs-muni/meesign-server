@@ -45,7 +45,7 @@ message Devices {
 }
 
 message Device {
-    bytes id = 1;
+    bytes identifier = 1;
     string name = 2;
     uint64 last_active = 3;
 }

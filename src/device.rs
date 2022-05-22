@@ -40,3 +40,14 @@ impl PartialEq for Device {
         self.identifier == other.identifier
     }
 }
+
+
+impl From<&Device> for crate::proto::Device {
+    fn from(device: &Device) -> Self {
+        crate::proto::Device {
+            identifier: device.identifier().to_vec(),
+            name: device.name().to_string(),
+            last_active: device.last_active()
+        }
+    }
+}
