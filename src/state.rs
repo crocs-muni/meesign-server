@@ -23,9 +23,14 @@ impl State {
         }
     }
 
-    pub fn add_device(&mut self, id: &[u8], name: &str) {
-        let device = Device::new(id.to_vec(), name.to_owned());
-        self.devices.insert(id.to_vec(), device);
+    pub fn add_device(&mut self, identifier: &[u8], name: &str) -> bool {
+        let device = Device::new(identifier.to_vec(), name.to_owned());
+        // TODO improve when feature map_try_insert gets stabilized
+        if self.devices.contains_key(identifier) {
+            return false
+        }
+        self.devices.insert(identifier.to_vec(), device);
+        true
     }
 
     pub fn add_group_task(&mut self, name: &str, devices: &[Vec<u8>], threshold: u32, protocol: ProtocolType) -> Option<Uuid> {

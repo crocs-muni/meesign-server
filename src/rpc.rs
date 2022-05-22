@@ -23,15 +23,16 @@ impl MPCService {
 impl Mpc for MPCService {
     async fn register(&self, request: Request<msg::RegistrationRequest>) -> Result<Response<msg::Resp>, Status> {
         let request = request.into_inner();
-        let id = request.id;
+        let identifier = request.identifier;
         let name = request.name;
-        info!("RegistrationRequest device_id={} name={:?}", hex::encode(&id), name);
+        info!("RegistrationRequest device_id={} name={:?}", hex::encode(&identifier), name);
 
         let mut state = self.state.lock().await;
-        state.add_device(&id, &name);
 
-        let resp = msg::Resp {
-            variant: Some(msg::resp::Variant::Success("OK".into()))
+        let resp = if state.add_device(&identifier, &name) {
+            msg::Resp { variant: Some(msg::resp::Variant::Success("OK".into())) }
+        } else {
+            msg::Resp { variant: Some(msg::resp::Variant::Failure("Identifier already in use".into())) }
         };
 
         Ok(Response::new(resp))
