@@ -52,7 +52,7 @@ impl PartialEq for Group {
 impl From<&Group> for crate::proto::Group {
     fn from(group: &Group) -> Self {
         crate::proto::Group {
-            id: group.identifier().to_vec(),
+            identifier: group.identifier().to_vec(),
             name: group.name().to_owned(),
             threshold: group.threshold(),
             device_ids: group.devices().keys().map(Vec::clone).collect(),

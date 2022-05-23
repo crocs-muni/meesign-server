@@ -109,15 +109,18 @@ impl Mpc for MPCService {
     async fn get_groups(&self, request: Request<msg::GroupsRequest>) -> Result<Response<msg::Groups>, Status> {
         let request = request.into_inner();
         let device_id = request.device_id;
-        debug!("GroupsRequest device_id={}", hex::encode(&device_id));
+        let device_str = device_id.as_ref().map(|x| hex::encode(&x)).unwrap_or("unknown".to_string());
+        debug!("GroupsRequest device_id={}", device_str);
 
         let mut state = self.state.lock().await;
-        state.device_activated(&device_id);
-
-        let resp = msg::Groups {
-            groups: state.get_device_groups(&device_id).iter().map(|group| msg::Group::from(group)).collect()
+        let groups = if let Some(device_id) = device_id {
+            state.device_activated(&device_id);
+            state.get_device_groups(&device_id).iter().map(|group| msg::Group::from(group)).collect()
+        } else {
+            state.get_groups().values().map(|group| msg::Group::from(group)).collect()
         };
-        Ok(Response::new(resp))
+
+        Ok(Response::new(msg::Groups { groups }))
     }
 
     async fn group(&self, request: Request<msg::GroupRequest>) -> Result<Response<msg::Task>, Status> {
@@ -135,8 +138,7 @@ impl Mpc for MPCService {
         let task_id = state.add_group_task(&name, &device_ids, threshold, protocol).unwrap();
         let task = state.get_task(&task_id).unwrap();
 
-        let resp = format_task(&task_id, task, None);
-        Ok(Response::new(resp))
+        Ok(Response::new(format_task(&task_id, task, None)))
     }
 
     async fn get_devices(&self, _request: Request<msg::DevicesRequest>) -> Result<Response<msg::Devices>, Status> {

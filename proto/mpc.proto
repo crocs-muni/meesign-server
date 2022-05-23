@@ -30,7 +30,7 @@ message GroupRequest {
 }
 
 message Group {
-    bytes id = 1;
+    bytes identifier = 1;
     string name = 2;
     uint32 threshold = 3;
     repeated bytes device_ids = 4;
@@ -94,7 +94,7 @@ message Tasks {
 }
 
 message GroupsRequest {
-    bytes device_id = 1;
+    optional bytes device_id = 1;
 }
 
 message Groups {

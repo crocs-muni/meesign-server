@@ -86,6 +86,11 @@ impl State {
         groups
     }
 
+    pub fn get_groups(&self) -> &HashMap<Vec<u8>, Group> {
+        &self.groups
+    }
+
+
     pub fn get_task(&self, task: &Uuid) -> Option<&Box<dyn Task + Send + Sync>> {
         self.tasks.get(task)
     }
