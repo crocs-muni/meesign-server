@@ -90,6 +90,9 @@ impl State {
         &self.groups
     }
 
+    pub fn get_tasks(&self) -> &HashMap<Uuid, Box<dyn Task + Send + Sync>> {
+        &self.tasks
+    }
 
     pub fn get_task(&self, task: &Uuid) -> Option<&Box<dyn Task + Send + Sync>> {
         self.tasks.get(task)

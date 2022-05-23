@@ -86,7 +86,7 @@ message TaskUpdate {
 }
 
 message TasksRequest {
-    bytes device_id = 1;
+    optional bytes device_id = 1;
 }
 
 message Tasks {

@@ -93,17 +93,22 @@ impl Mpc for MPCService {
     async fn get_tasks(&self, request: Request<msg::TasksRequest>) -> Result<Response<msg::Tasks>, Status> {
         let request = request.into_inner();
         let device_id = request.device_id;
-        debug!("TasksRequest device_id={}", hex::encode(&device_id));
+        let device_str = device_id.as_ref().map(|x| hex::encode(&x)).unwrap_or("unknown".to_string());
+        debug!("TasksRequest device_id={}", device_str);
 
         let mut state = self.state.lock().await;
-        state.device_activated(&device_id);
-
-        let resp = msg::Tasks {
-            tasks: state.get_device_tasks(&device_id).iter()
+        let tasks = if let Some(device_id) = device_id {
+            state.device_activated(&device_id);
+            state.get_device_tasks(&device_id).iter()
                 .map(|(task_id, task)| format_task(task_id, task, Some(&device_id)))
                 .collect()
+        } else {
+            state.get_tasks().iter()
+                .map(|(task_id, task)| format_task(task_id, task, None))
+                .collect()
         };
-        Ok(Response::new(resp))
+
+        Ok(Response::new(msg::Tasks { tasks }))
     }
 
     async fn get_groups(&self, request: Request<msg::GroupsRequest>) -> Result<Response<msg::Groups>, Status> {
