@@ -44,6 +44,11 @@ enum Commands {
         name: String,
         device_ids: Vec<String>,
     },
+    RequestSign {
+        name: String,
+        group_id: String,
+        pdf_file: String,
+    },
 }
 
 async fn register(server: String, identifier: &[u8], name: &str) -> Result<(), String> {
@@ -162,6 +167,29 @@ async fn request_group(server: String, name: String, device_ids: Vec<Vec<u8>>) -
     Ok(())
 }
 
+async fn request_sign(server: String, name: String, group_id: Vec<u8>, data: Vec<u8>) -> Result<(), String> {
+    let mut client = MpcClient::connect(server)
+        .await
+        .map_err(|_| String::from("Unable to connect to server"))?;
+
+    let request = tonic::Request::new(crate::proto::SignRequest { name, group_id, data });
+
+    let response = client.sign(request)
+        .await
+        .map_err(|_| String::from("Request failed"))?
+        .into_inner();
+
+    let task = response;
+    let task_type = match task.r#type {
+        0 => "Group",
+        1 => "Sign",
+        _ => "Unknown",
+    };
+    println!("Task {} [{}] (state {}:{})", task_type, hex::encode(task.id), task.state, task.round);
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), String> {
     env_logger::init();
@@ -186,6 +214,11 @@ async fn main() -> Result<(), String> {
             Commands::RequestGroup { name, device_ids } => {
                 let device_ids = device_ids.iter().map(|x| hex::decode(x).unwrap()).collect();
                 request_group(server, name, device_ids).await
+            },
+            Commands::RequestSign { name, group_id, pdf_file } => {
+                let group_id = hex::decode(group_id).unwrap();
+                let data = std::fs::read(pdf_file).unwrap();
+                request_sign(server, name, group_id, data).await
             },
         }
     } else {
