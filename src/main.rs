@@ -40,6 +40,10 @@ enum Commands {
     GetTasks {
         device_id: Option<String>,
     },
+    RequestGroup {
+        name: String,
+        device_ids: Vec<String>,
+    },
 }
 
 async fn register(server: String, identifier: &[u8], name: &str) -> Result<(), String> {
@@ -135,6 +139,29 @@ async fn get_tasks(server: String, device_id: Option<Vec<u8>>) -> Result<(), Str
     Ok(())
 }
 
+async fn request_group(server: String, name: String, device_ids: Vec<Vec<u8>>) -> Result<(), String> {
+    let mut client = MpcClient::connect(server)
+        .await
+        .map_err(|_| String::from("Unable to connect to server"))?;
+
+    let request = tonic::Request::new(crate::proto::GroupRequest { name, device_ids, threshold: None, protocol: None });
+
+    let response = client.group(request)
+        .await
+        .map_err(|_| String::from("Request failed"))?
+        .into_inner();
+
+    let task = response;
+    let task_type = match task.r#type {
+        0 => "Group",
+        1 => "Sign",
+        _ => "Unknown",
+    };
+    println!("Task {} [{}] (state {}:{})", task_type, hex::encode(task.id), task.state, task.round);
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), String> {
     env_logger::init();
@@ -155,7 +182,11 @@ async fn main() -> Result<(), String> {
             Commands::GetTasks { device_id } => {
                 let device_id = device_id.map(|x| hex::decode(x).unwrap());
                 get_tasks(server, device_id).await
-            }
+            },
+            Commands::RequestGroup { name, device_ids } => {
+                let device_ids = device_ids.iter().map(|x| hex::decode(x).unwrap()).collect();
+                request_group(server, name, device_ids).await
+            },
         }
     } else {
         rpc::run_rpc(State::new(), &args.addr, args.port).await

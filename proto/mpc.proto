@@ -23,8 +23,8 @@ message RegistrationRequest {
 }
 
 message GroupRequest {
-    repeated bytes device_ids = 1;
-    string name = 2;
+    string name = 1;
+    repeated bytes device_ids = 2;
     optional uint32 threshold = 3;
     optional Protocol protocol = 4;
 }
@@ -51,8 +51,8 @@ message Device {
 }
 
 message SignRequest {
-    bytes group_id = 1;
-    string name = 2;
+    string name = 1;
+    bytes group_id = 2;
     bytes data = 3;
 }
 
