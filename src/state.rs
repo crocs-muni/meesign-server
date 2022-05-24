@@ -56,12 +56,15 @@ impl State {
         Some(self.add_task(task))
     }
 
-    pub fn add_sign_task(&mut self, group: &[u8], name: &str, data: &[u8]) -> Uuid {
+    pub fn add_sign_task(&mut self, group: &[u8], name: &str, data: &[u8]) -> Option<Uuid> {
+        if data.len() > 8 * 1024 * 1024 {
+            return None;
+        }
         let group = self.groups.get(group).unwrap().clone();
         let task: Box<dyn Task + Send + Sync + 'static> = match group.protocol() {
             ProtocolType::GG18 => Box::new(GG18Sign::new(group, name.to_string(), data.to_vec())),
         };
-        self.add_task(task)
+        Some(self.add_task(task))
     }
 
     fn add_task(&mut self, task: Box<dyn Task + Send + Sync>) -> Uuid {
