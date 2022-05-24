@@ -41,7 +41,7 @@ impl Mpc for MPCService {
         let group_id = request.group_id;
         let name = request.name;
         let data = request.data;
-        info!("SignRequest group_id={} data={}", hex::encode(&group_id), hex::encode(&data));
+        info!("SignRequest group_id={}", hex::encode(&group_id));
 
         let mut state = self.state.lock().await;
         let task_id = state.add_sign_task(&group_id, &name, &data);
@@ -73,7 +73,7 @@ impl Mpc for MPCService {
         let task = Uuid::from_slice(&request.task).unwrap();
         let device_id = request.device_id;
         let data = request.data;
-        info!("TaskUpdate task_id={} device_id={} data={}", hex::encode(&task), hex::encode(&device_id), hex::encode(&data));
+        info!("TaskUpdate task_id={} device_id={}", hex::encode(&task), hex::encode(&device_id));
 
         let mut state = self.state.lock().await;
         state.device_activated(&device_id);
