@@ -24,6 +24,10 @@ impl State {
     }
 
     pub fn add_device(&mut self, identifier: &[u8], name: &str) -> bool {
+        if name.len() > 32 || name.contains(",") {
+            return false
+        }
+
         let device = Device::new(identifier.to_vec(), name.to_owned());
         // TODO improve when feature map_try_insert gets stabilized
         if self.devices.contains_key(identifier) {
@@ -34,7 +38,7 @@ impl State {
     }
 
     pub fn add_group_task(&mut self, name: &str, devices: &[Vec<u8>], threshold: u32, protocol: ProtocolType) -> Option<Uuid> {
-        if threshold > devices.len() as u32 {
+        if name.len() > 32 || name.contains(",") || threshold > devices.len() as u32 {
             return None
         }
         let mut device_list = Vec::new();

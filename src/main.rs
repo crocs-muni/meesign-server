@@ -68,13 +68,7 @@ async fn register(server: String, identifier: &[u8], name: &str) -> Result<(), S
         .map_err(|_| String::from("Request failed"))?
         .into_inner();
 
-    let msg = match response.variant {
-        Some(crate::proto::resp::Variant::Success(msg)) => msg,
-        Some(crate::proto::resp::Variant::Failure(msg)) => msg,
-        None => String::from("Unknown error"),
-    };
-
-    println!("{}", msg);
+    println!("{}", response.message);
 
     Ok(())
 }

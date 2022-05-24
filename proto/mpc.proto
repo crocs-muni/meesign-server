@@ -102,10 +102,7 @@ message Groups {
 }
 
 message Resp {
-    oneof variant {
-        string success = 1;
-        string failure = 2;
-    }
+    string message = 1;
 }
 
 message TaskAgreement {

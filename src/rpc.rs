@@ -29,13 +29,11 @@ impl Mpc for MPCService {
 
         let mut state = self.state.lock().await;
 
-        let resp = if state.add_device(&identifier, &name) {
-            msg::Resp { variant: Some(msg::resp::Variant::Success("OK".into())) }
+        if state.add_device(&identifier, &name) {
+            Ok(Response::new(msg::Resp { message: "OK".into() }))
         } else {
-            msg::Resp { variant: Some(msg::resp::Variant::Failure("Identifier already in use".into())) }
-        };
-
-        Ok(Response::new(resp))
+            Err(Status::failed_precondition("Request failed"))
+        }
     }
 
     async fn sign(&self, request: Request<msg::SignRequest>) -> Result<Response<crate::proto::Task>, Status> {
@@ -81,13 +79,10 @@ impl Mpc for MPCService {
         state.device_activated(&device_id);
         let result = state.update_task(&task, &device_id, &data);
 
-        let resp = msg::Resp {
-            variant: Some(match result {
-                Ok(_) => msg::resp::Variant::Success(String::from("OK")),
-                Err(e) => msg::resp::Variant::Failure(e),
-            })
-        };
-        Ok(Response::new(resp))
+        match result {
+            Ok(_) => Ok(Response::new(msg::Resp { message: "OK".into() })),
+            Err(e) => Err(Status::failed_precondition(e))
+        }
     }
 
     async fn get_tasks(&self, request: Request<msg::TasksRequest>) -> Result<Response<msg::Tasks>, Status> {
@@ -140,10 +135,13 @@ impl Mpc for MPCService {
         info!("GroupRequest name={:?} device_ids={:?} threshold={}", &name, device_ids.iter().map(hex::encode).collect::<Vec<String>>(), threshold);
 
         let mut state = self.state.lock().await;
-        let task_id = state.add_group_task(&name, &device_ids, threshold, protocol).unwrap();
-        let task = state.get_task(&task_id).unwrap();
+        if let Some(task_id) = state.add_group_task(&name, &device_ids, threshold, protocol) {
+            let task = state.get_task(&task_id).unwrap();
+            Ok(Response::new(format_task(&task_id, task, None)))
+        } else {
+            Err(Status::failed_precondition("Request failed"))
+        }
 
-        Ok(Response::new(format_task(&task_id, task, None)))
     }
 
     async fn get_devices(&self, _request: Request<msg::DevicesRequest>) -> Result<Response<msg::Devices>, Status> {
@@ -166,10 +164,7 @@ impl Mpc for MPCService {
             self.state.lock().await.device_activated(device_id.as_ref().unwrap());
         }
 
-        let resp = msg::Resp {
-            variant: Some(msg::resp::Variant::Success("OK".into()))
-        };
-        Ok(Response::new(resp))
+        Ok(Response::new(msg::Resp { message: "OK".into() }))
     }
 }
 
