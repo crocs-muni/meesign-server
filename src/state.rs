@@ -24,7 +24,7 @@ impl State {
     }
 
     pub fn add_device(&mut self, identifier: &[u8], name: &str) -> bool {
-        if name.len() > 32 || name.contains(",") {
+        if name.chars().count() > 32 || name.chars().any(|x| x.is_ascii_punctuation() || x.is_control()) {
             return false
         }
 
@@ -38,7 +38,7 @@ impl State {
     }
 
     pub fn add_group_task(&mut self, name: &str, devices: &[Vec<u8>], threshold: u32, protocol: ProtocolType) -> Option<Uuid> {
-        if name.len() > 32 || name.contains(",") || threshold > devices.len() as u32 {
+        if name.chars().count() > 32 || name.chars().any(|x| x.is_ascii_punctuation() || x.is_control()) {
             return None
         }
         let mut device_list = Vec::new();
@@ -57,7 +57,7 @@ impl State {
     }
 
     pub fn add_sign_task(&mut self, group: &[u8], name: &str, data: &[u8]) -> Option<Uuid> {
-        if data.len() > 8 * 1024 * 1024 {
+        if data.len() > 8 * 1024 * 1024 || name.len() > 256 || name.chars().any(|x| x.is_control()) {
             return None;
         }
         let group = self.groups.get(group).unwrap().clone();
