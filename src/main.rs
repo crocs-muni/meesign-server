@@ -89,7 +89,7 @@ async fn get_devices(server: String) -> Result<(), String> {
 
     response.devices.sort_by_key(|x| u64::MAX - x.last_active);
     for device in response.devices {
-        println!("{} [{}] (seen before {}s)", &device.name, hex::encode(device.identifier), now - device.last_active);
+        println!("[{}] {} (seen before {}s)", hex::encode(device.identifier), &device.name, now - device.last_active);
     }
 
     Ok(())
@@ -108,7 +108,7 @@ async fn get_groups(server: String, device_id: Option<Vec<u8>>) -> Result<(), St
         .into_inner();
 
     for group in response.groups {
-        println!("{} [{}] ({}-of-{})", &group.name, hex::encode(group.identifier), group.threshold, group.device_ids.len());
+        println!("[{}] {} ({}-of-{})", hex::encode(group.identifier), &group.name, group.threshold, group.device_ids.len());
     }
 
     Ok(())
@@ -139,6 +139,10 @@ async fn get_tasks(server: String, device_id: Option<Vec<u8>>) -> Result<(), Str
 }
 
 async fn request_group(server: String, name: String, device_ids: Vec<Vec<u8>>) -> Result<(), String> {
+    if device_ids.len() <= 1 {
+        return Err(String::from("Not enough parties to create a group"))
+    }
+
     let mut client = MpcClient::connect(server)
         .await
         .map_err(|_| String::from("Unable to connect to server"))?;

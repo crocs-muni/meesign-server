@@ -65,11 +65,13 @@ impl State {
             warn!("Invalid PDF name {} ({} B)", name, data.len());
             return None
         }
-        let group = self.groups.get(group).unwrap().clone();
-        let task: Box<dyn Task + Send + Sync + 'static> = match group.protocol() {
-            ProtocolType::GG18 => Box::new(GG18Sign::new(group, name.to_string(), data.to_vec())),
-        };
-        Some(self.add_task(task))
+
+        self.groups.get(group).cloned().map(|group| {
+            let task: Box<dyn Task + Send + Sync + 'static> = match group.protocol() {
+                ProtocolType::GG18 => Box::new(GG18Sign::new(group, name.to_string(), data.to_vec())),
+            };
+            self.add_task(task)
+        })
     }
 
     fn add_task(&mut self, task: Box<dyn Task + Send + Sync>) -> Uuid {
