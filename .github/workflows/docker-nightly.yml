@@ -1,0 +1,18 @@
+name: Nightly release
+
+on:
+  schedule:
+    # every midnight
+    - cron: '0 0 * * *'
+jobs:
+  build-n-release-docker-nightly:
+    name: Docker nightly
+    # Run only on the main repo, not forks
+    if: github.repository_owner == 'crocs-muni'
+    uses: ./.github/workflows/docker.yml
+    secrets: inherit
+    with:
+      dockerhub_username: crocs-muni
+      project_name: meesign
+      docker_tags: |
+        crocs-muni/meesign:nightly
