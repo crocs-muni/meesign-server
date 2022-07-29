@@ -1,6 +1,8 @@
 pub mod gg18;
 use prost::Message;
 use crate::proto::Gg18Message;
+use std::collections::HashMap;
+use crate::device::Device;
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum ProtocolType {
@@ -9,17 +11,23 @@ pub enum ProtocolType {
 
 struct Communicator {
     parties: usize,
+    devices: HashMap<Vec<u8>, Option<bool>>,
+    request: Vec<u8>,
     input: Vec<Vec<Option<Vec<u8>>>>,
     output: Vec<Vec<u8>>,
 }
 
 impl Communicator {
-    pub fn new(parties: usize) -> Self {
-        Communicator {
-            parties,
+    pub fn new(devices: &[Device], request: Vec<u8>) -> Self {
+        let mut communicator = Communicator {
+            parties: devices.len(),
+            devices: devices.iter().map(|x| (x.identifier().to_vec(), Some(false))).collect(),
+            request,
             input: Vec::new(),
             output: Vec::new(),
-        }
+        };
+        communicator.clear_input();
+        communicator
     }
 
     pub fn clear_input(&mut self) {
@@ -69,5 +77,20 @@ impl Communicator {
 
     pub fn get_message(&self, idx: usize) -> Option<&Vec<u8>> {
         self.output.get(idx)
+    }
+
+    pub fn agreement(&mut self, device: &[u8], agreement: bool) {
+        if !self.devices.contains_key(device) || self.devices[device].is_some() {
+            panic!();
+        }
+        self.devices.insert(device.to_vec(), Some(agreement));
+    }
+
+    pub fn agreement_count(&self) -> usize {
+        self.devices.iter().map(|x| if x.1.unwrap_or(false) { 1 } else { 0 }).sum()
+    }
+
+    pub fn rejection_count(&self) -> usize {
+        self.devices.iter().map(|x| if x.1.unwrap_or(true) { 0 } else { 1 }).sum()
     }
 }

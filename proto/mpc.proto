@@ -7,6 +7,7 @@ service MPC {
     rpc Group(GroupRequest) returns (Task);
     rpc GetTask(TaskRequest) returns (Task);
     rpc UpdateTask(TaskUpdate) returns (Resp);
+    rpc AllowTask(TaskAgreement) returns (Resp);
     rpc GetTasks(TasksRequest) returns (Tasks);
     rpc GetGroups(GroupsRequest) returns (Groups);
     rpc GetDevices(DevicesRequest) returns (Devices);
@@ -106,7 +107,9 @@ message Resp {
 }
 
 message TaskAgreement {
-    bool agreement = 1;
+    bytes task = 1;
+    bytes device = 2;
+    bool agreement = 3;
 };
 
 message LogRequest {

@@ -129,6 +129,11 @@ impl State {
         Ok(())
     }
 
+    pub fn task_agreement(&mut self, task: &Uuid, device: &[u8], agreement: bool) {
+        let task = self.tasks.get_mut(task).unwrap();
+        task.agreement(device, agreement);
+    }
+
     pub fn get_devices(&self) -> &HashMap<Vec<u8>, Device> {
         &self.devices
     }

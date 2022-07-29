@@ -167,6 +167,19 @@ impl Mpc for MPCService {
 
         Ok(Response::new(msg::Resp { message: "OK".into() }))
     }
+
+    async fn allow_task(&self, request: Request<msg::TaskAgreement>) -> Result<Response<msg::Resp>, Status> {
+        let request = request.into_inner();
+        let task_id = request.task;
+        let device_id = request.device;
+        let agreement = request.agreement;
+
+        let mut state = self.state.lock().await;
+        state.device_activated(&device_id);
+        state.task_agreement(&Uuid::from_slice(&task_id).unwrap(), &device_id, agreement);
+
+        Ok(Response::new(msg::Resp { message: "OK".into() }))
+    }
 }
 
 fn format_task(task_id: &Uuid, task: &Box<dyn Task + Send + Sync>, device_id: Option<&[u8]>) -> crate::proto::Task {

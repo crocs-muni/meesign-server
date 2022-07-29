@@ -37,4 +37,5 @@ pub trait Task {
     fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<(), String>;
     fn has_device(&self, device_id: &[u8]) -> bool;
     fn waiting_for(&self, device_id: &[u8]) -> bool;
+    fn agreement(&mut self, device_id: &[u8], agreement: bool);
 }

@@ -32,14 +32,14 @@ impl GG18Group {
         let mut devices = devices.to_vec();
         devices.sort_by_key(|x| x.identifier().to_vec());
 
-        let mut communicator = Communicator::new(devices.len());
-        communicator.clear_input();
         let message = GroupRequest {
             device_ids: devices.iter().map(|x| x.identifier().to_vec()).collect(),
             name: String::from(name),
             threshold: Some(threshold),
             protocol: Some(0)
         };
+
+        let mut communicator = Communicator::new(&devices, message.encode_to_vec());
         communicator.broadcast(message.encode_to_vec());
 
         GG18Group {
@@ -137,6 +137,10 @@ impl Task for GG18Group {
     }
 
     fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<(), String> {
+        if self.communicator.agreement_count() != self.devices.len() {
+           return Err("Not enough agreements to proceed with the protocol.".to_string())
+        }
+
         if !self.waiting_for(device_id) {
             return Err("Wasn't waiting for a message from this ID.".to_string())
         }
@@ -146,7 +150,6 @@ impl Task for GG18Group {
         match self.round {
             0 => {
                 let _data: TaskAgreement = Message::decode(data).map_err(|_| String::from("Expected TaskAgreement."))?;
-                // TODO handle disagreement
                 self.communicator.input[idx] = vec![Some(vec![]); self.communicator.parties - 1];
                 self.communicator.input[idx].insert(idx, None);
             },
@@ -181,6 +184,10 @@ impl Task for GG18Group {
             .map(|(a, _b)| a)
             .any(|x| x == device)
     }
+
+    fn agreement(&mut self, device_id: &[u8], agreement: bool) {
+        self.communicator.agreement(device_id, agreement);
+    }
 }
 
 pub struct GG18Sign {
@@ -196,24 +203,22 @@ pub struct GG18Sign {
 
 impl GG18Sign {
     pub fn new(group: Group, name: String, data: Vec<u8>) -> Self {
-        // TODO add communication round in which signing ids are identified; currently assumes t=n
-
-        let mut all_ids: Vec<Vec<u8>> = group.devices().keys().map(Vec::clone).collect();
-        all_ids.sort();
-        let signing_ids = all_ids.clone();
+        let mut devices: Vec<Device> = group.devices().values().map(Device::clone).collect();
+        devices.sort_by_key(|x| x.identifier().to_vec());
+        let signing_ids: Vec<Vec<u8>> = devices.iter().map(|x| x.identifier().to_vec()).collect();
 
         let mut indices : Vec<u32> = Vec::new();
         for i in 0..signing_ids.len() {
-            indices.push(all_ids.iter().position(|x| x == &signing_ids[i]).unwrap() as u32);
+            indices.push(devices.iter().position(|x| x.identifier() == &signing_ids[i]).unwrap() as u32);
         }
 
-        let mut communicator = Communicator::new(signing_ids.len());
-        communicator.clear_input();
         let message = SignRequest {
             group_id: group.identifier().to_vec(),
             name: name.clone(),
             data: data.clone(),
         };
+
+        let mut communicator = Communicator::new(&devices, message.encode_to_vec());
         communicator.broadcast(message.encode_to_vec());
 
         GG18Sign {
@@ -254,7 +259,7 @@ impl GG18Sign {
         self.pdfhelper = Some(pdfhelper);
         std::fs::remove_file("document.pdf").unwrap();
 
-        let indices = self.indices.clone();
+        let indices = self.indices.clone(); // TODO get from communicator
         self.communicator.send_all(|idx| (Gg18SignInit { indices: indices.clone(), index: idx as u32, hash: hash.clone() }).encode_to_vec());
         self.communicator.clear_input();
     }
@@ -319,6 +324,10 @@ impl Task for GG18Sign {
     }
 
     fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<(), String> {
+        if self.communicator.agreement_count() != self.devices.len() {
+            return Err("Not enough agreements to proceed with the protocol.".to_string())
+        }
+
         if !self.waiting_for(device_id) {
             return Err("Wasn't waiting for a message from this ID.".to_string())
         }
@@ -328,7 +337,6 @@ impl Task for GG18Sign {
         match self.round {
             0 => {
                 let _data: TaskAgreement = Message::decode(data).map_err(|_| String::from("Expected TaskAgreement."))?;
-                // TODO handle disagreement
                 self.communicator.input[idx] = vec![Some(vec![]); self.communicator.parties - 1];
                 self.communicator.input[idx].insert(idx, None);
             },
@@ -360,6 +368,10 @@ impl Task for GG18Sign {
             .filter(|(_a, b)| b.iter().all(|x| x.is_none()))
             .map(|(a, _b)| a.as_slice())
             .any(|x| x == device)
+    }
+
+    fn agreement(&mut self, device_id: &[u8], agreement: bool) {
+        self.communicator.agreement(device_id, agreement);
     }
 }
 
