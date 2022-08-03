@@ -134,8 +134,12 @@ impl Task for GG18Group {
         self.result.as_ref().map(|x| TaskResult::GroupEstablished(x.clone()))
     }
 
+    fn get_confirmations(&self) -> (usize, usize) {
+        (self.communicator.accept_count(), self.communicator.reject_count())
+    }
+
     fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<(), String> {
-        if self.communicator.agreement_count() != self.devices.len() {
+        if self.communicator.accept_count() != self.devices.len() {
            return Err("Not enough agreements to proceed with the protocol.".to_string())
         }
 
@@ -178,9 +182,9 @@ impl Task for GG18Group {
             .any(|x| x == device)
     }
 
-    fn agreement(&mut self, device_id: &[u8], agreement: bool) {
-        self.communicator.agreement(device_id, agreement);
-        if self.round == 0 && self.communicator.agreement_count() == self.devices.len() {
+    fn confirmation(&mut self, device_id: &[u8], agreement: bool) {
+        self.communicator.confirmation(device_id, agreement);
+        if self.round == 0 && self.communicator.accept_count() == self.devices.len() {
             self.next_round();
         }
     }
@@ -317,8 +321,12 @@ impl Task for GG18Sign {
         self.result.as_ref().map(|x| TaskResult::Signed(x.clone()))
     }
 
+    fn get_confirmations(&self) -> (usize, usize) {
+        (self.communicator.accept_count(), self.communicator.reject_count())
+    }
+
     fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<(), String> {
-        if self.communicator.agreement_count() != self.communicator.parties {
+        if self.communicator.accept_count() != self.communicator.parties {
             return Err("Not enough agreements to proceed with the protocol.".to_string())
         }
 
@@ -359,9 +367,9 @@ impl Task for GG18Sign {
             .any(|x| x == device)
     }
 
-    fn agreement(&mut self, device_id: &[u8], agreement: bool) {
-        self.communicator.agreement(device_id, agreement);
-        if self.round == 0 && self.communicator.agreement_count() >= self.indices.len() {
+    fn confirmation(&mut self, device_id: &[u8], agreement: bool) {
+        self.communicator.confirmation(device_id, agreement);
+        if self.round == 0 && self.communicator.accept_count() >= self.indices.len() {
             self.next_round();
         }
     }

@@ -7,7 +7,7 @@ service MPC {
     rpc Group(GroupRequest) returns (Task);
     rpc GetTask(TaskRequest) returns (Task);
     rpc UpdateTask(TaskUpdate) returns (Resp);
-    rpc AllowTask(TaskAgreement) returns (Resp);
+    rpc ConfirmTask(TaskConfirmation) returns (Resp);
     rpc GetTasks(TasksRequest) returns (Tasks);
     rpc GetGroups(GroupsRequest) returns (Groups);
     rpc GetDevices(DevicesRequest) returns (Devices);
@@ -77,7 +77,9 @@ message Task {
     }
     TaskState state = 3;
     uint32 round = 4;
-    optional bytes data = 5;
+    uint32 accept = 5; // Number of task accepts
+    uint32 reject = 6; // Number of task rejects
+    optional bytes data = 7; // If present, the task is waiting for recipient's action
 }
 
 message TaskUpdate {
@@ -106,10 +108,10 @@ message Resp {
     string message = 1;
 }
 
-message TaskAgreement {
+message TaskConfirmation {
     bytes task = 1;
     bytes device = 2;
-    bool agreement = 3;
+    bool accept = 3;
 };
 
 message LogRequest {

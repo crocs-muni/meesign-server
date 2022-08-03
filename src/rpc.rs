@@ -168,15 +168,15 @@ impl Mpc for MPCService {
         Ok(Response::new(msg::Resp { message: "OK".into() }))
     }
 
-    async fn allow_task(&self, request: Request<msg::TaskAgreement>) -> Result<Response<msg::Resp>, Status> {
+    async fn confirm_task(&self, request: Request<msg::TaskConfirmation>) -> Result<Response<msg::Resp>, Status> {
         let request = request.into_inner();
         let task_id = request.task;
         let device_id = request.device;
-        let agreement = request.agreement;
+        let accept = request.accept;
 
         let mut state = self.state.lock().await;
         state.device_activated(&device_id);
-        state.task_agreement(&Uuid::from_slice(&task_id).unwrap(), &device_id, agreement);
+        state.task_confirmation(&Uuid::from_slice(&task_id).unwrap(), &device_id, accept);
 
         Ok(Response::new(msg::Resp { message: "OK".into() }))
     }
@@ -192,6 +192,8 @@ fn format_task(task_id: &Uuid, task: &Box<dyn Task + Send + Sync>, device_id: Op
         TaskStatus::Failed(data) => (msg::task::TaskState::Failed, u16::MAX, Some(data.as_bytes().to_vec())),
     };
 
+    let (accept, reject) = task.get_confirmations();
+
     msg::Task {
         id: task_id.as_bytes().to_vec(),
         r#type: match task.get_type() {
@@ -199,8 +201,10 @@ fn format_task(task_id: &Uuid, task: &Box<dyn Task + Send + Sync>, device_id: Op
             TaskType::Sign => msg::task::TaskType::Sign as i32,
         },
         state: task_status as i32,
-        data,
         round: round.into(),
+        accept: accept as u32,
+        reject: reject as u32,
+        data,
     }
 }
 

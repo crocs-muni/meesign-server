@@ -112,10 +112,6 @@ impl State {
         self.tasks.get(task)
     }
 
-    pub fn get_work(&self, task: &Uuid, device: &[u8]) -> Option<Vec<u8>> {
-        self.tasks.get(task).unwrap().get_work(Some(device))
-    }
-
     pub fn update_task(&mut self, task: &Uuid, device: &[u8], data: &[u8]) -> Result<(), String> {
         let task = self.tasks.get_mut(task).unwrap();
         let previous_status = task.get_status();
@@ -129,9 +125,9 @@ impl State {
         Ok(())
     }
 
-    pub fn task_agreement(&mut self, task: &Uuid, device: &[u8], agreement: bool) {
+    pub fn task_confirmation(&mut self, task: &Uuid, device: &[u8], accept: bool) {
         let task = self.tasks.get_mut(task).unwrap();
-        task.agreement(device, agreement);
+        task.confirmation(device, accept);
     }
 
     pub fn get_devices(&self) -> &HashMap<Vec<u8>, Device> {

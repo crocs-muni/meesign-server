@@ -79,18 +79,18 @@ impl Communicator {
         self.output.get(idx)
     }
 
-    pub fn agreement(&mut self, device: &[u8], agreement: bool) {
+    pub fn confirmation(&mut self, device: &[u8], agreement: bool) {
         if !self.devices.contains_key(device) || self.devices[device].is_some() {
             panic!();
         }
         self.devices.insert(device.to_vec(), Some(agreement));
     }
 
-    pub fn agreement_count(&self) -> usize {
+    pub fn accept_count(&self) -> usize {
         self.devices.iter().map(|x| if x.1.unwrap_or(false) { 1 } else { 0 }).sum()
     }
 
-    pub fn rejection_count(&self) -> usize {
+    pub fn reject_count(&self) -> usize {
         self.devices.iter().map(|x| if x.1.unwrap_or(true) { 0 } else { 1 }).sum()
     }
 }
