@@ -30,6 +30,10 @@ impl Group {
         self.threshold
     }
 
+    pub fn reject_threshold(&self) -> u32 {
+        self.devices.len() as u32 - self.threshold + 1 // rejects >= threshold_reject => fail
+    }
+
     pub fn devices(&self) -> &HashMap<Vec<u8>, Device> {
         &self.devices
     }
