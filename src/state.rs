@@ -83,7 +83,7 @@ impl State {
     pub fn get_device_tasks(&self, device: &[u8]) -> Vec<(Uuid, &Box<dyn Task + Send + Sync>)> {
         let mut tasks = Vec::new();
         for (uuid, task) in self.tasks.iter() {
-            if task.waiting_for(device) {
+            if task.has_device(device) {
                 tasks.push((uuid.clone(), task));
             }
         }
