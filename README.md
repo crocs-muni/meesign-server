@@ -38,7 +38,7 @@ Server-side implementation for MeeSign system.
 
 2. Run in a container
    ```bash
-   docker run --detach --publish 1337:1337 --volume `pwd`/server-key.pem:/meesign/server-key.pem --volume `pwd`/server-cert.pem:/meesign/server-cert.pem crocs-muni/meesign:latest
+   docker run --detach --publish 1337:1337 --volume `pwd`/server-key.pem:/meesign/server-key.pem --volume `pwd`/server-cert.pem:/meesign/server-cert.pem crocsmuni/meesign:latest
    ```
    There are 2 types of available releases:
    1. **latest** - this is the latest stable version, you can optionally specify a specific stable version

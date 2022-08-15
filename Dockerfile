@@ -31,7 +31,7 @@ LABEL org.opencontainers.image.created=${BUILD_DATE} \
       org.opencontainers.image.title="meesign-server" \
       org.opencontainers.image.description="Meesign server for threshold ECDSA signatures." \
       org.opencontainers.image.vendor="CRoCS, FI MUNI" \
-      org.label-schema.docker.cmd="docker run --detach --publish 1337:1337 --volume `pwd`/server-key.pem:/meesign/server-key.pem --volume `pwd`/server-cert.pem:/meesign/server-cert.pem crocs-muni/meesign-server:latest"
+      org.label-schema.docker.cmd="docker run --detach --publish 1337:1337 --volume `pwd`/server-key.pem:/meesign/server-key.pem --volume `pwd`/server-cert.pem:/meesign/server-cert.pem crocsmuni/meesign-server:latest"
 
 EXPOSE ${SERVER_PORT}
 # running the binary from a specific directory as meesign helper requires 
