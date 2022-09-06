@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 
-use crate::task::{Task, TaskStatus, TaskResult};
-use crate::group::Group;
-use crate::device::Device;
+use log::{error, warn};
 use uuid::Uuid;
-use crate::protocols::ProtocolType;
+
+use crate::device::Device;
+use crate::group::Group;
 use crate::protocols::gg18::{GG18Group, GG18Sign};
-use log::{warn, error};
+use crate::protocols::ProtocolType;
+use crate::task::{Task, TaskResult, TaskStatus};
 
 pub struct State {
     devices: HashMap<Vec<u8>, Device>,
@@ -24,51 +25,71 @@ impl State {
     }
 
     pub fn add_device(&mut self, identifier: &[u8], name: &str) -> bool {
-        if name.chars().count() > 64 || name.chars().any(|x| x.is_ascii_punctuation() || x.is_control()) {
+        if name.chars().count() > 64
+            || name
+                .chars()
+                .any(|x| x.is_ascii_punctuation() || x.is_control())
+        {
             warn!("Invalid Device name {}", name);
-            return false
+            return false;
         }
 
         let device = Device::new(identifier.to_vec(), name.to_owned());
         // TODO improve when feature map_try_insert gets stabilized
         if self.devices.contains_key(identifier) {
-            warn!("Device identifier already registered {}", hex::encode(identifier));
-            return false
+            warn!(
+                "Device identifier already registered {}",
+                hex::encode(identifier)
+            );
+            return false;
         }
         self.devices.insert(identifier.to_vec(), device);
         true
     }
 
-    pub fn add_group_task(&mut self, name: &str, devices: &[Vec<u8>], threshold: u32, protocol: ProtocolType) -> Option<Uuid> {
-        if name.chars().count() > 64 || name.chars().any(|x| x.is_ascii_punctuation() || x.is_control()) {
+    pub fn add_group_task(
+        &mut self,
+        name: &str,
+        devices: &[Vec<u8>],
+        threshold: u32,
+        protocol: ProtocolType,
+    ) -> Option<Uuid> {
+        if name.chars().count() > 64
+            || name
+                .chars()
+                .any(|x| x.is_ascii_punctuation() || x.is_control())
+        {
             warn!("Invalid Group name {}", name);
-            return None
+            return None;
         }
         let mut device_list = Vec::new();
         for device in devices {
             if !self.devices.contains_key(device.as_slice()) {
                 warn!("Unknown Device ID {}", hex::encode(device));
-                return None
+                return None;
             }
             device_list.push(self.devices.get(device.as_slice()).unwrap().clone());
         }
 
         let task: Box<dyn Task + Send + Sync + 'static> = match protocol {
-            ProtocolType::GG18 => Box::new(GG18Group::new(name, &device_list, threshold))
+            ProtocolType::GG18 => Box::new(GG18Group::new(name, &device_list, threshold)),
         };
 
         Some(self.add_task(task))
     }
 
     pub fn add_sign_task(&mut self, group: &[u8], name: &str, data: &[u8]) -> Option<Uuid> {
-        if data.len() > 8 * 1024 * 1024 || name.len() > 256 || name.chars().any(|x| x.is_control()) {
+        if data.len() > 8 * 1024 * 1024 || name.len() > 256 || name.chars().any(|x| x.is_control())
+        {
             warn!("Invalid PDF name {} ({} B)", name, data.len());
-            return None
+            return None;
         }
 
         self.groups.get(group).cloned().map(|group| {
             let task: Box<dyn Task + Send + Sync + 'static> = match group.protocol() {
-                ProtocolType::GG18 => Box::new(GG18Sign::new(group, name.to_string(), data.to_vec())),
+                ProtocolType::GG18 => {
+                    Box::new(GG18Sign::new(group, name.to_string(), data.to_vec()))
+                }
             };
             self.add_task(task)
         })

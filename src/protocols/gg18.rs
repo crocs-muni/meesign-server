@@ -1,13 +1,15 @@
-use crate::task::{Task, TaskStatus, TaskType};
-use crate::proto::*;
+use std::fs::File;
+use std::io::{Read, Write};
+use std::process::{Child, Command, Stdio};
+
 use prost::Message;
+
+use crate::device::Device;
 use crate::group::Group;
+use crate::proto::*;
 use crate::protocols::{Communicator, ProtocolType};
 use crate::task::TaskResult;
-use std::process::{Command, Stdio, Child};
-use std::io::{Read, Write};
-use std::fs::File;
-use crate::device::Device;
+use crate::task::{Task, TaskStatus, TaskType};
 
 const LAST_ROUND_GROUP: u16 = 6;
 const LAST_ROUND_SIGN: u16 = 10;
@@ -37,10 +39,11 @@ impl GG18Group {
             device_ids: devices.iter().map(|x| x.identifier().to_vec()).collect(),
             name: String::from(name),
             threshold: Some(threshold),
-            protocol: Some(0)
+            protocol: Some(0),
         };
 
-        let mut communicator = Communicator::new(&devices, devices.len() as u32, message.encode_to_vec());
+        let mut communicator =
+            Communicator::new(&devices, devices.len() as u32, message.encode_to_vec());
         communicator.broadcast(message.encode_to_vec());
 
         GG18Group {
@@ -55,7 +58,9 @@ impl GG18Group {
     }
 
     fn id_to_index(&self, device_id: &[u8]) -> Option<usize> {
-        self.devices.iter().position(|x| x.identifier() == device_id)
+        self.devices
+            .iter()
+            .position(|x| x.identifier() == device_id)
     }
 
     fn start_task(&mut self) {
@@ -63,7 +68,14 @@ impl GG18Group {
 
         let parties = self.devices.len() as u32;
         let threshold = self.threshold;
-        self.communicator.send_all(|idx| (Gg18KeyGenInit { index: idx as u32, parties, threshold }).encode_to_vec());
+        self.communicator.send_all(|idx| {
+            (Gg18KeyGenInit {
+                index: idx as u32,
+                parties,
+                threshold,
+            })
+            .encode_to_vec()
+        });
         self.communicator.clear_input();
     }
 
@@ -79,7 +91,16 @@ impl GG18Group {
 
         let identifier = self.communicator.input[0][1].clone().unwrap();
         let group_name = if self.devices.len() <= 5 {
-            format!("{} ({})", &self.name, &self.devices.iter().map(|x| x.name()).collect::<Vec<_>>().join(" & "))
+            format!(
+                "{} ({})",
+                &self.name,
+                &self
+                    .devices
+                    .iter()
+                    .map(|x| x.name())
+                    .collect::<Vec<_>>()
+                    .join(" & ")
+            )
         } else {
             format!("{} ({} devices)", &self.name, self.devices.len())
         };
@@ -91,7 +112,7 @@ impl GG18Group {
             self.devices.iter().map(Device::clone).collect(),
             self.threshold,
             ProtocolType::GG18,
-            certificate
+            certificate,
         ));
 
         self.communicator.clear_input();
@@ -101,10 +122,10 @@ impl GG18Group {
         assert!(self.round <= LAST_ROUND_GROUP);
 
         match self.round {
-            0 => self.start_task(), // Created -> Running
+            0 => self.start_task(),                                // Created -> Running
             1..=LAST_ROUND_GROUP_MINUS_ONE => self.advance_task(), // Running -> Running
-            LAST_ROUND_GROUP => self.finalize_task(), // Running -> Finished
-            _ => unreachable!()
+            LAST_ROUND_GROUP => self.finalize_task(),              // Running -> Finished
+            _ => unreachable!(),
         }
         self.round += 1;
     }
@@ -119,8 +140,13 @@ impl Task for GG18Group {
         match self.round {
             0 => TaskStatus::Created,
             1..=LAST_ROUND_GROUP => TaskStatus::Running(self.round),
-            _ => self.result.as_ref().map(|_| TaskStatus::Finished)
-                .unwrap_or(TaskStatus::Failed(String::from("The group was not established."))), // TODO Is it reachable?
+            _ => self
+                .result
+                .as_ref()
+                .map(|_| TaskStatus::Finished)
+                .unwrap_or(TaskStatus::Failed(String::from(
+                    "The group was not established.",
+                ))), // TODO Is it reachable?
         }
     }
 
@@ -130,45 +156,63 @@ impl Task for GG18Group {
 
     fn get_work(&self, device_id: Option<&[u8]>) -> Option<Vec<u8>> {
         if device_id.is_none() || !self.waiting_for(device_id.unwrap()) {
-            return None
+            return None;
         }
 
-        self.id_to_index(device_id.unwrap()).map(|idx| self.communicator.get_message(idx).unwrap().clone())
+        self.id_to_index(device_id.unwrap())
+            .map(|idx| self.communicator.get_message(idx).unwrap().clone())
     }
 
     fn get_result(&self) -> Option<TaskResult> {
-        self.result.as_ref().map(|x| TaskResult::GroupEstablished(x.clone()))
+        self.result
+            .as_ref()
+            .map(|x| TaskResult::GroupEstablished(x.clone()))
     }
 
     fn get_confirmations(&self) -> (u32, u32) {
-        (self.communicator.accept_count(), self.communicator.reject_count())
+        (
+            self.communicator.accept_count(),
+            self.communicator.reject_count(),
+        )
     }
 
     fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<(), String> {
         if self.communicator.accept_count() != self.devices.len() as u32 {
-           return Err("Not enough agreements to proceed with the protocol.".to_string())
+            return Err("Not enough agreements to proceed with the protocol.".to_string());
         }
 
         if !self.waiting_for(device_id) {
-            return Err("Wasn't waiting for a message from this ID.".to_string())
+            return Err("Wasn't waiting for a message from this ID.".to_string());
         }
 
-        let idx = self.id_to_index(device_id).ok_or("Device ID not found.".to_string())?;
+        let idx = self
+            .id_to_index(device_id)
+            .ok_or("Device ID not found.".to_string())?;
 
         match self.round {
             1..=LAST_ROUND_GROUP => {
-                let data: Gg18Message = Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
+                let data: Gg18Message =
+                    Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
                 self.communicator.input[idx] = data.message.into_iter().map(Some).collect();
                 self.communicator.input[idx].insert(idx, None);
-            },
+            }
             _ => {
-                let _data: TaskAcknowledgement = Message::decode(data).map_err(|_| String::from("Expected TaskAcknowledgement."))?;
-                self.communicator.input[idx] = vec![Some(vec![]); (self.communicator.threshold - 1) as usize];
+                let _data: TaskAcknowledgement = Message::decode(data)
+                    .map_err(|_| String::from("Expected TaskAcknowledgement."))?;
+                self.communicator.input[idx] =
+                    vec![Some(vec![]); (self.communicator.threshold - 1) as usize];
                 self.communicator.input[idx].insert(idx, None);
             }
         }
 
-        if self.communicator.round_received(&self.devices.iter().map(|x| x.identifier().to_vec()).collect::<Vec<_>>()) && self.round <= LAST_ROUND_GROUP {
+        if self.communicator.round_received(
+            &self
+                .devices
+                .iter()
+                .map(|x| x.identifier().to_vec())
+                .collect::<Vec<_>>(),
+        ) && self.round <= LAST_ROUND_GROUP
+        {
             self.next_round();
         }
 
@@ -176,7 +220,11 @@ impl Task for GG18Group {
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
-        return self.devices.iter().map(Device::identifier).any(|x| x == device_id)
+        return self
+            .devices
+            .iter()
+            .map(Device::identifier)
+            .any(|x| x == device_id);
     }
 
     fn waiting_for(&self, device: &[u8]) -> bool {
@@ -184,7 +232,8 @@ impl Task for GG18Group {
             return !self.communicator.device_confirmed(device);
         }
 
-        self.devices.iter()
+        self.devices
+            .iter()
             .map(Device::identifier)
             .zip((&self.communicator.input).into_iter())
             .filter(|(_a, b)| b.iter().all(|x| x.is_none()))
@@ -227,7 +276,8 @@ impl GG18Sign {
             data: data.clone(),
         };
 
-        let mut communicator = Communicator::new(&devices, group.threshold(), message.encode_to_vec());
+        let mut communicator =
+            Communicator::new(&devices, group.threshold(), message.encode_to_vec());
         communicator.broadcast(message.encode_to_vec());
 
         GG18Sign {
@@ -244,7 +294,9 @@ impl GG18Sign {
     }
 
     fn id_to_index(&self, device_id: &[u8]) -> Option<usize> {
-        self.participant_ids.as_ref().and_then(|x| x.iter().position(|x| x == device_id))
+        self.participant_ids
+            .as_ref()
+            .and_then(|x| x.iter().position(|x| x == device_id))
     }
 
     fn start_task(&mut self) {
@@ -264,7 +316,6 @@ impl GG18Sign {
             .spawn()
             .unwrap();
 
-
         let hash = request_hash(&mut pdfhelper, self.group.certificate());
         self.pdfhelper = Some(pdfhelper);
         std::fs::remove_file("document.pdf").unwrap();
@@ -272,9 +323,21 @@ impl GG18Sign {
         self.participant_ids = Some(self.communicator.get_participants());
         let mut indices: Vec<u32> = Vec::new();
         for i in 0..self.participant_ids.as_ref().unwrap().len() {
-            indices.push(self.devices.iter().position(|x| x.identifier() == &self.participant_ids.as_ref().unwrap()[i]).unwrap() as u32);
+            indices.push(
+                self.devices
+                    .iter()
+                    .position(|x| x.identifier() == &self.participant_ids.as_ref().unwrap()[i])
+                    .unwrap() as u32,
+            );
         }
-        self.communicator.send_all(|idx| (Gg18SignInit { indices: indices.clone(), index: idx as u32, hash: hash.clone() }).encode_to_vec());
+        self.communicator.send_all(|idx| {
+            (Gg18SignInit {
+                indices: indices.clone(),
+                index: idx as u32,
+                hash: hash.clone(),
+            })
+            .encode_to_vec()
+        });
         self.communicator.clear_input();
     }
 
@@ -300,10 +363,10 @@ impl GG18Sign {
         assert!(self.round <= LAST_ROUND_SIGN);
 
         match self.round {
-            0 => self.start_task(), // Created -> Running
+            0 => self.start_task(),                               // Created -> Running
             1..=LAST_ROUND_SIGN_MINUS_ONE => self.advance_task(), // Running -> Running
-            LAST_ROUND_SIGN => self.finalize_task(), // Running -> Finished
-            _ => unreachable!()
+            LAST_ROUND_SIGN => self.finalize_task(),              // Running -> Finished
+            _ => unreachable!(),
         }
         self.round += 1;
     }
@@ -318,8 +381,13 @@ impl Task for GG18Sign {
         match self.round {
             0 => TaskStatus::Created,
             1..=LAST_ROUND_SIGN => TaskStatus::Running(self.round),
-            _ => self.result.as_ref().map(|_| TaskStatus::Finished)
-                .unwrap_or(TaskStatus::Failed(String::from("Server did not receive a signature."))), // TODO Is it reachable?
+            _ => self
+                .result
+                .as_ref()
+                .map(|_| TaskStatus::Finished)
+                .unwrap_or(TaskStatus::Failed(String::from(
+                    "Server did not receive a signature.",
+                ))), // TODO Is it reachable?
         }
     }
 
@@ -329,10 +397,11 @@ impl Task for GG18Sign {
 
     fn get_work(&self, device_id: Option<&[u8]>) -> Option<Vec<u8>> {
         if device_id.is_none() || !self.waiting_for(device_id.unwrap()) {
-            return None
+            return None;
         }
 
-        self.id_to_index(device_id.unwrap()).map(|idx| self.communicator.get_message(idx).unwrap().clone())
+        self.id_to_index(device_id.unwrap())
+            .map(|idx| self.communicator.get_message(idx).unwrap().clone())
     }
 
     fn get_result(&self) -> Option<TaskResult> {
@@ -340,41 +409,59 @@ impl Task for GG18Sign {
     }
 
     fn get_confirmations(&self) -> (u32, u32) {
-        (self.communicator.accept_count(), self.communicator.reject_count())
+        (
+            self.communicator.accept_count(),
+            self.communicator.reject_count(),
+        )
     }
 
     fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<(), String> {
         if self.communicator.accept_count() != self.communicator.threshold as u32 {
-            return Err("Not enough agreements to proceed with the protocol.".to_string())
+            return Err("Not enough agreements to proceed with the protocol.".to_string());
         }
 
         if !self.waiting_for(device_id) {
-            return Err("Wasn't waiting for a message from this ID.".to_string())
+            return Err("Wasn't waiting for a message from this ID.".to_string());
         }
 
-        let idx = self.id_to_index(device_id).ok_or("Device ID not found.".to_string())?;
+        let idx = self
+            .id_to_index(device_id)
+            .ok_or("Device ID not found.".to_string())?;
 
         match self.round {
             1..=LAST_ROUND_SIGN => {
-                let data: Gg18Message = Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
+                let data: Gg18Message =
+                    Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
                 self.communicator.input[idx] = data.message.into_iter().map(Some).collect();
                 self.communicator.input[idx].insert(idx, None);
-            },
+            }
             _ => {
-                let _data: TaskAcknowledgement = Message::decode(data).map_err(|_| String::from("Expected TaskAcknowledgement."))?;
-                self.communicator.input[idx] = vec![Some(vec![]); (self.communicator.threshold - 1) as usize];
+                let _data: TaskAcknowledgement = Message::decode(data)
+                    .map_err(|_| String::from("Expected TaskAcknowledgement."))?;
+                self.communicator.input[idx] =
+                    vec![Some(vec![]); (self.communicator.threshold - 1) as usize];
                 self.communicator.input[idx].insert(idx, None);
-            },
+            }
         }
 
-        if self.participant_ids.is_some() && self.communicator.round_received(&self.participant_ids.as_ref().unwrap()) && self.round <= LAST_ROUND_SIGN {
+        if self.participant_ids.is_some()
+            && self
+                .communicator
+                .round_received(&self.participant_ids.as_ref().unwrap())
+            && self.round <= LAST_ROUND_SIGN
+        {
             self.next_round();
         }
         Ok(())
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
-        return self.participant_ids.is_some() && self.participant_ids.as_ref().unwrap().contains(&device_id.to_vec())
+        return self.participant_ids.is_some()
+            && self
+                .participant_ids
+                .as_ref()
+                .unwrap()
+                .contains(&device_id.to_vec());
     }
 
     fn waiting_for(&self, device: &[u8]) -> bool {
@@ -382,7 +469,10 @@ impl Task for GG18Sign {
             return !self.communicator.device_confirmed(device);
         }
 
-        self.participant_ids.as_ref().unwrap().iter()
+        self.participant_ids
+            .as_ref()
+            .unwrap()
+            .iter()
             .zip((&self.communicator.input).into_iter())
             .filter(|(_a, b)| b.iter().all(|x| x.is_none()))
             .map(|(a, _b)| a.as_slice())
@@ -414,7 +504,12 @@ fn issue_certificate(name: &str, public_key: &[u8]) -> Vec<u8> {
         .unwrap();
 
     let mut result = Vec::new();
-    process.stdout.as_mut().unwrap().read_to_end(&mut result).unwrap();
+    process
+        .stdout
+        .as_mut()
+        .unwrap()
+        .read_to_end(&mut result)
+        .unwrap();
     result
 }
 

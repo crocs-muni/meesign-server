@@ -1,8 +1,11 @@
-pub mod gg18;
-use prost::Message;
-use crate::proto::Gg18Message;
 use std::collections::HashMap;
+
+use prost::Message;
+
 use crate::device::Device;
+use crate::proto::Gg18Message;
+
+pub mod gg18;
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum ProtocolType {
@@ -21,7 +24,10 @@ impl Communicator {
     pub fn new(devices: &[Device], threshold: u32, request: Vec<u8>) -> Self {
         let mut communicator = Communicator {
             threshold,
-            devices: devices.iter().map(|x| (x.identifier().to_vec(), Some(false))).collect(),
+            devices: devices
+                .iter()
+                .map(|x| (x.identifier().to_vec(), Some(false)))
+                .collect(),
             request,
             input: Vec::new(),
             output: Vec::new(),
@@ -60,7 +66,10 @@ impl Communicator {
         }
     }
 
-    pub fn send_all<F>(&mut self, f: F) where F: Fn(u32) -> Vec<u8> {
+    pub fn send_all<F>(&mut self, f: F)
+    where
+        F: Fn(u32) -> Vec<u8>,
+    {
         self.output.clear();
 
         for i in 0..self.threshold {
@@ -72,7 +81,8 @@ impl Communicator {
         ids.into_iter()
             .zip((&self.input).into_iter())
             .filter(|(_a, b)| b.iter().all(|x| x.is_none()))
-            .count() == 0
+            .count()
+            == 0
     }
 
     pub fn get_message(&self, idx: usize) -> Option<&Vec<u8>> {
@@ -81,7 +91,8 @@ impl Communicator {
 
     pub fn get_participants(&mut self) -> Vec<Vec<u8>> {
         assert!(self.accept_count() >= self.threshold);
-        self.devices.iter()
+        self.devices
+            .iter()
             .filter(|(_device, confirmation)| **confirmation == Some(true))
             .take(self.threshold as usize)
             .map(|(device, _confirmation)| device.clone())
@@ -96,11 +107,17 @@ impl Communicator {
     }
 
     pub fn accept_count(&self) -> u32 {
-        self.devices.iter().map(|x| if x.1.unwrap_or(false) { 1 } else { 0 }).sum()
+        self.devices
+            .iter()
+            .map(|x| if x.1.unwrap_or(false) { 1 } else { 0 })
+            .sum()
     }
 
     pub fn reject_count(&self) -> u32 {
-        self.devices.iter().map(|x| if x.1.unwrap_or(true) { 0 } else { 1 }).sum()
+        self.devices
+            .iter()
+            .map(|x| if x.1.unwrap_or(true) { 0 } else { 1 })
+            .sum()
     }
 
     pub fn device_confirmed(&self, device: &[u8]) -> bool {

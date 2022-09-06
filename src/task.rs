@@ -3,7 +3,8 @@ use crate::group::Group;
 #[derive(Clone, PartialEq)]
 pub enum TaskStatus {
     Created,
-    Running(u16), // round
+    Running(u16),
+    // round
     Finished,
     Failed(String),
 }
@@ -27,7 +28,6 @@ pub enum TaskType {
     Group,
     Sign,
 }
-
 
 pub trait Task {
     fn get_status(&self) -> TaskStatus;
