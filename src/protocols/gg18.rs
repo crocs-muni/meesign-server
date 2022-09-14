@@ -90,21 +90,7 @@ impl GG18Group {
         assert_eq!(self.round, LAST_ROUND_GROUP);
 
         let identifier = self.communicator.input[0][1].clone().unwrap();
-        let group_name = if self.devices.len() <= 5 {
-            format!(
-                "{} ({})",
-                &self.name,
-                &self
-                    .devices
-                    .iter()
-                    .map(|x| x.name())
-                    .collect::<Vec<_>>()
-                    .join(" & ")
-            )
-        } else {
-            format!("{} ({} devices)", &self.name, self.devices.len())
-        };
-        let certificate = issue_certificate(&group_name, &identifier);
+        let certificate = issue_certificate(&self.name, &identifier);
 
         self.result = Some(Group::new(
             identifier,
