@@ -1,3 +1,6 @@
+pub(crate) mod group;
+pub(crate) mod sign_pdf;
+
 use crate::group::Group;
 
 #[derive(Clone, PartialEq)]

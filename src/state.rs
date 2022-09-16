@@ -5,8 +5,9 @@ use uuid::Uuid;
 
 use crate::device::Device;
 use crate::group::Group;
-use crate::proto::{KeyType, Protocol};
-use crate::protocols::gg18::{GG18Group, GG18Sign};
+use crate::proto::{KeyType, ProtocolType};
+use crate::tasks::group::GroupTask;
+use crate::tasks::sign_pdf::SignPDFTask;
 use crate::tasks::{Task, TaskResult, TaskStatus};
 
 pub struct State {
@@ -52,7 +53,7 @@ impl State {
         name: &str,
         devices: &[Vec<u8>],
         threshold: u32,
-        protocol: Protocol,
+        protocol: ProtocolType,
         key_type: KeyType,
     ) -> Option<Uuid> {
         if name.chars().count() > 64
@@ -81,7 +82,7 @@ impl State {
         }
 
         let task: Box<dyn Task + Send + Sync + 'static> = match protocol {
-            Protocol::Gg18 => Box::new(GG18Group::new(name, &device_list, threshold)),
+            ProtocolType::Gg18 => Box::new(GroupTask::new(name, &device_list, threshold)),
         };
 
         Some(self.add_task(task))
@@ -96,7 +97,9 @@ impl State {
 
         self.groups.get(group).cloned().map(|group| {
             let task: Box<dyn Task + Send + Sync + 'static> = match group.protocol() {
-                Protocol::Gg18 => Box::new(GG18Sign::new(group, name.to_string(), data.to_vec())),
+                ProtocolType::Gg18 => {
+                    Box::new(SignPDFTask::new(group, name.to_string(), data.to_vec()))
+                }
             };
             self.add_task(task)
         })

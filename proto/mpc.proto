@@ -14,7 +14,7 @@ service MPC {
   rpc Log(LogRequest) returns (Resp);
 }
 
-enum Protocol {
+enum ProtocolType {
   GG18 = 0;
 }
 
@@ -32,7 +32,7 @@ message GroupRequest {
   string name = 1;
   repeated bytes device_ids = 2;
   uint32 threshold = 3;
-  Protocol protocol = 4;
+  ProtocolType protocol = 4;
   KeyType key_type = 5;
 }
 
@@ -40,7 +40,7 @@ message Group {
   bytes identifier = 1;
   string name = 2;
   uint32 threshold = 3;
-  Protocol protocol = 4;
+  ProtocolType protocol = 4;
   KeyType key_type = 5;
   repeated bytes device_ids = 6;
 }

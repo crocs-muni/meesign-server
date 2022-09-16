@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::proto as msg;
 use crate::proto::mpc_server::{Mpc, MpcServer};
-use crate::proto::{KeyType, Protocol};
+use crate::proto::{KeyType, ProtocolType};
 use crate::state::State;
 use crate::tasks::{Task, TaskStatus, TaskType};
 
@@ -170,13 +170,13 @@ impl Mpc for MPCService {
             state
                 .get_device_groups(&device_id)
                 .iter()
-                .map(|group| msg::Group::from(group))
+                .map(|group| group.into())
                 .collect()
         } else {
             state
                 .get_groups()
                 .values()
-                .map(|group| msg::Group::from(group))
+                .map(|group| group.into())
                 .collect()
         };
 
@@ -191,7 +191,7 @@ impl Mpc for MPCService {
         let name = request.name;
         let device_ids = request.device_ids;
         let threshold = request.threshold;
-        let protocol = Protocol::from_i32(request.protocol).unwrap();
+        let protocol = ProtocolType::from_i32(request.protocol).unwrap();
         let key_type = KeyType::from_i32(request.key_type).unwrap();
 
         info!(

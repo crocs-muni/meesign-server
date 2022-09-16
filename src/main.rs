@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 use crate::proto::mpc_client::MpcClient;
 use crate::state::State;
 
+mod communicator;
 mod device;
 mod group;
 mod protocols;
@@ -180,7 +181,7 @@ async fn request_group(
         name,
         device_ids,
         threshold: device_count as u32,
-        protocol: crate::proto::Protocol::Gg18 as i32,
+        protocol: crate::proto::ProtocolType::Gg18 as i32,
         key_type: crate::proto::KeyType::SignPdf as i32,
     });
 
