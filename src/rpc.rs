@@ -6,9 +6,9 @@ use uuid::Uuid;
 
 use crate::proto as msg;
 use crate::proto::mpc_server::{Mpc, MpcServer};
-use crate::protocols::ProtocolType;
+use crate::proto::{KeyType, Protocol};
 use crate::state::State;
-use crate::task::{Task, TaskStatus, TaskType};
+use crate::tasks::{Task, TaskStatus, TaskType};
 
 pub struct MPCService {
     state: Mutex<State>,
@@ -190,11 +190,10 @@ impl Mpc for MPCService {
         let request = request.into_inner();
         let name = request.name;
         let device_ids = request.device_ids;
-        let threshold = request.threshold.unwrap_or(device_ids.len() as u32);
-        let protocol = match request.protocol.unwrap_or(0) {
-            0 => ProtocolType::GG18,
-            _ => unreachable!(),
-        };
+        let threshold = request.threshold;
+        let protocol = Protocol::from_i32(request.protocol).unwrap();
+        let key_type = KeyType::from_i32(request.key_type).unwrap();
+
         info!(
             "GroupRequest name={:?} device_ids={:?} threshold={}",
             &name,
@@ -203,7 +202,9 @@ impl Mpc for MPCService {
         );
 
         let mut state = self.state.lock().await;
-        if let Some(task_id) = state.add_group_task(&name, &device_ids, threshold, protocol) {
+        if let Some(task_id) =
+            state.add_group_task(&name, &device_ids, threshold, protocol, key_type)
+        {
             let task = state.get_task(&task_id).unwrap();
             Ok(Response::new(format_task(&task_id, task, None)))
         } else {

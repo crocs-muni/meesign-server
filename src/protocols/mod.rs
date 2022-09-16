@@ -3,13 +3,17 @@ use std::collections::HashMap;
 use prost::Message;
 
 use crate::device::Device;
-use crate::proto::Gg18Message;
+use crate::proto::{Gg18Message, KeyType, Protocol};
 
 pub mod gg18;
 
-#[derive(Copy, Clone, PartialEq, Eq)]
-pub enum ProtocolType {
-    GG18,
+impl Protocol {
+    pub fn check_key_type(self, key_type: KeyType) -> bool {
+        match (key_type, self) {
+            (KeyType::SignPdf, Protocol::Gg18) => true,
+            (KeyType::SignDigest, _) => true,
+        }
+    }
 }
 
 struct Communicator {

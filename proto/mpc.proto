@@ -18,6 +18,11 @@ enum Protocol {
   GG18 = 0;
 }
 
+enum KeyType {
+  SignPDF = 0;
+  SignDigest = 1;
+}
+
 message RegistrationRequest {
   bytes identifier = 1;
   string name = 2;
@@ -26,15 +31,18 @@ message RegistrationRequest {
 message GroupRequest {
   string name = 1;
   repeated bytes device_ids = 2;
-  optional uint32 threshold = 3;
-  optional Protocol protocol = 4;
+  uint32 threshold = 3;
+  Protocol protocol = 4;
+  KeyType key_type = 5;
 }
 
 message Group {
   bytes identifier = 1;
   string name = 2;
   uint32 threshold = 3;
-  repeated bytes device_ids = 4;
+  Protocol protocol = 4;
+  KeyType key_type = 5;
+  repeated bytes device_ids = 6;
 }
 
 message DevicesRequest {

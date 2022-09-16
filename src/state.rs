@@ -5,9 +5,9 @@ use uuid::Uuid;
 
 use crate::device::Device;
 use crate::group::Group;
+use crate::proto::{KeyType, Protocol};
 use crate::protocols::gg18::{GG18Group, GG18Sign};
-use crate::protocols::ProtocolType;
-use crate::task::{Task, TaskResult, TaskStatus};
+use crate::tasks::{Task, TaskResult, TaskStatus};
 
 pub struct State {
     devices: HashMap<Vec<u8>, Device>,
@@ -52,7 +52,8 @@ impl State {
         name: &str,
         devices: &[Vec<u8>],
         threshold: u32,
-        protocol: ProtocolType,
+        protocol: Protocol,
+        key_type: KeyType,
     ) -> Option<Uuid> {
         if name.chars().count() > 64
             || name
@@ -62,6 +63,14 @@ impl State {
             warn!("Invalid Group name {}", name);
             return None;
         }
+
+        if protocol.check_key_type(key_type) {
+            warn!(
+                "Protocol {:?} does not support {:?} key type",
+                protocol, key_type
+            )
+        }
+
         let mut device_list = Vec::new();
         for device in devices {
             if !self.devices.contains_key(device.as_slice()) {
@@ -72,7 +81,7 @@ impl State {
         }
 
         let task: Box<dyn Task + Send + Sync + 'static> = match protocol {
-            ProtocolType::GG18 => Box::new(GG18Group::new(name, &device_list, threshold)),
+            Protocol::Gg18 => Box::new(GG18Group::new(name, &device_list, threshold)),
         };
 
         Some(self.add_task(task))
@@ -87,9 +96,7 @@ impl State {
 
         self.groups.get(group).cloned().map(|group| {
             let task: Box<dyn Task + Send + Sync + 'static> = match group.protocol() {
-                ProtocolType::GG18 => {
-                    Box::new(GG18Sign::new(group, name.to_string(), data.to_vec()))
-                }
+                Protocol::Gg18 => Box::new(GG18Sign::new(group, name.to_string(), data.to_vec())),
             };
             self.add_task(task)
         })

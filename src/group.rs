@@ -2,7 +2,7 @@ use std::cmp::Eq;
 use std::collections::HashMap;
 
 use crate::device::Device;
-use crate::protocols::ProtocolType;
+use crate::proto::{KeyType, Protocol};
 
 #[derive(Clone, Eq)]
 pub struct Group {
@@ -11,7 +11,8 @@ pub struct Group {
     devices: HashMap<Vec<u8>, Device>,
     // TODO use HashSet-like collection that can refer to its element fields?
     threshold: u32,
-    protocol: ProtocolType,
+    protocol: crate::proto::Protocol,
+    key_type: crate::proto::KeyType,
     certificate: Vec<u8>,
 }
 
@@ -21,7 +22,8 @@ impl Group {
         name: String,
         devices: Vec<Device>,
         threshold: u32,
-        protocol: ProtocolType,
+        protocol: Protocol,
+        key_type: KeyType,
         certificate: Vec<u8>,
     ) -> Self {
         Group {
@@ -33,6 +35,7 @@ impl Group {
                 .collect(),
             threshold,
             protocol,
+            key_type,
             certificate,
         }
     }
@@ -61,7 +64,7 @@ impl Group {
         self.devices.contains_key(device_id)
     }
 
-    pub fn protocol(&self) -> ProtocolType {
+    pub fn protocol(&self) -> Protocol {
         self.protocol
     }
 
@@ -83,6 +86,8 @@ impl From<&Group> for crate::proto::Group {
             name: group.name().to_owned(),
             threshold: group.threshold(),
             device_ids: group.devices().keys().map(Vec::clone).collect(),
+            protocol: group.protocol.into(),
+            key_type: group.key_type.into(),
         }
     }
 }

@@ -7,9 +7,8 @@ use prost::Message;
 use crate::device::Device;
 use crate::group::Group;
 use crate::proto::*;
-use crate::protocols::{Communicator, ProtocolType};
-use crate::task::TaskResult;
-use crate::task::{Task, TaskStatus, TaskType};
+use crate::protocols::Communicator;
+use crate::tasks::{Task, TaskResult, TaskStatus, TaskType};
 
 const LAST_ROUND_GROUP: u16 = 6;
 const LAST_ROUND_SIGN: u16 = 10;
@@ -38,8 +37,9 @@ impl GG18Group {
         let message = GroupRequest {
             device_ids: devices.iter().map(|x| x.identifier().to_vec()).collect(),
             name: String::from(name),
-            threshold: Some(threshold),
-            protocol: Some(0),
+            threshold,
+            protocol: crate::proto::Protocol::Gg18 as i32,
+            key_type: crate::proto::KeyType::SignPdf as i32,
         };
 
         let mut communicator =
@@ -97,7 +97,8 @@ impl GG18Group {
             self.name.clone(),
             self.devices.iter().map(Device::clone).collect(),
             self.threshold,
-            ProtocolType::GG18,
+            Protocol::Gg18,
+            KeyType::SignPdf,
             certificate,
         ));
 

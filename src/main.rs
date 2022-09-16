@@ -10,7 +10,7 @@ mod group;
 mod protocols;
 mod rpc;
 mod state;
-mod task;
+mod tasks;
 
 mod proto {
     tonic::include_proto!("meesign");
@@ -167,7 +167,8 @@ async fn request_group(
     name: String,
     device_ids: Vec<Vec<u8>>,
 ) -> Result<(), String> {
-    if device_ids.len() <= 1 {
+    let device_count = device_ids.len();
+    if device_count <= 1 {
         return Err(String::from("Not enough parties to create a group"));
     }
 
@@ -178,8 +179,9 @@ async fn request_group(
     let request = tonic::Request::new(crate::proto::GroupRequest {
         name,
         device_ids,
-        threshold: None,
-        protocol: None,
+        threshold: device_count as u32,
+        protocol: crate::proto::Protocol::Gg18 as i32,
+        key_type: crate::proto::KeyType::SignPdf as i32,
     });
 
     let response = client
