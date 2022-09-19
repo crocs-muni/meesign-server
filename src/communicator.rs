@@ -11,8 +11,6 @@ pub struct Communicator {
     device_list: Vec<Device>,
     /// A mapping of device identifiers to their Task decision
     devices: HashMap<Vec<u8>, Option<bool>>,
-    /// A Task request message – sent to devices with no decision
-    request: Vec<u8>,
     /// Incoming messages
     pub input: Vec<Vec<Option<Vec<u8>>>>,
     /// Outgoing messages
@@ -21,7 +19,7 @@ pub struct Communicator {
 
 impl Communicator {
     /// Constructs a new Communicator instance with given Devices, threshold, and request message
-    pub fn new(devices: &[Device], threshold: u32, request: Vec<u8>) -> Self {
+    pub fn new(devices: &[Device], threshold: u32) -> Self {
         let communicator = Communicator {
             threshold,
             device_list: devices.iter().map(Device::clone).collect(),
@@ -29,7 +27,6 @@ impl Communicator {
                 .iter()
                 .map(|x| (x.identifier().to_vec(), Some(false)))
                 .collect(),
-            request,
             input: Vec::new(),
             output: Vec::new(),
         };

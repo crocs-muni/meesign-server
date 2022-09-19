@@ -20,6 +20,7 @@ pub struct SignPDFTask {
     pdfhelper: Option<Child>,
     failed: Option<String>,
     protocol: Box<dyn Protocol + Send + Sync>,
+    request: Vec<u8>,
 }
 
 impl SignPDFTask {
@@ -27,16 +28,14 @@ impl SignPDFTask {
         let mut devices: Vec<Device> = group.devices().values().map(Device::clone).collect();
         devices.sort_by_key(|x| x.identifier().to_vec());
 
-        let communicator = Communicator::new(
-            &devices,
-            group.threshold(),
-            (SignRequest {
-                group_id: group.identifier().to_vec(),
-                name: name.clone(),
-                data: data.clone(),
-            })
-            .encode_to_vec(),
-        );
+        let communicator = Communicator::new(&devices, group.threshold());
+
+        let request = (SignRequest {
+            group_id: group.identifier().to_vec(),
+            name: name.clone(),
+            data: data.clone(),
+        })
+        .encode_to_vec();
 
         SignPDFTask {
             group,
@@ -48,6 +47,7 @@ impl SignPDFTask {
             pdfhelper: None,
             failed: None,
             protocol: Box::new(GG18Sign::new()),
+            request,
         }
     }
 
@@ -218,6 +218,10 @@ impl Task for SignPDFTask {
                 self.next_round();
             }
         }
+    }
+
+    fn get_request(&self) -> &[u8] {
+        &self.request
     }
 }
 

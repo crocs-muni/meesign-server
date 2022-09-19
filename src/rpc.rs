@@ -61,7 +61,7 @@ impl Mpc for MPCService {
         let mut state = self.state.lock().await;
         if let Some(task_id) = state.add_sign_task(&group_id, &name, &data) {
             let task = state.get_task(&task_id).unwrap();
-            Ok(Response::new(format_task(&task_id, task, None)))
+            Ok(Response::new(format_task(&task_id, task, None, None)))
         } else {
             Err(Status::failed_precondition("Request failed"))
         }
@@ -90,8 +90,9 @@ impl Mpc for MPCService {
             state.device_activated(device_id.as_ref().unwrap());
         }
         let task = state.get_task(&task_id).unwrap();
+        let request = Some(task.get_request());
 
-        let resp = format_task(&task_id, task, device_id);
+        let resp = format_task(&task_id, task, device_id, request);
         Ok(Response::new(resp))
     }
 
@@ -139,13 +140,13 @@ impl Mpc for MPCService {
             state
                 .get_device_tasks(&device_id)
                 .iter()
-                .map(|(task_id, task)| format_task(task_id, task, Some(&device_id)))
+                .map(|(task_id, task)| format_task(task_id, task, Some(&device_id), None))
                 .collect()
         } else {
             state
                 .get_tasks()
                 .iter()
-                .map(|(task_id, task)| format_task(task_id, task, None))
+                .map(|(task_id, task)| format_task(task_id, task, None, None))
                 .collect()
         };
 
@@ -206,7 +207,7 @@ impl Mpc for MPCService {
             state.add_group_task(&name, &device_ids, threshold, protocol, key_type)
         {
             let task = state.get_task(&task_id).unwrap();
-            Ok(Response::new(format_task(&task_id, task, None)))
+            Ok(Response::new(format_task(&task_id, task, None, None)))
         } else {
             Err(Status::failed_precondition("Request failed"))
         }
@@ -276,6 +277,7 @@ fn format_task(
     task_id: &Uuid,
     task: &Box<dyn Task + Send + Sync>,
     device_id: Option<&[u8]>,
+    request: Option<&[u8]>,
 ) -> crate::proto::Task {
     let task_status = task.get_status();
 
@@ -311,6 +313,7 @@ fn format_task(
         accept: accept as u32,
         reject: reject as u32,
         data,
+        request: request.map(Vec::from),
     }
 }
 

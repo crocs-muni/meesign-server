@@ -18,6 +18,7 @@ pub struct GroupTask {
     result: Option<Group>,
     failed: Option<String>,
     protocol: Box<dyn Protocol + Send + Sync>,
+    request: Vec<u8>,
 }
 
 impl GroupTask {
@@ -28,18 +29,16 @@ impl GroupTask {
         let mut devices = devices.to_vec();
         devices.sort_by_key(|x| x.identifier().to_vec());
 
-        let communicator = Communicator::new(
-            &devices,
-            devices.len() as u32,
-            (GroupRequest {
-                device_ids: devices.iter().map(|x| x.identifier().to_vec()).collect(),
-                name: String::from(name),
-                threshold,
-                protocol: ProtocolType::Gg18 as i32,
-                key_type: KeyType::SignPdf as i32,
-            })
-            .encode_to_vec(),
-        );
+        let communicator = Communicator::new(&devices, devices.len() as u32);
+
+        let request = (GroupRequest {
+            device_ids: devices.iter().map(|x| x.identifier().to_vec()).collect(),
+            name: String::from(name),
+            threshold,
+            protocol: ProtocolType::Gg18 as i32,
+            key_type: KeyType::SignPdf as i32,
+        })
+        .encode_to_vec();
 
         GroupTask {
             name: name.into(),
@@ -49,6 +48,7 @@ impl GroupTask {
             result: None,
             failed: None,
             protocol: Box::new(GG18Group::new(devices_len, threshold)),
+            request,
         }
     }
 
@@ -207,6 +207,10 @@ impl Task for GroupTask {
                 self.next_round();
             }
         }
+    }
+
+    fn get_request(&self) -> &[u8] {
+        &self.request
     }
 }
 
