@@ -46,6 +46,7 @@ impl Protocol for GG18Group {
 
     fn finalize(&mut self, communicator: &mut Communicator) -> Vec<u8> {
         assert_eq!(self.last_round(), self.round);
+        self.round += 1;
         communicator.input[0][1].clone().unwrap()
     }
 
@@ -94,6 +95,7 @@ impl Protocol for GG18Sign {
 
     fn finalize(&mut self, communicator: &mut Communicator) -> Vec<u8> {
         assert_eq!(self.last_round(), self.round);
+        self.round += 1;
         communicator.input[0][1].clone().unwrap()
     }
 
