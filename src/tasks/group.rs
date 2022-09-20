@@ -119,7 +119,7 @@ impl Task for GroupTask {
 
         self.communicator
             .identifier_to_index(device_id.unwrap())
-            .map(|idx| self.communicator.get_message(idx).unwrap().clone())
+            .and_then(|idx| self.communicator.get_message(idx).cloned())
     }
 
     fn get_result(&self) -> Option<TaskResult> {

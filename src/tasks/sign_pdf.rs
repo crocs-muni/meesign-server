@@ -134,7 +134,7 @@ impl Task for SignPDFTask {
         }
 
         self.id_to_index(device_id.unwrap())
-            .map(|idx| self.communicator.get_message(idx).unwrap().clone())
+            .and_then(|idx| self.communicator.get_message(idx).cloned())
     }
 
     fn get_result(&self) -> Option<TaskResult> {
