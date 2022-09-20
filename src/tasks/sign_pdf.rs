@@ -186,12 +186,7 @@ impl Task for SignPDFTask {
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
-        return self.participant_ids.is_some()
-            && self
-                .participant_ids
-                .as_ref()
-                .unwrap()
-                .contains(&device_id.to_vec());
+        return self.group.contains(device_id);
     }
 
     fn waiting_for(&self, device: &[u8]) -> bool {
