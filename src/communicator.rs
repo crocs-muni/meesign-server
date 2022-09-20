@@ -25,7 +25,7 @@ impl Communicator {
             device_list: devices.iter().map(Device::clone).collect(),
             devices: devices
                 .iter()
-                .map(|x| (x.identifier().to_vec(), Some(false)))
+                .map(|x| (x.identifier().to_vec(), None))
                 .collect(),
             input: Vec::new(),
             output: Vec::new(),
