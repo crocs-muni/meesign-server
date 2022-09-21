@@ -71,6 +71,7 @@ impl GG18Sign {
 
 impl Protocol for GG18Sign {
     fn initialize(&mut self, communicator: &mut Communicator, data: &[u8]) {
+        communicator.set_participants();
         let participant_indices = communicator.get_participant_indices();
         communicator.send_all(|idx| {
             (Gg18SignInit {

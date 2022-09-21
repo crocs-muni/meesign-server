@@ -12,7 +12,6 @@ use std::process::{Child, Command, Stdio};
 
 pub struct SignPDFTask {
     group: Group,
-    participant_ids: Option<Vec<Vec<u8>>>,
     communicator: Communicator,
     result: Option<Vec<u8>>,
     round: u16,
@@ -39,7 +38,6 @@ impl SignPDFTask {
 
         SignPDFTask {
             group,
-            participant_ids: None,
             communicator,
             result: None,
             round: 0,
@@ -51,14 +49,9 @@ impl SignPDFTask {
         }
     }
 
-    fn id_to_index(&self, device_id: &[u8]) -> Option<usize> {
-        self.participant_ids
-            .as_ref()
-            .and_then(|x| x.iter().position(|x| x == device_id))
-    }
-
     fn start_task(&mut self) {
         assert_eq!(self.round, 0);
+        assert!(self.communicator.accept_count() >= self.group.threshold());
         {
             let mut file = File::create("document.pdf").unwrap();
             file.write_all(&self.document).unwrap();
@@ -133,7 +126,7 @@ impl Task for SignPDFTask {
             return None;
         }
 
-        self.id_to_index(device_id.unwrap())
+        self.communicator.identifier_to_index(device_id.unwrap())
             .and_then(|idx| self.communicator.get_message(idx).cloned())
     }
 
@@ -157,8 +150,7 @@ impl Task for SignPDFTask {
             return Err("Wasn't waiting for a message from this ID.".to_string());
         }
 
-        let idx = self
-            .id_to_index(device_id)
+        let idx = self.communicator.identifier_to_index(device_id)
             .ok_or("Device ID not found.".to_string())?;
 
         if 0 < self.protocol.round() && self.protocol.round() <= self.protocol.last_round() {
@@ -174,10 +166,11 @@ impl Task for SignPDFTask {
             self.communicator.input[idx].insert(idx, None);
         }
 
-        if self.participant_ids.is_some()
+        let participants = self.communicator.get_participants();
+        if participants.is_some()
             && self
                 .communicator
-                .round_received(&self.participant_ids.as_ref().unwrap())
+                .round_received(participants.as_ref().unwrap())
             && self.protocol.round() <= self.protocol.last_round()
         {
             self.next_round();
@@ -194,9 +187,7 @@ impl Task for SignPDFTask {
             return !self.communicator.device_confirmed(device);
         }
 
-        self.participant_ids
-            .as_ref()
-            .unwrap()
+        self.communicator.get_participants().unwrap()
             .iter()
             .zip((&self.communicator.input).into_iter())
             .filter(|(_a, b)| b.iter().all(|x| x.is_none()))

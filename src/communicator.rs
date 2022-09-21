@@ -9,6 +9,8 @@ pub struct Communicator {
     pub threshold: u32,
     /// Ordered list of devices (should be removed when reimplementing communication)
     device_list: Vec<Device>,
+    /// Active devices
+    active_devices: Option<Vec<Vec<u8>>>,
     /// A mapping of device identifiers to their Task decision
     devices: HashMap<Vec<u8>, Option<bool>>,
     /// Incoming messages
@@ -23,6 +25,7 @@ impl Communicator {
         let communicator = Communicator {
             threshold,
             device_list: devices.iter().map(Device::clone).collect(),
+            active_devices: None,
             devices: devices
                 .iter()
                 .map(|x| (x.identifier().to_vec(), None))
@@ -93,15 +96,21 @@ impl Communicator {
         self.output.get(idx)
     }
 
-    /// Get identifiers of active parties
-    pub fn get_participants(&mut self) -> Vec<Vec<u8>> {
+    /// Set active devices
+    pub fn set_participants(&mut self) -> Vec<Vec<u8>> {
         assert!(self.accept_count() >= self.threshold);
-        self.devices
+        self.active_devices = Some(self.devices
             .iter()
             .filter(|(_device, confirmation)| **confirmation == Some(true))
             .take(self.threshold as usize)
             .map(|(device, _confirmation)| device.clone())
-            .collect()
+            .collect());
+        self.active_devices.as_ref().unwrap().clone()
+    }
+
+    /// Get active devices
+    pub fn get_participants(&self) -> Option<Vec<Vec<u8>>> {
+        self.active_devices.clone()
     }
 
     /// Save decision by the given device
@@ -139,7 +148,7 @@ impl Communicator {
 
     /// Get indices of active participants
     pub fn get_participant_indices(&mut self) -> Vec<u32> {
-        let participant_ids = self.get_participants();
+        let participant_ids = self.get_participants().unwrap();
         let mut indices: Vec<u32> = Vec::new();
         for i in 0..participant_ids.len() {
             indices.push(
