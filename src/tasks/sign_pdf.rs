@@ -14,7 +14,6 @@ pub struct SignPDFTask {
     group: Group,
     communicator: Communicator,
     result: Option<Vec<u8>>,
-    round: u16,
     document: Vec<u8>,
     pdfhelper: Option<Child>,
     failed: Option<String>,
@@ -40,7 +39,6 @@ impl SignPDFTask {
             group,
             communicator,
             result: None,
-            round: 0,
             document: data.clone(),
             pdfhelper: None,
             failed: None,
@@ -50,7 +48,6 @@ impl SignPDFTask {
     }
 
     fn start_task(&mut self) {
-        assert_eq!(self.round, 0);
         assert!(self.communicator.accept_count() >= self.group.threshold());
         {
             let mut file = File::create("document.pdf").unwrap();
@@ -183,7 +180,7 @@ impl Task for SignPDFTask {
     }
 
     fn waiting_for(&self, device: &[u8]) -> bool {
-        if self.round == 0 {
+        if self.protocol.round() == 0 {
             return !self.communicator.device_confirmed(device);
         }
 
@@ -197,7 +194,7 @@ impl Task for SignPDFTask {
 
     fn confirmation(&mut self, device_id: &[u8], accept: bool) {
         self.communicator.confirmation(device_id, accept);
-        if self.round == 0 {
+        if self.protocol.round() == 0 {
             if self.communicator.reject_count() >= self.group.reject_threshold() {
                 self.failed = Some("Too many rejections.".to_string());
             } else if self.communicator.accept_count() >= self.group.threshold() {
