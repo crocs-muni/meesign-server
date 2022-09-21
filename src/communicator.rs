@@ -163,8 +163,8 @@ impl Communicator {
 
     /// Translate device identifier to index
     pub fn identifier_to_index(&self, device_id: &[u8]) -> Option<usize> {
-        self.device_list
-            .iter()
-            .position(|x| x.identifier() == device_id)
+        self.active_devices
+            .as_ref()
+            .and_then(|list| list.iter().position(|id| id == device_id))
     }
 }

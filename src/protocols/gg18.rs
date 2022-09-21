@@ -21,6 +21,7 @@ impl GG18Group {
 
 impl Protocol for GG18Group {
     fn initialize(&mut self, communicator: &mut Communicator, _: &[u8]) {
+        communicator.set_participants();
         let parties = self.parties;
         let threshold = self.threshold;
         communicator.send_all(|idx| {
