@@ -156,9 +156,9 @@ impl State {
         Ok(())
     }
 
-    pub fn task_confirmation(&mut self, task: &Uuid, device: &[u8], accept: bool) {
+    pub fn decide_task(&mut self, task: &Uuid, device: &[u8], decision: bool) {
         let task = self.tasks.get_mut(task).unwrap();
-        task.confirmation(device, accept);
+        task.decide(device, decision);
     }
 
     pub fn get_devices(&self) -> &HashMap<Vec<u8>, Device> {

@@ -123,15 +123,14 @@ impl Task for SignPDFTask {
             return None;
         }
 
-        self.communicator.identifier_to_index(device_id.unwrap())
-            .and_then(|idx| self.communicator.get_message(idx).cloned())
+        self.communicator.get_message(device_id.unwrap())
     }
 
     fn get_result(&self) -> Option<TaskResult> {
         self.result.as_ref().map(|x| TaskResult::Signed(x.clone()))
     }
 
-    fn get_confirmations(&self) -> (u32, u32) {
+    fn get_decisions(&self) -> (u32, u32) {
         (
             self.communicator.accept_count(),
             self.communicator.reject_count(),
@@ -139,7 +138,7 @@ impl Task for SignPDFTask {
     }
 
     fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<(), String> {
-        if self.communicator.accept_count() != self.communicator.threshold as u32 {
+        if self.communicator.accept_count() != self.group.threshold() {
             return Err("Not enough agreements to proceed with the protocol.".to_string());
         }
 
@@ -147,28 +146,22 @@ impl Task for SignPDFTask {
             return Err("Wasn't waiting for a message from this ID.".to_string());
         }
 
-        let idx = self.communicator.identifier_to_index(device_id)
-            .ok_or("Device ID not found.".to_string())?;
-
         if 0 < self.protocol.round() && self.protocol.round() <= self.protocol.last_round() {
             let data: Gg18Message =
                 Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
-            self.communicator.input[idx] = data.message.into_iter().map(Some).collect();
-            self.communicator.input[idx].insert(idx, None);
+
+            self.communicator.receive_messages(device_id, data.message);
         } else {
             let _data: TaskAcknowledgement =
                 Message::decode(data).map_err(|_| String::from("Expected TaskAcknowledgement."))?;
-            self.communicator.input[idx] =
-                vec![Some(vec![]); (self.communicator.threshold - 1) as usize];
-            self.communicator.input[idx].insert(idx, None);
+
+            self.communicator.receive_messages(
+                device_id,
+                vec![vec![]; (self.group.threshold() - 1) as usize],
+            );
         }
 
-        let participants = self.communicator.get_participants();
-        if participants.is_some()
-            && self
-                .communicator
-                .round_received(participants.as_ref().unwrap())
-            && self.protocol.round() <= self.protocol.last_round()
+        if self.communicator.round_received() && self.protocol.round() <= self.protocol.last_round()
         {
             self.next_round();
         }
@@ -181,19 +174,14 @@ impl Task for SignPDFTask {
 
     fn waiting_for(&self, device: &[u8]) -> bool {
         if self.protocol.round() == 0 {
-            return !self.communicator.device_confirmed(device);
+            return !self.communicator.device_decided(device);
         }
 
-        self.communicator.get_participants().unwrap()
-            .iter()
-            .zip((&self.communicator.input).into_iter())
-            .filter(|(_a, b)| b.iter().all(|x| x.is_none()))
-            .map(|(a, _b)| a.as_slice())
-            .any(|x| x == device)
+        !self.communicator.device_responded(device)
     }
 
-    fn confirmation(&mut self, device_id: &[u8], accept: bool) {
-        self.communicator.confirmation(device_id, accept);
+    fn decide(&mut self, device_id: &[u8], decision: bool) {
+        self.communicator.decide(device_id, decision);
         if self.protocol.round() == 0 {
             if self.communicator.reject_count() >= self.group.reject_threshold() {
                 self.failed = Some("Too many rejections.".to_string());

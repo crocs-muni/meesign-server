@@ -254,20 +254,24 @@ impl Mpc for MPCService {
         }))
     }
 
-    async fn confirm_task(
+    async fn decide_task(
         &self,
-        request: Request<msg::TaskConfirmation>,
+        request: Request<msg::TaskDecision>,
     ) -> Result<Response<msg::Resp>, Status> {
         let request = request.into_inner();
         let task_id = request.task;
         let device_id = request.device;
         let accept = request.accept;
 
-        info!("TaskConfirmation device_id={} accept={}", hex::encode(&device_id), accept);
+        info!(
+            "TaskDecision device_id={} accept={}",
+            hex::encode(&device_id),
+            accept
+        );
 
         let mut state = self.state.lock().await;
         state.device_activated(&device_id);
-        state.task_confirmation(&Uuid::from_slice(&task_id).unwrap(), &device_id, accept);
+        state.decide_task(&Uuid::from_slice(&task_id).unwrap(), &device_id, accept);
 
         Ok(Response::new(msg::Resp {
             message: "OK".into(),
@@ -302,7 +306,7 @@ fn format_task(
         ),
     };
 
-    let (accept, reject) = task.get_confirmations();
+    let (accept, reject) = task.get_decisions();
 
     msg::Task {
         id: task_id.as_bytes().to_vec(),
