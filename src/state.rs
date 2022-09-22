@@ -65,7 +65,7 @@ impl State {
             return None;
         }
 
-        if protocol.check_key_type(key_type) {
+        if !protocol.check_key_type(key_type) {
             warn!(
                 "Protocol {:?} does not support {:?} key type",
                 protocol, key_type

@@ -12,10 +12,8 @@ use std::process::{Child, Command, Stdio};
 
 pub struct SignPDFTask {
     group: Group,
-    participant_ids: Option<Vec<Vec<u8>>>,
     communicator: Communicator,
     result: Option<Vec<u8>>,
-    round: u16,
     document: Vec<u8>,
     pdfhelper: Option<Child>,
     failed: Option<String>,
@@ -39,10 +37,8 @@ impl SignPDFTask {
 
         SignPDFTask {
             group,
-            participant_ids: None,
             communicator,
             result: None,
-            round: 0,
             document: data.clone(),
             pdfhelper: None,
             failed: None,
@@ -51,14 +47,8 @@ impl SignPDFTask {
         }
     }
 
-    fn id_to_index(&self, device_id: &[u8]) -> Option<usize> {
-        self.participant_ids
-            .as_ref()
-            .and_then(|x| x.iter().position(|x| x == device_id))
-    }
-
     fn start_task(&mut self) {
-        assert_eq!(self.round, 0);
+        assert!(self.communicator.accept_count() >= self.group.threshold());
         {
             let mut file = File::create("document.pdf").unwrap();
             file.write_all(&self.document).unwrap();
@@ -133,8 +123,8 @@ impl Task for SignPDFTask {
             return None;
         }
 
-        self.id_to_index(device_id.unwrap())
-            .map(|idx| self.communicator.get_message(idx).unwrap().clone())
+        self.communicator.identifier_to_index(device_id.unwrap())
+            .and_then(|idx| self.communicator.get_message(idx).cloned())
     }
 
     fn get_result(&self) -> Option<TaskResult> {
@@ -157,8 +147,7 @@ impl Task for SignPDFTask {
             return Err("Wasn't waiting for a message from this ID.".to_string());
         }
 
-        let idx = self
-            .id_to_index(device_id)
+        let idx = self.communicator.identifier_to_index(device_id)
             .ok_or("Device ID not found.".to_string())?;
 
         if 0 < self.protocol.round() && self.protocol.round() <= self.protocol.last_round() {
@@ -174,10 +163,11 @@ impl Task for SignPDFTask {
             self.communicator.input[idx].insert(idx, None);
         }
 
-        if self.participant_ids.is_some()
+        let participants = self.communicator.get_participants();
+        if participants.is_some()
             && self
                 .communicator
-                .round_received(&self.participant_ids.as_ref().unwrap())
+                .round_received(participants.as_ref().unwrap())
             && self.protocol.round() <= self.protocol.last_round()
         {
             self.next_round();
@@ -186,22 +176,15 @@ impl Task for SignPDFTask {
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
-        return self.participant_ids.is_some()
-            && self
-                .participant_ids
-                .as_ref()
-                .unwrap()
-                .contains(&device_id.to_vec());
+        return self.group.contains(device_id);
     }
 
     fn waiting_for(&self, device: &[u8]) -> bool {
-        if self.round == 0 {
+        if self.protocol.round() == 0 {
             return !self.communicator.device_confirmed(device);
         }
 
-        self.participant_ids
-            .as_ref()
-            .unwrap()
+        self.communicator.get_participants().unwrap()
             .iter()
             .zip((&self.communicator.input).into_iter())
             .filter(|(_a, b)| b.iter().all(|x| x.is_none()))
@@ -211,7 +194,7 @@ impl Task for SignPDFTask {
 
     fn confirmation(&mut self, device_id: &[u8], accept: bool) {
         self.communicator.confirmation(device_id, accept);
-        if self.round == 0 {
+        if self.protocol.round() == 0 {
             if self.communicator.reject_count() >= self.group.reject_threshold() {
                 self.failed = Some("Too many rejections.".to_string());
             } else if self.communicator.accept_count() >= self.group.threshold() {

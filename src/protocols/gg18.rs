@@ -21,6 +21,7 @@ impl GG18Group {
 
 impl Protocol for GG18Group {
     fn initialize(&mut self, communicator: &mut Communicator, _: &[u8]) {
+        communicator.set_participants();
         let parties = self.parties;
         let threshold = self.threshold;
         communicator.send_all(|idx| {
@@ -46,6 +47,7 @@ impl Protocol for GG18Group {
 
     fn finalize(&mut self, communicator: &mut Communicator) -> Vec<u8> {
         assert_eq!(self.last_round(), self.round);
+        self.round += 1;
         communicator.input[0][1].clone().unwrap()
     }
 
@@ -70,6 +72,7 @@ impl GG18Sign {
 
 impl Protocol for GG18Sign {
     fn initialize(&mut self, communicator: &mut Communicator, data: &[u8]) {
+        communicator.set_participants();
         let participant_indices = communicator.get_participant_indices();
         communicator.send_all(|idx| {
             (Gg18SignInit {
@@ -94,6 +97,7 @@ impl Protocol for GG18Sign {
 
     fn finalize(&mut self, communicator: &mut Communicator) -> Vec<u8> {
         assert_eq!(self.last_round(), self.round);
+        self.round += 1;
         communicator.input[0][1].clone().unwrap()
     }
 

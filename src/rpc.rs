@@ -263,6 +263,8 @@ impl Mpc for MPCService {
         let device_id = request.device;
         let accept = request.accept;
 
+        info!("TaskConfirmation device_id={} accept={}", hex::encode(&device_id), accept);
+
         let mut state = self.state.lock().await;
         state.device_activated(&device_id);
         state.task_confirmation(&Uuid::from_slice(&task_id).unwrap(), &device_id, accept);
