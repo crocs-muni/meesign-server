@@ -32,7 +32,6 @@ impl Protocol for GG18Group {
             })
             .encode_to_vec()
         });
-        communicator.clear_input();
 
         self.round += 1;
     }
@@ -41,7 +40,6 @@ impl Protocol for GG18Group {
         assert!((0..self.last_round()).contains(&self.round));
 
         communicator.relay();
-        communicator.clear_input();
         self.round += 1;
     }
 
@@ -82,7 +80,6 @@ impl Protocol for GG18Sign {
             })
             .encode_to_vec()
         });
-        communicator.clear_input();
 
         self.round += 1;
     }
@@ -91,7 +88,6 @@ impl Protocol for GG18Sign {
         assert!((0..self.last_round()).contains(&self.round));
 
         communicator.relay();
-        communicator.clear_input();
         self.round += 1;
     }
 

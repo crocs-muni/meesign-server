@@ -5,6 +5,7 @@ use crate::proto::{Gg18Message, SignRequest, TaskAcknowledgement};
 use crate::protocols::gg18::GG18Sign;
 use crate::protocols::Protocol;
 use crate::tasks::{Task, TaskResult, TaskStatus, TaskType};
+use log::info;
 use prost::Message;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -78,6 +79,12 @@ impl SignPDFTask {
         let signature = self.protocol.finalize(&mut self.communicator);
         let signed = include_signature(self.pdfhelper.as_mut().unwrap(), &signature);
         self.pdfhelper = None;
+
+        info!(
+            "PDF signed by group_id={}",
+            hex::encode(self.group.identifier())
+        );
+
         self.result = Some(signed);
 
         self.communicator.clear_input();
@@ -177,7 +184,7 @@ impl Task for SignPDFTask {
             return !self.communicator.device_decided(device);
         }
 
-        !self.communicator.device_responded(device)
+        self.communicator.waiting_for(device)
     }
 
     fn decide(&mut self, device_id: &[u8], decision: bool) {

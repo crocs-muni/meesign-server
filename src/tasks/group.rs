@@ -7,6 +7,7 @@ use crate::proto::*;
 use crate::protocols::gg18::GG18Group;
 use crate::protocols::Protocol;
 use crate::tasks::{Task, TaskResult, TaskStatus, TaskType};
+use log::info;
 use std::io::Read;
 use std::process::{Command, Stdio};
 
@@ -63,6 +64,15 @@ impl GroupTask {
     fn finalize_task(&mut self) {
         let identifier = self.protocol.finalize(&mut self.communicator);
         let certificate = issue_certificate(&self.name, &identifier);
+
+        info!(
+            "Group established group_id={} devices={:?}",
+            hex::encode(&identifier),
+            self.devices
+                .iter()
+                .map(|device| hex::encode(device.identifier()))
+                .collect::<Vec<_>>()
+        );
 
         self.result = Some(Group::new(
             identifier,
@@ -175,7 +185,7 @@ impl Task for GroupTask {
             return !self.communicator.device_decided(device);
         }
 
-        !self.communicator.device_responded(device)
+        self.communicator.waiting_for(device)
     }
 
     fn decide(&mut self, device_id: &[u8], decision: bool) {

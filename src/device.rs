@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Eq)]
@@ -44,6 +45,12 @@ impl Device {
 impl PartialEq for Device {
     fn eq(&self, other: &Self) -> bool {
         self.identifier == other.identifier
+    }
+}
+
+impl PartialOrd for Device {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.identifier.partial_cmp(&other.identifier)
     }
 }
 
