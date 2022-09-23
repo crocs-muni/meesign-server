@@ -2,116 +2,130 @@ syntax = "proto3";
 package meesign;
 
 service MPC {
-    rpc Register(RegistrationRequest) returns (Resp);
-    rpc Sign(SignRequest) returns (Task);
-    rpc Group(GroupRequest) returns (Task);
-    rpc GetTask(TaskRequest) returns (Task);
-    rpc UpdateTask(TaskUpdate) returns (Resp);
-    rpc GetTasks(TasksRequest) returns (Tasks);
-    rpc GetGroups(GroupsRequest) returns (Groups);
-    rpc GetDevices(DevicesRequest) returns (Devices);
-    rpc Log(LogRequest) returns (Resp);
+  rpc Register(RegistrationRequest) returns (Resp);
+  rpc Sign(SignRequest) returns (Task);
+  rpc Group(GroupRequest) returns (Task);
+  rpc GetTask(TaskRequest) returns (Task);
+  rpc UpdateTask(TaskUpdate) returns (Resp);
+  rpc DecideTask(TaskDecision) returns (Resp);
+  rpc GetTasks(TasksRequest) returns (Tasks);
+  rpc GetGroups(GroupsRequest) returns (Groups);
+  rpc GetDevices(DevicesRequest) returns (Devices);
+  rpc Log(LogRequest) returns (Resp);
 }
 
-enum Protocol {
-    GG18 = 0;
+enum ProtocolType {
+  GG18 = 0;
+}
+
+enum KeyType {
+  SignPDF = 0;
+  SignDigest = 1;
 }
 
 message RegistrationRequest {
-    bytes identifier = 1;
-    string name = 2;
+  bytes identifier = 1;
+  string name = 2;
 }
 
 message GroupRequest {
-    string name = 1;
-    repeated bytes device_ids = 2;
-    optional uint32 threshold = 3;
-    optional Protocol protocol = 4;
+  string name = 1;
+  repeated bytes device_ids = 2;
+  uint32 threshold = 3;
+  ProtocolType protocol = 4;
+  KeyType key_type = 5;
 }
 
 message Group {
-    bytes identifier = 1;
-    string name = 2;
-    uint32 threshold = 3;
-    repeated bytes device_ids = 4;
+  bytes identifier = 1;
+  string name = 2;
+  uint32 threshold = 3;
+  ProtocolType protocol = 4;
+  KeyType key_type = 5;
+  repeated bytes device_ids = 6;
 }
 
 message DevicesRequest {
-    // Protocol
+  // Protocol
 }
 
 message Devices {
-    repeated Device devices = 1;
+  repeated Device devices = 1;
 }
 
 message Device {
-    bytes identifier = 1;
-    string name = 2;
-    uint64 last_active = 3;
+  bytes identifier = 1;
+  string name = 2;
+  uint64 last_active = 3;
 }
 
 message SignRequest {
-    string name = 1;
-    bytes group_id = 2;
-    bytes data = 3;
+  string name = 1;
+  bytes group_id = 2;
+  bytes data = 3;
 }
 
 message TaskRequest {
-     bytes task_id = 1;
-     optional bytes device_id = 2;
+  bytes task_id = 1;
+  optional bytes device_id = 2;
 }
 
 message Task {
-    bytes id = 1;
-    enum TaskType {
-        GROUP = 0;
-        SIGN = 1;
-    }
-    TaskType type = 2;
-    enum TaskState {
-        CREATED = 0;
-        RUNNING = 1;
-        FINISHED = 2;
-        FAILED = 3;
-    }
-    TaskState state = 3;
-    uint32 round = 4;
-    optional bytes data = 5;
+  bytes id = 1;
+  enum TaskType {
+    GROUP = 0;
+    SIGN = 1;
+  }
+  TaskType type = 2;
+  enum TaskState {
+    CREATED = 0;
+    RUNNING = 1;
+    FINISHED = 2;
+    FAILED = 3;
+  }
+  TaskState state = 3;
+  uint32 round = 4;
+  uint32 accept = 5; // Number of task accepts
+  uint32 reject = 6; // Number of task rejects
+  optional bytes data = 7; // If present, the task is waiting for recipient's action
+  optional bytes request = 8; // Serialized SignRequest or TaskRequest; present only when queried directly
 }
 
 message TaskUpdate {
-    bytes device_id = 1;
-    bytes task = 2;
-    bytes data = 3;
+  bytes device_id = 1;
+  bytes task = 2;
+  bytes data = 3;
 }
 
 message TasksRequest {
-    optional bytes device_id = 1;
+  optional bytes device_id = 1;
 }
 
 message Tasks {
-    repeated Task tasks = 1;
+  repeated Task tasks = 1;
 }
 
 message GroupsRequest {
-    optional bytes device_id = 1;
+  optional bytes device_id = 1;
 }
 
 message Groups {
-    repeated Group groups = 1;
+  repeated Group groups = 1;
 }
 
 message Resp {
-    string message = 1;
+  string message = 1;
 }
 
-message TaskAgreement {
-    bool agreement = 1;
+message TaskDecision {
+  bytes task = 1;
+  bytes device = 2;
+  bool accept = 3;
 };
 
 message LogRequest {
-    string message = 1;
-    optional bytes device_id = 2;
+  string message = 1;
+  optional bytes device_id = 2;
 };
 
 message TaskAcknowledgement {};

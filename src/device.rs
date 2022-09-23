@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Eq)]
@@ -13,7 +14,10 @@ impl Device {
         Device {
             identifier,
             name,
-            last_active: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
+            last_active: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
         }
     }
 
@@ -30,7 +34,10 @@ impl Device {
     }
 
     pub fn activated(&mut self) -> u64 {
-        self.last_active = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        self.last_active = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         self.last_active
     }
 }
@@ -41,13 +48,18 @@ impl PartialEq for Device {
     }
 }
 
+impl PartialOrd for Device {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.identifier.partial_cmp(&other.identifier)
+    }
+}
 
 impl From<&Device> for crate::proto::Device {
     fn from(device: &Device) -> Self {
         crate::proto::Device {
             identifier: device.identifier().to_vec(),
             name: device.name().to_string(),
-            last_active: device.last_active()
+            last_active: device.last_active(),
         }
     }
 }

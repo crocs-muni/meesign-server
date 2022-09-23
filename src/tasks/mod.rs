@@ -1,9 +1,13 @@
+pub(crate) mod group;
+pub(crate) mod sign_pdf;
+
 use crate::group::Group;
 
 #[derive(Clone, PartialEq)]
 pub enum TaskStatus {
     Created,
-    Running(u16), // round
+    Running(u16),
+    // round
     Finished,
     Failed(String),
 }
@@ -28,13 +32,15 @@ pub enum TaskType {
     Sign,
 }
 
-
 pub trait Task {
     fn get_status(&self) -> TaskStatus;
     fn get_type(&self) -> TaskType;
     fn get_work(&self, device_id: Option<&[u8]>) -> Option<Vec<u8>>;
     fn get_result(&self) -> Option<TaskResult>;
+    fn get_decisions(&self) -> (u32, u32);
     fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<(), String>;
     fn has_device(&self, device_id: &[u8]) -> bool;
     fn waiting_for(&self, device_id: &[u8]) -> bool;
+    fn decide(&mut self, device_id: &[u8], decision: bool);
+    fn get_request(&self) -> &[u8];
 }

@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 
-use crate::task::{Task, TaskStatus, TaskResult};
-use crate::group::Group;
-use crate::device::Device;
+use log::{error, warn};
 use uuid::Uuid;
-use crate::protocols::ProtocolType;
-use crate::protocols::gg18::{GG18Group, GG18Sign};
-use log::{warn, error};
+
+use crate::device::Device;
+use crate::group::Group;
+use crate::proto::{KeyType, ProtocolType};
+use crate::tasks::group::GroupTask;
+use crate::tasks::sign_pdf::SignPDFTask;
+use crate::tasks::{Task, TaskResult, TaskStatus};
 
 pub struct State {
     devices: HashMap<Vec<u8>, Device>,
@@ -24,51 +26,80 @@ impl State {
     }
 
     pub fn add_device(&mut self, identifier: &[u8], name: &str) -> bool {
-        if name.chars().count() > 64 || name.chars().any(|x| x.is_ascii_punctuation() || x.is_control()) {
+        if name.chars().count() > 64
+            || name
+                .chars()
+                .any(|x| x.is_ascii_punctuation() || x.is_control())
+        {
             warn!("Invalid Device name {}", name);
-            return false
+            return false;
         }
 
         let device = Device::new(identifier.to_vec(), name.to_owned());
         // TODO improve when feature map_try_insert gets stabilized
         if self.devices.contains_key(identifier) {
-            warn!("Device identifier already registered {}", hex::encode(identifier));
-            return false
+            warn!(
+                "Device identifier already registered {}",
+                hex::encode(identifier)
+            );
+            return false;
         }
         self.devices.insert(identifier.to_vec(), device);
         true
     }
 
-    pub fn add_group_task(&mut self, name: &str, devices: &[Vec<u8>], threshold: u32, protocol: ProtocolType) -> Option<Uuid> {
-        if name.chars().count() > 64 || name.chars().any(|x| x.is_ascii_punctuation() || x.is_control()) {
+    pub fn add_group_task(
+        &mut self,
+        name: &str,
+        devices: &[Vec<u8>],
+        threshold: u32,
+        protocol: ProtocolType,
+        key_type: KeyType,
+    ) -> Option<Uuid> {
+        if name.chars().count() > 64
+            || name
+                .chars()
+                .any(|x| x.is_ascii_punctuation() || x.is_control())
+        {
             warn!("Invalid Group name {}", name);
-            return None
+            return None;
         }
+
+        if !protocol.check_key_type(key_type) {
+            warn!(
+                "Protocol {:?} does not support {:?} key type",
+                protocol, key_type
+            )
+        }
+
         let mut device_list = Vec::new();
         for device in devices {
             if !self.devices.contains_key(device.as_slice()) {
                 warn!("Unknown Device ID {}", hex::encode(device));
-                return None
+                return None;
             }
             device_list.push(self.devices.get(device.as_slice()).unwrap().clone());
         }
 
         let task: Box<dyn Task + Send + Sync + 'static> = match protocol {
-            ProtocolType::GG18 => Box::new(GG18Group::new(name, &device_list, threshold))
+            ProtocolType::Gg18 => Box::new(GroupTask::new(name, &device_list, threshold)),
         };
 
         Some(self.add_task(task))
     }
 
     pub fn add_sign_task(&mut self, group: &[u8], name: &str, data: &[u8]) -> Option<Uuid> {
-        if data.len() > 8 * 1024 * 1024 || name.len() > 256 || name.chars().any(|x| x.is_control()) {
+        if data.len() > 8 * 1024 * 1024 || name.len() > 256 || name.chars().any(|x| x.is_control())
+        {
             warn!("Invalid PDF name {} ({} B)", name, data.len());
-            return None
+            return None;
         }
 
         self.groups.get(group).cloned().map(|group| {
             let task: Box<dyn Task + Send + Sync + 'static> = match group.protocol() {
-                ProtocolType::GG18 => Box::new(GG18Sign::new(group, name.to_string(), data.to_vec())),
+                ProtocolType::Gg18 => {
+                    Box::new(SignPDFTask::new(group, name.to_string(), data.to_vec()))
+                }
             };
             self.add_task(task)
         })
@@ -83,7 +114,7 @@ impl State {
     pub fn get_device_tasks(&self, device: &[u8]) -> Vec<(Uuid, &Box<dyn Task + Send + Sync>)> {
         let mut tasks = Vec::new();
         for (uuid, task) in self.tasks.iter() {
-            if task.waiting_for(device) {
+            if task.has_device(device) {
                 tasks.push((uuid.clone(), task));
             }
         }
@@ -112,10 +143,6 @@ impl State {
         self.tasks.get(task)
     }
 
-    pub fn get_work(&self, task: &Uuid, device: &[u8]) -> Option<Vec<u8>> {
-        self.tasks.get(task).unwrap().get_work(Some(device))
-    }
-
     pub fn update_task(&mut self, task: &Uuid, device: &[u8], data: &[u8]) -> Result<(), String> {
         let task = self.tasks.get_mut(task).unwrap();
         let previous_status = task.get_status();
@@ -127,6 +154,11 @@ impl State {
             }
         }
         Ok(())
+    }
+
+    pub fn decide_task(&mut self, task: &Uuid, device: &[u8], decision: bool) {
+        let task = self.tasks.get_mut(task).unwrap();
+        task.decide(device, decision);
     }
 
     pub fn get_devices(&self) -> &HashMap<Vec<u8>, Device> {
