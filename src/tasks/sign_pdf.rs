@@ -24,7 +24,7 @@ pub struct SignPDFTask {
 
 impl SignPDFTask {
     pub fn new(group: Group, name: String, data: Vec<u8>) -> Self {
-        let mut devices: Vec<Device> = group.devices().values().map(Device::clone).collect();
+        let mut devices: Vec<Device> = group.devices().to_vec();
         devices.sort_by_key(|x| x.identifier().to_vec());
 
         let communicator = Communicator::new(&devices, group.threshold());
@@ -65,7 +65,7 @@ impl SignPDFTask {
             .spawn()
             .unwrap();
 
-        let hash = request_hash(&mut pdfhelper, self.group.certificate());
+        let hash = request_hash(&mut pdfhelper, self.group.certificate().unwrap());
         self.pdfhelper = Some(pdfhelper);
         std::fs::remove_file("document.pdf").unwrap();
         self.protocol.initialize(&mut self.communicator, &hash);

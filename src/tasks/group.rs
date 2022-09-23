@@ -81,7 +81,7 @@ impl GroupTask {
             self.threshold,
             ProtocolType::Gg18,
             KeyType::SignPdf,
-            certificate,
+            Some(certificate),
         ));
 
         self.communicator.clear_input();
