@@ -27,6 +27,10 @@ pub(self) struct Args {
     #[clap(short, long, default_value_t = 1337)]
     port: u16,
 
+    #[cfg(feature = "web")]
+    #[clap(short, long, default_value_t = 1338)]
+    web: u16,
+
     #[clap(short, long, default_value_t = String::from("127.0.0.1"))]
     addr: String,
 
@@ -55,9 +59,12 @@ async fn main() -> Result<(), String> {
     let state = Arc::new(Mutex::new(State::new()));
 
     let grpc = interfaces::grpc::run_grpc(state.clone(), &args.addr, args.port);
+    let web = tonic::codegen::ok(());
+    #[cfg(feature = "web")]
+    let web = interfaces::web::run_web(&args.addr, args.port);
     let timer = interfaces::timer::run_timer(state);
 
-    try_join!(grpc, timer).map(|_| ())
+    try_join!(grpc, timer, web).map(|_| ())
 }
 
 #[cfg(feature = "cli")]

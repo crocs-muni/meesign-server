@@ -384,7 +384,7 @@ pub fn format_task(
 pub async fn run_grpc(state: Arc<Mutex<State>>, addr: &str, port: u16) -> Result<(), String> {
     let addr = format!("{}:{}", addr, port)
         .parse()
-        .map_err(|_| String::from("Unable to parse server address"))?;
+        .map_err(|_| String::from("Unable to parse gRPC server address"))?;
     let node = MPCService::new(state);
 
     let cert = tokio::fs::read("keys/meesign-server-cert.pem")
