@@ -167,8 +167,8 @@ mod tests {
                 .map(Vec::from)
                 .collect::<Vec<_>>()
         );
-        assert_eq!(protobuf.protocol, group.protocol().into());
-        assert_eq!(protobuf.key_type, group.key_type().into());
+        assert_eq!(protobuf.protocol, group.protocol() as i32);
+        assert_eq!(protobuf.key_type, group.key_type() as i32);
     }
 
     #[test]
