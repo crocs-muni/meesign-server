@@ -88,7 +88,12 @@ impl State {
         Some(self.add_task(task))
     }
 
-    pub fn add_sign_task(&mut self, group: &[u8], name: &str, data: &[u8]) -> Option<Uuid> {
+    pub fn add_sign_task(
+        &mut self,
+        group: &[u8],
+        name: &str,
+        data: &[u8],
+    ) -> Option<(Group, Uuid)> {
         if data.len() > 8 * 1024 * 1024 || name.len() > 256 || name.chars().any(|x| x.is_control())
         {
             warn!("Invalid PDF name {} ({} B)", name, data.len());
@@ -97,11 +102,13 @@ impl State {
 
         self.groups.get(group).cloned().map(|group| {
             let task: Box<dyn Task + Send + Sync + 'static> = match group.protocol() {
-                ProtocolType::Gg18 => {
-                    Box::new(SignPDFTask::new(group, name.to_string(), data.to_vec()))
-                }
+                ProtocolType::Gg18 => Box::new(SignPDFTask::new(
+                    group.clone(),
+                    name.to_string(),
+                    data.to_vec(),
+                )),
             };
-            self.add_task(task)
+            (group, self.add_task(task))
         })
     }
 
@@ -143,22 +150,22 @@ impl State {
         self.tasks.get(task)
     }
 
-    pub fn update_task(&mut self, task: &Uuid, device: &[u8], data: &[u8]) -> Result<(), String> {
+    pub fn update_task(&mut self, task: &Uuid, device: &[u8], data: &[u8]) -> Result<bool, String> {
         let task = self.tasks.get_mut(task).unwrap();
         let previous_status = task.get_status();
-        task.update(device, data)?;
+        let update_result = task.update(device, data);
         if previous_status != TaskStatus::Finished && task.get_status() == TaskStatus::Finished {
             // TODO join if statements once #![feature(let_chains)] gets stabilized
             if let TaskResult::GroupEstablished(group) = task.get_result().unwrap() {
                 self.groups.insert(group.identifier().to_vec(), group);
             }
         }
-        Ok(())
+        update_result
     }
 
-    pub fn decide_task(&mut self, task: &Uuid, device: &[u8], decision: bool) {
+    pub fn decide_task(&mut self, task: &Uuid, device: &[u8], decision: bool) -> bool {
         let task = self.tasks.get_mut(task).unwrap();
-        task.decide(device, decision);
+        task.decide(device, decision)
     }
 
     pub fn acknowledge_task(&mut self, task: &Uuid, device: &[u8]) {
