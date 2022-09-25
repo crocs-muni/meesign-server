@@ -1,5 +1,5 @@
 use log::{debug, info};
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
@@ -9,21 +9,31 @@ use crate::proto::mpc_server::{Mpc, MpcServer};
 use crate::proto::{KeyType, ProtocolType};
 use crate::state::State;
 use crate::tasks::{Task, TaskStatus, TaskType};
+use std::collections::HashMap;
+use std::pin::Pin;
+use tokio::sync::mpsc::Sender;
+use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::Stream;
 
 pub struct MPCService {
     state: Mutex<State>,
+    subscribers: Mutex<HashMap<Vec<u8>, Sender<Result<msg::Task, Status>>>>,
 }
 
 impl MPCService {
     pub fn new(state: State) -> Self {
         MPCService {
             state: Mutex::new(state),
+            subscribers: Mutex::new(HashMap::new()),
         }
     }
 }
 
 #[tonic::async_trait]
 impl Mpc for MPCService {
+    type SubscribeUpdatesStream =
+        Pin<Box<dyn Stream<Item = Result<msg::Task, Status>> + Send + 'static>>;
+
     async fn register(
         &self,
         request: Request<msg::RegistrationRequest>,
@@ -276,6 +286,20 @@ impl Mpc for MPCService {
         Ok(Response::new(msg::Resp {
             message: "OK".into(),
         }))
+    }
+
+    async fn subscribe_updates(
+        &self,
+        request: Request<msg::SubscribeRequest>,
+    ) -> Result<Response<Self::SubscribeUpdatesStream>, Status> {
+        let request = request.into_inner();
+        let device_id = request.device_id;
+
+        let (tx, rx) = mpsc::channel(5);
+
+        self.subscribers.lock().await.insert(device_id, tx);
+
+        Ok(Response::new(Box::pin(ReceiverStream::new(rx))))
     }
 }
 
