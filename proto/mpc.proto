@@ -8,6 +8,7 @@ service MPC {
   rpc GetTask(TaskRequest) returns (Task);
   rpc UpdateTask(TaskUpdate) returns (Resp);
   rpc DecideTask(TaskDecision) returns (Resp);
+  rpc AcknowledgeTask(TaskAcknowledgement) returns (Resp);
   rpc GetTasks(TasksRequest) returns (Tasks);
   rpc GetGroups(GroupsRequest) returns (Groups);
   rpc GetDevices(DevicesRequest) returns (Devices);
@@ -124,6 +125,11 @@ message TaskDecision {
   bool accept = 3;
 };
 
+message TaskAcknowledgement {
+  bytes task_id = 1;
+  bytes device_id = 2;
+};
+
 message LogRequest {
   string message = 1;
   optional bytes device_id = 2;
@@ -132,8 +138,6 @@ message LogRequest {
 message SubscribeRequest {
   bytes device_id = 1;
 };
-
-message TaskAcknowledgement {};
 
 message GG18KeyGenInit {
   uint32 index = 1;

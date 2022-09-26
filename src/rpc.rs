@@ -274,7 +274,8 @@ impl Mpc for MPCService {
         let accept = request.accept;
 
         info!(
-            "TaskDecision device_id={} accept={}",
+            "TaskDecision task_id={} device_id={} accept={}",
+            hex::encode(&task_id),
             hex::encode(&device_id),
             accept
         );
@@ -300,6 +301,29 @@ impl Mpc for MPCService {
         self.subscribers.lock().await.insert(device_id, tx);
 
         Ok(Response::new(Box::pin(ReceiverStream::new(rx))))
+    }
+
+    async fn acknowledge_task(
+        &self,
+        request: Request<msg::TaskAcknowledgement>,
+    ) -> Result<Response<msg::Resp>, Status> {
+        let request = request.into_inner();
+        let task_id = request.task_id;
+        let device_id = request.device_id;
+
+        info!(
+            "TaskAcknowledgement task_id={} device_id={}",
+            hex::encode(&task_id),
+            hex::encode(&device_id)
+        );
+
+        let mut state = self.state.lock().await;
+        state.device_activated(&device_id);
+        state.acknowledge_task(&Uuid::from_slice(&task_id).unwrap(), &device_id);
+
+        Ok(Response::new(msg::Resp {
+            message: "OK".into(),
+        }))
     }
 }
 
