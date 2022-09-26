@@ -197,6 +197,10 @@ impl Task for GroupTask {
         self.communicator.acknowledge(device_id);
     }
 
+    fn device_acknowledged(&self, device_id: &[u8]) -> bool {
+        self.communicator.device_acknowledged(device_id)
+    }
+
     fn get_request(&self) -> &[u8] {
         &self.request
     }
