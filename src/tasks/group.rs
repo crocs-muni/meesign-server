@@ -152,17 +152,9 @@ impl Task for GroupTask {
             return Err("Wasn't waiting for a message from this ID.".to_string());
         }
 
-        if 0 < self.protocol.round() && self.protocol.round() <= self.protocol.last_round() {
-            let data: Gg18Message =
-                Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
-
-            self.communicator.receive_messages(device_id, data.message);
-        } else {
-            let _data: TaskAcknowledgement =
-                Message::decode(data).map_err(|_| String::from("Expected TaskAcknowledgement."))?;
-            self.communicator
-                .receive_messages(device_id, vec![vec![]; (self.devices.len() - 1) as usize]);
-        }
+        let data: Gg18Message =
+            Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
+        self.communicator.receive_messages(device_id, data.message);
 
         if self.communicator.round_received() && self.protocol.round() <= self.protocol.last_round()
         {
@@ -183,6 +175,8 @@ impl Task for GroupTask {
     fn waiting_for(&self, device: &[u8]) -> bool {
         if self.protocol.round() == 0 {
             return !self.communicator.device_decided(device);
+        } else if self.protocol.round() >= self.protocol.last_round() {
+            return !self.communicator.device_acknowledged(device);
         }
 
         self.communicator.waiting_for(device)
@@ -197,6 +191,10 @@ impl Task for GroupTask {
                 self.next_round();
             }
         }
+    }
+
+    fn acknowledge(&mut self, device_id: &[u8]) {
+        self.communicator.acknowledge(device_id);
     }
 
     fn get_request(&self) -> &[u8] {

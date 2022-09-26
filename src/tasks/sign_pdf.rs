@@ -1,7 +1,7 @@
 use crate::communicator::Communicator;
 use crate::device::Device;
 use crate::group::Group;
-use crate::proto::{Gg18Message, SignRequest, TaskAcknowledgement};
+use crate::proto::{Gg18Message, SignRequest};
 use crate::protocols::gg18::GG18Sign;
 use crate::protocols::Protocol;
 use crate::tasks::{Task, TaskResult, TaskStatus, TaskType};
@@ -153,20 +153,9 @@ impl Task for SignPDFTask {
             return Err("Wasn't waiting for a message from this ID.".to_string());
         }
 
-        if 0 < self.protocol.round() && self.protocol.round() <= self.protocol.last_round() {
-            let data: Gg18Message =
-                Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
-
-            self.communicator.receive_messages(device_id, data.message);
-        } else {
-            let _data: TaskAcknowledgement =
-                Message::decode(data).map_err(|_| String::from("Expected TaskAcknowledgement."))?;
-
-            self.communicator.receive_messages(
-                device_id,
-                vec![vec![]; (self.group.threshold() - 1) as usize],
-            );
-        }
+        let data: Gg18Message =
+            Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
+        self.communicator.receive_messages(device_id, data.message);
 
         if self.communicator.round_received() && self.protocol.round() <= self.protocol.last_round()
         {
@@ -182,6 +171,8 @@ impl Task for SignPDFTask {
     fn waiting_for(&self, device: &[u8]) -> bool {
         if self.protocol.round() == 0 {
             return !self.communicator.device_decided(device);
+        } else if self.protocol.round() >= self.protocol.last_round() {
+            return !self.communicator.device_acknowledged(device);
         }
 
         self.communicator.waiting_for(device)
@@ -196,6 +187,10 @@ impl Task for SignPDFTask {
                 self.next_round();
             }
         }
+    }
+
+    fn acknowledge(&mut self, device_id: &[u8]) {
+        self.communicator.acknowledge(device_id);
     }
 
     fn get_request(&self) -> &[u8] {

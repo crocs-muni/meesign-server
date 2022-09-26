@@ -161,6 +161,11 @@ impl State {
         task.decide(device, decision);
     }
 
+    pub fn acknowledge_task(&mut self, task: &Uuid, device: &[u8]) {
+        let task = self.tasks.get_mut(task).unwrap();
+        task.acknowledge(device);
+    }
+
     pub fn get_devices(&self) -> &HashMap<Vec<u8>, Device> {
         &self.devices
     }
