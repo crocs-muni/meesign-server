@@ -88,12 +88,7 @@ impl State {
         Some(self.add_task(task))
     }
 
-    pub fn add_sign_task(
-        &mut self,
-        group: &[u8],
-        name: &str,
-        data: &[u8],
-    ) -> Option<(Group, Uuid)> {
+    pub fn add_sign_task(&mut self, group: &[u8], name: &str, data: &[u8]) -> Option<Uuid> {
         if data.len() > 8 * 1024 * 1024 || name.len() > 256 || name.chars().any(|x| x.is_control())
         {
             warn!("Invalid PDF name {} ({} B)", name, data.len());
@@ -108,7 +103,7 @@ impl State {
                     data.to_vec(),
                 )),
             };
-            (group, self.add_task(task))
+            self.add_task(task)
         })
     }
 
