@@ -36,9 +36,9 @@ Server-side implementation for MeeSign system.
     bash generate_certificates.sh
     ```
 
-2. Run in a container
+2. Run a nightly release
    ```bash
-   docker run --detach --publish 1337:1337 --volume `pwd`/server-key.pem:/meesign/server-key.pem --volume `pwd`/server-cert.pem:/meesign/server-cert.pem crocsmuni/meesign:latest
+   docker run --detach --publish 1337:1337 --volume `pwd`/key/:/meesign/key/ crocsmuni/meesign:nightly
    ```
    There are 2 types of available releases:
    1. **latest** - this is the latest stable version, you can optionally specify a specific stable version
