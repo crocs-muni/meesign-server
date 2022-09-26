@@ -145,7 +145,7 @@ impl Task for SignPDFTask {
     }
 
     fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<bool, String> {
-        if self.communicator.accept_count() != self.group.threshold() {
+        if self.communicator.accept_count() < self.group.threshold() {
             return Err("Not enough agreements to proceed with the protocol.".to_string());
         }
 
@@ -198,6 +198,10 @@ impl Task for SignPDFTask {
 
     fn acknowledge(&mut self, device_id: &[u8]) {
         self.communicator.acknowledge(device_id);
+    }
+
+    fn device_acknowledged(&self, device_id: &[u8]) -> bool {
+        self.communicator.device_acknowledged(device_id)
     }
 
     fn get_request(&self) -> &[u8] {

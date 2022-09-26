@@ -57,5 +57,6 @@ pub trait Task {
     fn decide(&mut self, device_id: &[u8], decision: bool) -> bool;
 
     fn acknowledge(&mut self, device_id: &[u8]);
+    fn device_acknowledged(&self, device_id: &[u8]) -> bool;
     fn get_request(&self) -> &[u8];
 }

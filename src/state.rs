@@ -116,7 +116,12 @@ impl State {
     pub fn get_device_tasks(&self, device: &[u8]) -> Vec<(Uuid, &Box<dyn Task + Send + Sync>)> {
         let mut tasks = Vec::new();
         for (uuid, task) in self.tasks.iter() {
-            if task.has_device(device) {
+            // TODO refactor
+            if task.has_device(device)
+                && (task.get_status() != TaskStatus::Finished
+                    || (task.get_status() == TaskStatus::Finished
+                        && !task.device_acknowledged(device)))
+            {
                 tasks.push((uuid.clone(), task));
             }
         }
