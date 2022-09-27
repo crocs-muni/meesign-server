@@ -1,5 +1,4 @@
 use std::cmp::Eq;
-use std::collections::HashMap;
 
 use crate::device::Device;
 use crate::proto::{KeyType, ProtocolType};
@@ -8,12 +7,11 @@ use crate::proto::{KeyType, ProtocolType};
 pub struct Group {
     identifier: Vec<u8>,
     name: String,
-    devices: HashMap<Vec<u8>, Device>,
-    // TODO use HashSet-like collection that can refer to its element fields?
+    devices: Vec<Device>,
     threshold: u32,
     protocol: ProtocolType,
     key_type: KeyType,
-    certificate: Vec<u8>,
+    certificate: Option<Vec<u8>>,
 }
 
 impl Group {
@@ -24,15 +22,16 @@ impl Group {
         threshold: u32,
         protocol: ProtocolType,
         key_type: KeyType,
-        certificate: Vec<u8>,
+        certificate: Option<Vec<u8>>,
     ) -> Self {
+        assert!(identifier.len() > 0);
+        assert!(devices.len() > 1);
+        assert!(threshold > 1);
+        assert!(threshold as usize <= devices.len());
         Group {
             identifier,
             name,
-            devices: devices
-                .into_iter()
-                .map(|x| (x.identifier().to_vec(), x))
-                .collect(),
+            devices,
             threshold,
             protocol,
             key_type,
@@ -56,20 +55,26 @@ impl Group {
         self.devices.len() as u32 - self.threshold + 1 // rejects >= threshold_reject => fail
     }
 
-    pub fn devices(&self) -> &HashMap<Vec<u8>, Device> {
+    pub fn devices(&self) -> &[Device] {
         &self.devices
     }
 
     pub fn contains(&self, device_id: &[u8]) -> bool {
-        self.devices.contains_key(device_id)
+        self.devices
+            .iter()
+            .any(|device| device.identifier() == device_id)
     }
 
     pub fn protocol(&self) -> ProtocolType {
         self.protocol
     }
 
-    pub fn certificate(&self) -> &[u8] {
-        &self.certificate
+    pub fn key_type(&self) -> KeyType {
+        self.key_type
+    }
+
+    pub fn certificate(&self) -> Option<&Vec<u8>> {
+        self.certificate.as_ref()
     }
 }
 
@@ -85,9 +90,123 @@ impl From<&Group> for crate::proto::Group {
             identifier: group.identifier().to_vec(),
             name: group.name().to_owned(),
             threshold: group.threshold(),
-            device_ids: group.devices().keys().map(Vec::clone).collect(),
-            protocol: group.protocol.into(),
-            key_type: group.key_type.into(),
+            device_ids: group
+                .devices()
+                .iter()
+                .map(Device::identifier)
+                .map(Vec::from)
+                .collect(),
+            protocol: group.protocol().into(),
+            key_type: group.key_type().into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[should_panic]
+    fn empty_identifier() {
+        Group::new(
+            vec![],
+            String::from("Sample Group"),
+            prepare_devices(3),
+            2,
+            ProtocolType::Gg18,
+            KeyType::SignPdf,
+            None,
+        );
+    }
+
+    #[test]
+    fn compare_groups() {
+        let g0 = Group::new(
+            vec![0x00],
+            String::from("g0"),
+            prepare_devices(3),
+            2,
+            ProtocolType::Gg18,
+            KeyType::SignPdf,
+            None,
+        );
+        let g0_duplicate = Group::new(
+            vec![0x00],
+            String::from("g0_duplicate"),
+            prepare_devices(5),
+            3,
+            ProtocolType::Gg18,
+            KeyType::SignPdf,
+            None,
+        );
+        assert!(g0 == g0_duplicate);
+    }
+
+    #[test]
+    fn protobuf_group() {
+        let group = Group::new(
+            vec![0x00],
+            String::from("Sample Group"),
+            prepare_devices(3),
+            2,
+            ProtocolType::Gg18,
+            KeyType::SignPdf,
+            None,
+        );
+        let protobuf = crate::proto::Group::from(&group);
+        assert_eq!(protobuf.identifier, group.identifier());
+        assert_eq!(protobuf.name, group.name());
+        assert_eq!(protobuf.threshold, group.threshold());
+        assert_eq!(
+            protobuf.device_ids,
+            group
+                .devices()
+                .iter()
+                .map(Device::identifier)
+                .map(Vec::from)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(protobuf.protocol, group.protocol() as i32);
+        assert_eq!(protobuf.key_type, group.key_type() as i32);
+    }
+
+    #[test]
+    fn sample_group() {
+        let identifier = vec![0x01, 0x02, 0x03, 0x04];
+        let name = String::from("Sample Group");
+        let mut devices = prepare_devices(6);
+        let extra_device = devices.pop().unwrap();
+        let threshold = 3;
+        let protocol_type = ProtocolType::Gg18;
+        let key_type = KeyType::SignPdf;
+        let group = Group::new(
+            identifier.clone(),
+            name.clone(),
+            devices.clone(),
+            threshold,
+            protocol_type,
+            key_type,
+            None,
+        );
+        assert_eq!(group.identifier(), &identifier);
+        assert_eq!(group.name(), &name);
+        assert_eq!(group.threshold(), threshold);
+        assert_eq!(group.reject_threshold(), 3);
+        assert_eq!(group.devices(), &devices);
+        for device in devices {
+            assert_eq!(group.contains(device.identifier()), true);
+        }
+        assert_eq!(group.contains(extra_device.identifier()), false);
+        assert_eq!(group.protocol(), protocol_type.into());
+        assert_eq!(group.key_type(), key_type.into());
+        assert_eq!(group.certificate(), None);
+    }
+
+    fn prepare_devices(n: usize) -> Vec<Device> {
+        assert!(n < u8::MAX as usize);
+        (0..n)
+            .map(|i| Device::new(vec![i as u8], format!("d{}", i)))
+            .collect()
     }
 }

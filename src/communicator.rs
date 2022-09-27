@@ -12,7 +12,9 @@ pub struct Communicator {
     /// Ordered list of active devices (participating in the protocol)
     active_devices: Option<Vec<Vec<u8>>>,
     /// A mapping of device identifiers to their Task decision
-    devices: HashMap<Vec<u8>, Option<bool>>,
+    decisions: HashMap<Vec<u8>, Option<bool>>,
+    /// A mapping of device identifiers to their Task acknowledgement
+    acknowledgements: HashMap<Vec<u8>, bool>,
     /// Incoming messages
     input: Vec<Vec<Option<Vec<u8>>>>,
     /// Outgoing messages
@@ -30,13 +32,18 @@ impl Communicator {
         assert!(threshold <= devices.len() as u32);
         // TODO uncomment once is_sorted is stabilized
         // assert!(devices.is_sorted());
+
         let mut communicator = Communicator {
             threshold,
             device_list: devices.iter().map(Device::clone).collect(),
             active_devices: None,
-            devices: devices
+            decisions: devices
                 .iter()
                 .map(|x| (x.identifier().to_vec(), None))
+                .collect(),
+            acknowledgements: devices
+                .iter()
+                .map(|x| (x.identifier().to_vec(), false))
                 .collect(),
             input: Vec::new(),
             output: Vec::new(),
@@ -153,7 +160,7 @@ impl Communicator {
         self.active_devices = Some(
             self.device_list
                 .iter()
-                .filter(|device| self.devices.get(device.identifier()) == Some(&Some(true)))
+                .filter(|device| self.decisions.get(device.identifier()) == Some(&Some(true)))
                 .take(self.threshold as usize)
                 .map(|device| device.identifier().to_vec())
                 .collect(),
@@ -166,18 +173,18 @@ impl Communicator {
         self.active_devices.clone()
     }
 
-    /// Save decision by the given device; return if successful
+    /// Save decision by the given device; return true if successful
     pub fn decide(&mut self, device: &[u8], decision: bool) -> bool {
-        if !self.devices.contains_key(device) || self.devices[device].is_some() {
+        if !self.decisions.contains_key(device) || self.decisions[device].is_some() {
             return false;
         }
-        self.devices.insert(device.to_vec(), Some(decision));
+        self.decisions.insert(device.to_vec(), Some(decision));
         true
     }
 
     /// Get the number of Task accepts
     pub fn accept_count(&self) -> u32 {
-        self.devices
+        self.decisions
             .iter()
             .map(|x| if x.1.unwrap_or(false) { 1 } else { 0 })
             .sum()
@@ -185,7 +192,7 @@ impl Communicator {
 
     /// Get the number of Task rejects
     pub fn reject_count(&self) -> u32 {
-        self.devices
+        self.decisions
             .iter()
             .map(|x| if x.1.unwrap_or(true) { 0 } else { 1 })
             .sum()
@@ -193,11 +200,25 @@ impl Communicator {
 
     /// Check whether a device submitted its decision
     pub fn device_decided(&self, device: &[u8]) -> bool {
-        if let Some(Some(_)) = self.devices.get(device) {
+        if let Some(Some(_)) = self.decisions.get(device) {
             true
         } else {
             false
         }
+    }
+
+    /// Save acknowledgement by the given device; return true if successful
+    pub fn acknowledge(&mut self, device: &[u8]) -> bool {
+        if !self.acknowledgements.contains_key(device) || self.acknowledgements[device] {
+            return false;
+        }
+        self.acknowledgements.insert(device.to_vec(), true);
+        true
+    }
+
+    /// Check whether a device acknowledged task output
+    pub fn device_acknowledged(&self, device: &[u8]) -> bool {
+        *self.acknowledgements.get(device).unwrap_or(&false)
     }
 
     /// Get indices of active devices in the corresponding group
@@ -343,6 +364,11 @@ mod tests {
             );
         }
         assert_eq!(communicator.round_received(), false);
+        for device in devices {
+            assert_eq!(communicator.device_acknowledged(device.identifier()), false);
+            assert_eq!(communicator.acknowledge(device.identifier()), true);
+            assert_eq!(communicator.device_acknowledged(device.identifier()), true);
+        }
     }
 
     #[test]
@@ -430,6 +456,21 @@ mod tests {
             communicator.get_message(devices[2].identifier()),
             Some(vec![1])
         );
+    }
+
+    #[test]
+    fn unknown_device_acknowledgement() {
+        let devices = prepare_devices(3);
+        let mut communicator = Communicator::new(&devices[..2], 2);
+        assert_eq!(communicator.acknowledge(devices[2].identifier()), false);
+    }
+
+    #[test]
+    fn repeated_device_acknowledgement() {
+        let devices = prepare_devices(2);
+        let mut communicator = Communicator::new(&devices, 2);
+        assert_eq!(communicator.acknowledge(devices[0].identifier()), true);
+        assert_eq!(communicator.acknowledge(devices[0].identifier()), false);
     }
 
     fn prepare_devices(n: usize) -> Vec<Device> {
