@@ -225,7 +225,7 @@ impl Mpc for MPCService {
                 .await
                 .get_devices()
                 .values()
-                .map(|device| msg::Device::from(device))
+                .map(|device| device.as_ref().into())
                 .collect(),
         };
         Ok(Response::new(resp))

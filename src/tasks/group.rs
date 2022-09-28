@@ -10,11 +10,12 @@ use crate::tasks::{get_timestamp, Task, TaskResult, TaskStatus, TaskType};
 use log::info;
 use std::io::Read;
 use std::process::{Command, Stdio};
+use tonic::codegen::Arc;
 
 pub struct GroupTask {
     name: String,
     threshold: u32,
-    devices: Vec<Device>,
+    devices: Vec<Arc<Device>>,
     communicator: Communicator,
     result: Option<Group>,
     failed: Option<String>,
@@ -24,7 +25,7 @@ pub struct GroupTask {
 }
 
 impl GroupTask {
-    pub fn new(name: &str, devices: &[Device], threshold: u32) -> Self {
+    pub fn new(name: &str, devices: &[Arc<Device>], threshold: u32) -> Self {
         let devices_len = devices.len() as u32;
         assert!(threshold <= devices_len);
 
@@ -79,7 +80,7 @@ impl GroupTask {
         self.result = Some(Group::new(
             identifier,
             self.name.clone(),
-            self.devices.iter().map(Device::clone).collect(),
+            self.devices.iter().map(Arc::clone).collect(),
             self.threshold,
             ProtocolType::Gg18,
             KeyType::SignPdf,
@@ -193,7 +194,7 @@ impl Task for GroupTask {
         return self
             .devices
             .iter()
-            .map(Device::identifier)
+            .map(|device| device.identifier())
             .any(|x| x == device_id);
     }
 

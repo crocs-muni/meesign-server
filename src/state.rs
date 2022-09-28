@@ -9,9 +9,10 @@ use crate::proto::{KeyType, ProtocolType};
 use crate::tasks::group::GroupTask;
 use crate::tasks::sign_pdf::SignPDFTask;
 use crate::tasks::{Task, TaskResult, TaskStatus};
+use tonic::codegen::Arc;
 
 pub struct State {
-    devices: HashMap<Vec<u8>, Device>,
+    devices: HashMap<Vec<u8>, Arc<Device>>,
     groups: HashMap<Vec<u8>, Group>,
     tasks: HashMap<Uuid, Box<dyn Task + Send + Sync>>,
 }
@@ -44,7 +45,7 @@ impl State {
             );
             return false;
         }
-        self.devices.insert(identifier.to_vec(), device);
+        self.devices.insert(identifier.to_vec(), Arc::new(device));
         true
     }
 
@@ -171,7 +172,7 @@ impl State {
         task.acknowledge(device);
     }
 
-    pub fn get_devices(&self) -> &HashMap<Vec<u8>, Device> {
+    pub fn get_devices(&self) -> &HashMap<Vec<u8>, Arc<Device>> {
         &self.devices
     }
 

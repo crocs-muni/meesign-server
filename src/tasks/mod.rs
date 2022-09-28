@@ -13,7 +13,7 @@ pub enum TaskStatus {
     Failed(String),
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub enum TaskResult {
     GroupEstablished(Group),
     Signed(Vec<u8>),

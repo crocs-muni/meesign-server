@@ -2,13 +2,14 @@ use crate::device::Device;
 use crate::proto::Gg18Message;
 use prost::Message;
 use std::collections::HashMap;
+use tonic::codegen::Arc;
 
 /// Communication state of a Task
 pub struct Communicator {
     /// The minimal number of parties needed to successfully complete the task
     threshold: u32,
     /// Ordered list of devices
-    device_list: Vec<Device>,
+    device_list: Vec<Arc<Device>>,
     /// Ordered list of active devices (participating in the protocol)
     active_devices: Option<Vec<Vec<u8>>>,
     /// A mapping of device identifiers to their Task decision
@@ -27,7 +28,7 @@ impl Communicator {
     /// # Arguments
     /// * `devices` - Sorted list of devices; items of the list need to be unique
     /// * `threshold` - The minimal number of devices to successfully complete the task
-    pub fn new(devices: &[Device], threshold: u32) -> Self {
+    pub fn new(devices: &[Arc<Device>], threshold: u32) -> Self {
         assert!(devices.len() > 1);
         assert!(threshold <= devices.len() as u32);
         // TODO uncomment once is_sorted is stabilized
@@ -35,7 +36,7 @@ impl Communicator {
 
         let mut communicator = Communicator {
             threshold,
-            device_list: devices.iter().map(Device::clone).collect(),
+            device_list: devices.iter().map(Arc::clone).collect(),
             active_devices: None,
             decisions: devices
                 .iter()
@@ -473,10 +474,10 @@ mod tests {
         assert_eq!(communicator.acknowledge(devices[0].identifier()), false);
     }
 
-    fn prepare_devices(n: usize) -> Vec<Device> {
+    fn prepare_devices(n: usize) -> Vec<Arc<Device>> {
         assert!(n < u8::MAX as usize);
         (0..n)
-            .map(|i| Device::new(vec![i as u8], format!("d{}", i)))
+            .map(|i| Arc::new(Device::new(vec![i as u8], format!("d{}", i))))
             .collect()
     }
 }

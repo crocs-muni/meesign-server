@@ -10,6 +10,7 @@ use prost::Message;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};
+use tonic::codegen::Arc;
 
 pub struct SignPDFTask {
     group: Group,
@@ -25,7 +26,7 @@ pub struct SignPDFTask {
 
 impl SignPDFTask {
     pub fn new(group: Group, name: String, data: Vec<u8>) -> Self {
-        let mut devices: Vec<Device> = group.devices().to_vec();
+        let mut devices: Vec<Arc<Device>> = group.devices().to_vec();
         devices.sort_by_key(|x| x.identifier().to_vec());
 
         let communicator = Communicator::new(&devices, group.threshold());

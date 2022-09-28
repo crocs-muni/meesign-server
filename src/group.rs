@@ -1,13 +1,12 @@
-use std::cmp::Eq;
-
 use crate::device::Device;
 use crate::proto::{KeyType, ProtocolType};
+use tonic::codegen::Arc;
 
-#[derive(Clone, Eq)]
+#[derive(Clone)]
 pub struct Group {
     identifier: Vec<u8>,
     name: String,
-    devices: Vec<Device>,
+    devices: Vec<Arc<Device>>,
     threshold: u32,
     protocol: ProtocolType,
     key_type: KeyType,
@@ -18,7 +17,7 @@ impl Group {
     pub fn new(
         identifier: Vec<u8>,
         name: String,
-        devices: Vec<Device>,
+        devices: Vec<Arc<Device>>,
         threshold: u32,
         protocol: ProtocolType,
         key_type: KeyType,
@@ -55,7 +54,7 @@ impl Group {
         self.devices.len() as u32 - self.threshold + 1 // rejects >= threshold_reject => fail
     }
 
-    pub fn devices(&self) -> &[Device] {
+    pub fn devices(&self) -> &[Arc<Device>] {
         &self.devices
     }
 
@@ -78,12 +77,6 @@ impl Group {
     }
 }
 
-impl PartialEq for Group {
-    fn eq(&self, other: &Self) -> bool {
-        self.identifier == other.identifier
-    }
-}
-
 impl From<&Group> for crate::proto::Group {
     fn from(group: &Group) -> Self {
         crate::proto::Group {
@@ -93,7 +86,7 @@ impl From<&Group> for crate::proto::Group {
             device_ids: group
                 .devices()
                 .iter()
-                .map(Device::identifier)
+                .map(|x| x.identifier())
                 .map(Vec::from)
                 .collect(),
             protocol: group.protocol().into(),
@@ -121,29 +114,6 @@ mod tests {
     }
 
     #[test]
-    fn compare_groups() {
-        let g0 = Group::new(
-            vec![0x00],
-            String::from("g0"),
-            prepare_devices(3),
-            2,
-            ProtocolType::Gg18,
-            KeyType::SignPdf,
-            None,
-        );
-        let g0_duplicate = Group::new(
-            vec![0x00],
-            String::from("g0_duplicate"),
-            prepare_devices(5),
-            3,
-            ProtocolType::Gg18,
-            KeyType::SignPdf,
-            None,
-        );
-        assert!(g0 == g0_duplicate);
-    }
-
-    #[test]
     fn protobuf_group() {
         let group = Group::new(
             vec![0x00],
@@ -163,7 +133,7 @@ mod tests {
             group
                 .devices()
                 .iter()
-                .map(Device::identifier)
+                .map(|device| device.identifier())
                 .map(Vec::from)
                 .collect::<Vec<_>>()
         );
@@ -193,7 +163,9 @@ mod tests {
         assert_eq!(group.name(), &name);
         assert_eq!(group.threshold(), threshold);
         assert_eq!(group.reject_threshold(), 3);
-        assert_eq!(group.devices(), &devices);
+        for (left_device, right_device) in group.devices().iter().zip(devices.iter()) {
+            assert_eq!(left_device.identifier(), right_device.identifier());
+        }
         for device in devices {
             assert_eq!(group.contains(device.identifier()), true);
         }
@@ -203,10 +175,10 @@ mod tests {
         assert_eq!(group.certificate(), None);
     }
 
-    fn prepare_devices(n: usize) -> Vec<Device> {
+    fn prepare_devices(n: usize) -> Vec<Arc<Device>> {
         assert!(n < u8::MAX as usize);
         (0..n)
-            .map(|i| Device::new(vec![i as u8], format!("d{}", i)))
+            .map(|i| Arc::new(Device::new(vec![i as u8], format!("d{}", i))))
             .collect()
     }
 }
