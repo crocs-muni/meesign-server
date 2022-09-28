@@ -16,6 +16,7 @@ pub struct SignPDFTask {
     communicator: Communicator,
     result: Option<Vec<u8>>,
     document: Vec<u8>,
+    hash: Option<Vec<u8>>,
     pdfhelper: Option<Child>,
     failed: Option<String>,
     protocol: Box<dyn Protocol + Send + Sync>,
@@ -41,6 +42,7 @@ impl SignPDFTask {
             communicator,
             result: None,
             document: data.clone(),
+            hash: None,
             pdfhelper: None,
             failed: None,
             protocol: Box::new(GG18Sign::new()),
@@ -65,10 +67,14 @@ impl SignPDFTask {
             .spawn()
             .unwrap();
 
-        let hash = request_hash(&mut pdfhelper, self.group.certificate().unwrap());
+        self.hash = Some(request_hash(
+            &mut pdfhelper,
+            self.group.certificate().unwrap(),
+        ));
         self.pdfhelper = Some(pdfhelper);
         std::fs::remove_file("document.pdf").unwrap();
-        self.protocol.initialize(&mut self.communicator, &hash);
+        self.protocol
+            .initialize(&mut self.communicator, self.hash.as_ref().unwrap());
     }
 
     fn advance_task(&mut self) {
@@ -162,6 +168,19 @@ impl Task for SignPDFTask {
             self.next_round();
         }
         Ok(())
+    }
+
+    fn restart(&mut self) -> Result<bool, String> {
+        if self.failed.is_some() {
+            return Ok(false);
+        }
+
+        if self.communicator.accept_count() > self.group.threshold() {
+            self.start_task();
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {

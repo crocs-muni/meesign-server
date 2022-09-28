@@ -33,7 +33,7 @@ impl Protocol for GG18Group {
             .encode_to_vec()
         });
 
-        self.round += 1;
+        self.round = 1;
     }
 
     fn advance(&mut self, communicator: &mut Communicator) {
@@ -81,7 +81,7 @@ impl Protocol for GG18Sign {
             .encode_to_vec()
         });
 
-        self.round += 1;
+        self.round = 1;
     }
 
     fn advance(&mut self, communicator: &mut Communicator) {

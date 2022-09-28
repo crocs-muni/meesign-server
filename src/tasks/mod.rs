@@ -39,6 +39,13 @@ pub trait Task {
     fn get_result(&self) -> Option<TaskResult>;
     fn get_decisions(&self) -> (u32, u32);
     fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<(), String>;
+
+    /// Attempt to restart protocol in task
+    ///
+    /// # Returns
+    /// Ok(true) if task restarted successfully; Ok(false) otherwise.
+    fn restart(&mut self) -> Result<bool, String>;
+
     fn has_device(&self, device_id: &[u8]) -> bool;
     fn waiting_for(&self, device_id: &[u8]) -> bool;
     fn decide(&mut self, device_id: &[u8], decision: bool);

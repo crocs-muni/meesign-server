@@ -164,6 +164,19 @@ impl Task for GroupTask {
         Ok(())
     }
 
+    fn restart(&mut self) -> Result<bool, String> {
+        if self.failed.is_some() {
+            return Ok(false);
+        }
+
+        if self.communicator.accept_count() == self.devices.len() as u32 {
+            self.start_task();
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     fn has_device(&self, device_id: &[u8]) -> bool {
         return self
             .devices
