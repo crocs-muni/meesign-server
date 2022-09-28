@@ -4,7 +4,7 @@ use crate::group::Group;
 use crate::proto::{Gg18Message, SignRequest};
 use crate::protocols::gg18::GG18Sign;
 use crate::protocols::Protocol;
-use crate::tasks::{Task, TaskResult, TaskStatus, TaskType};
+use crate::tasks::{get_timestamp, Task, TaskResult, TaskStatus, TaskType};
 use log::info;
 use prost::Message;
 use std::fs::File;
@@ -16,11 +16,11 @@ pub struct SignPDFTask {
     communicator: Communicator,
     result: Option<Vec<u8>>,
     document: Vec<u8>,
-    hash: Option<Vec<u8>>,
     pdfhelper: Option<Child>,
     failed: Option<String>,
     protocol: Box<dyn Protocol + Send + Sync>,
     request: Vec<u8>,
+    last_update: u64,
 }
 
 impl SignPDFTask {
@@ -42,11 +42,11 @@ impl SignPDFTask {
             communicator,
             result: None,
             document: data.clone(),
-            hash: None,
             pdfhelper: None,
             failed: None,
             protocol: Box::new(GG18Sign::new()),
             request,
+            last_update: get_timestamp(),
         }
     }
 
@@ -67,14 +67,10 @@ impl SignPDFTask {
             .spawn()
             .unwrap();
 
-        self.hash = Some(request_hash(
-            &mut pdfhelper,
-            self.group.certificate().unwrap(),
-        ));
+        let hash = request_hash(&mut pdfhelper, self.group.certificate().unwrap());
         self.pdfhelper = Some(pdfhelper);
         std::fs::remove_file("document.pdf").unwrap();
-        self.protocol
-            .initialize(&mut self.communicator, self.hash.as_ref().unwrap());
+        self.protocol.initialize(&mut self.communicator, &hash);
     }
 
     fn advance_task(&mut self) {
@@ -162,6 +158,7 @@ impl Task for SignPDFTask {
         let data: Gg18Message =
             Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
         self.communicator.receive_messages(device_id, data.message);
+        self.last_update = get_timestamp();
 
         if self.communicator.round_received() && self.protocol.round() <= self.protocol.last_round()
         {
@@ -171,16 +168,29 @@ impl Task for SignPDFTask {
     }
 
     fn restart(&mut self) -> Result<bool, String> {
+        self.last_update = get_timestamp();
         if self.failed.is_some() {
             return Ok(false);
         }
 
-        if self.communicator.accept_count() > self.group.threshold() {
+        if self.is_approved() {
+            if let Some(pdfhelper) = self.pdfhelper.as_mut() {
+                pdfhelper.kill().unwrap();
+                self.pdfhelper = None;
+            }
             self.start_task();
             Ok(true)
         } else {
             Ok(false)
         }
+    }
+
+    fn last_update(&self) -> u64 {
+        self.last_update
+    }
+
+    fn is_approved(&self) -> bool {
+        self.communicator.accept_count() >= self.group.threshold()
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
@@ -199,6 +209,7 @@ impl Task for SignPDFTask {
 
     fn decide(&mut self, device_id: &[u8], decision: bool) {
         self.communicator.decide(device_id, decision);
+        self.last_update = get_timestamp();
         if self.protocol.round() == 0 {
             if self.communicator.reject_count() >= self.group.reject_threshold() {
                 self.failed = Some("Too many rejections.".to_string());

@@ -182,4 +182,11 @@ impl State {
             error!("Unknown Device ID {}", hex::encode(device_id));
         }
     }
+
+    pub fn restart_task(&mut self, task_id: &Uuid) -> bool {
+        self.tasks
+            .get_mut(task_id)
+            .and_then(|task| task.restart().ok())
+            .unwrap_or(false)
+    }
 }

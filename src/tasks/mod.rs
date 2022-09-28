@@ -2,6 +2,7 @@ pub(crate) mod group;
 pub(crate) mod sign_pdf;
 
 use crate::group::Group;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, PartialEq)]
 pub enum TaskStatus {
@@ -27,6 +28,13 @@ impl TaskResult {
     }
 }
 
+pub fn get_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
 pub enum TaskType {
     Group,
     Sign,
@@ -45,6 +53,12 @@ pub trait Task {
     /// # Returns
     /// Ok(true) if task restarted successfully; Ok(false) otherwise.
     fn restart(&mut self) -> Result<bool, String>;
+
+    /// Get timestamp of the most recent task update
+    fn last_update(&self) -> u64;
+
+    /// True if the task has been approved
+    fn is_approved(&self) -> bool;
 
     fn has_device(&self, device_id: &[u8]) -> bool;
     fn waiting_for(&self, device_id: &[u8]) -> bool;

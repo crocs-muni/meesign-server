@@ -9,16 +9,15 @@ use crate::proto::mpc_server::{Mpc, MpcServer};
 use crate::proto::{KeyType, ProtocolType};
 use crate::state::State;
 use crate::tasks::{Task, TaskStatus, TaskType};
+use tonic::codegen::Arc;
 
 pub struct MPCService {
-    state: Mutex<State>,
+    state: Arc<Mutex<State>>,
 }
 
 impl MPCService {
-    pub fn new(state: State) -> Self {
-        MPCService {
-            state: Mutex::new(state),
-        }
+    pub fn new(state: Arc<Mutex<State>>) -> Self {
+        MPCService { state }
     }
 }
 
@@ -347,7 +346,7 @@ fn format_task(
     }
 }
 
-pub async fn run_rpc(state: State, addr: &str, port: u16) -> Result<(), String> {
+pub async fn run_grpc(state: Arc<Mutex<State>>, addr: &str, port: u16) -> Result<(), String> {
     let addr = format!("{}:{}", addr, port)
         .parse()
         .map_err(|_| String::from("Unable to parse server address"))?;
@@ -357,7 +356,7 @@ pub async fn run_rpc(state: State, addr: &str, port: u16) -> Result<(), String> 
         .add_service(MpcServer::new(node))
         .serve(addr)
         .await
-        .map_err(|_| String::from("Unable to run server"))?;
+        .map_err(|_| String::from("Unable to run grpc server"))?;
 
     Ok(())
 }

@@ -4,12 +4,14 @@ use clap::{Parser, Subcommand};
 
 use crate::proto::mpc_client::MpcClient;
 use crate::state::State;
+use tokio::{join, sync::Mutex};
+use tonic::codegen::Arc;
 
 mod communicator;
 mod device;
 mod group;
+mod interfaces;
 mod protocols;
-mod rpc;
 mod state;
 mod tasks;
 
@@ -283,6 +285,12 @@ async fn main() -> Result<(), String> {
             }
         }
     } else {
-        rpc::run_rpc(State::new(), &args.addr, args.port).await
+        let state = Arc::new(Mutex::new(State::new()));
+
+        let grpc = interfaces::grpc::run_grpc(state.clone(), &args.addr, args.port);
+        let timer = interfaces::timer::run_timer(state);
+
+        let (grpc_result, timer_result) = join!(grpc, timer);
+        grpc_result.and(timer_result)
     }
 }

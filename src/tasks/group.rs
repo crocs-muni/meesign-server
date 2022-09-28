@@ -6,7 +6,7 @@ use crate::group::Group;
 use crate::proto::*;
 use crate::protocols::gg18::GG18Group;
 use crate::protocols::Protocol;
-use crate::tasks::{Task, TaskResult, TaskStatus, TaskType};
+use crate::tasks::{get_timestamp, Task, TaskResult, TaskStatus, TaskType};
 use log::info;
 use std::io::Read;
 use std::process::{Command, Stdio};
@@ -20,6 +20,7 @@ pub struct GroupTask {
     failed: Option<String>,
     protocol: Box<dyn Protocol + Send + Sync>,
     request: Vec<u8>,
+    last_update: u64,
 }
 
 impl GroupTask {
@@ -50,6 +51,7 @@ impl GroupTask {
             failed: None,
             protocol: Box::new(GG18Group::new(devices_len, threshold)),
             request,
+            last_update: get_timestamp(),
         }
     }
 
@@ -155,6 +157,7 @@ impl Task for GroupTask {
         let data: Gg18Message =
             Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
         self.communicator.receive_messages(device_id, data.message);
+        self.last_update = get_timestamp();
 
         if self.communicator.round_received() && self.protocol.round() <= self.protocol.last_round()
         {
@@ -165,16 +168,25 @@ impl Task for GroupTask {
     }
 
     fn restart(&mut self) -> Result<bool, String> {
+        self.last_update = get_timestamp();
         if self.failed.is_some() {
             return Ok(false);
         }
 
-        if self.communicator.accept_count() == self.devices.len() as u32 {
+        if self.is_approved() {
             self.start_task();
             Ok(true)
         } else {
             Ok(false)
         }
+    }
+
+    fn last_update(&self) -> u64 {
+        self.last_update
+    }
+
+    fn is_approved(&self) -> bool {
+        self.communicator.accept_count() == self.devices.len() as u32
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
@@ -197,6 +209,7 @@ impl Task for GroupTask {
 
     fn decide(&mut self, device_id: &[u8], decision: bool) {
         self.communicator.decide(device_id, decision);
+        self.last_update = get_timestamp();
         if self.protocol.round() == 0 {
             if self.communicator.reject_count() > 0 {
                 self.failed = Some("Too many rejections.".to_string());
