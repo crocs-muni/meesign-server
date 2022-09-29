@@ -30,11 +30,16 @@ impl MPCService {
     }
 
     pub async fn send_updates(&self, task_id: &Uuid, task: &Box<dyn Task + Send + Sync>) {
-        let subscribers = self.subscribers.lock().await;
+        let mut subscribers = self.subscribers.lock().await;
         for device_id in task.get_devices().iter().map(Device::identifier) {
-            subscribers
-                .get(device_id)
-                .map(|tx| tx.send(Ok(format_task(task_id, task, Some(device_id), None))));
+            if let Some(tx) = subscribers.get(device_id) {
+                let result = tx.try_send(Ok(format_task(task_id, task, Some(device_id), None)));
+
+                if result.is_err() {
+                    info!("Channel with device_id={} closed", hex::encode(device_id));
+                    subscribers.remove(device_id);
+                }
+            }
         }
     }
 }
@@ -340,7 +345,7 @@ impl Mpc for MPCService {
         let request = request.into_inner();
         let device_id = request.device_id;
 
-        let (tx, rx) = mpsc::channel(5);
+        let (tx, rx) = mpsc::channel(8);
 
         self.subscribers.lock().await.insert(device_id, tx);
 
