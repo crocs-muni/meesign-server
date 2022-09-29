@@ -144,7 +144,7 @@ impl Task for SignPDFTask {
         )
     }
 
-    fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<(), String> {
+    fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<bool, String> {
         if self.communicator.accept_count() < self.group.threshold() {
             return Err("Not enough agreements to proceed with the protocol.".to_string());
         }
@@ -160,12 +160,17 @@ impl Task for SignPDFTask {
         if self.communicator.round_received() && self.protocol.round() <= self.protocol.last_round()
         {
             self.next_round();
+            return Ok(true);
         }
-        Ok(())
+        Ok(false)
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
         return self.group.contains(device_id);
+    }
+
+    fn get_devices(&self) -> Vec<Device> {
+        self.group.devices().to_vec()
     }
 
     fn waiting_for(&self, device: &[u8]) -> bool {
@@ -178,15 +183,17 @@ impl Task for SignPDFTask {
         self.communicator.waiting_for(device)
     }
 
-    fn decide(&mut self, device_id: &[u8], decision: bool) {
+    fn decide(&mut self, device_id: &[u8], decision: bool) -> bool {
         self.communicator.decide(device_id, decision);
         if self.protocol.round() == 0 {
             if self.communicator.reject_count() >= self.group.reject_threshold() {
                 self.failed = Some("Too many rejections.".to_string());
             } else if self.communicator.accept_count() >= self.group.threshold() {
                 self.next_round();
+                return true;
             }
         }
+        false
     }
 
     fn acknowledge(&mut self, device_id: &[u8]) {
