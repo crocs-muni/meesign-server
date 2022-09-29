@@ -147,7 +147,7 @@ impl Task for GroupTask {
         )
     }
 
-    fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<(), String> {
+    fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<bool, String> {
         if self.communicator.accept_count() != self.devices.len() as u32 {
             return Err("Not enough agreements to proceed with the protocol.".to_string());
         }
@@ -164,9 +164,10 @@ impl Task for GroupTask {
         if self.communicator.round_received() && self.protocol.round() <= self.protocol.last_round()
         {
             self.next_round();
+            return Ok(true);
         }
 
-        Ok(())
+        Ok(false)
     }
 
     fn restart(&mut self) -> Result<bool, String> {
@@ -199,6 +200,10 @@ impl Task for GroupTask {
             .any(|x| x == device_id);
     }
 
+    fn get_devices(&self) -> Vec<Arc<Device>> {
+        self.devices.clone()
+    }
+
     fn waiting_for(&self, device: &[u8]) -> bool {
         if self.protocol.round() == 0 {
             return !self.communicator.device_decided(device);
@@ -209,7 +214,7 @@ impl Task for GroupTask {
         self.communicator.waiting_for(device)
     }
 
-    fn decide(&mut self, device_id: &[u8], decision: bool) {
+    fn decide(&mut self, device_id: &[u8], decision: bool) -> bool {
         self.communicator.decide(device_id, decision);
         self.last_update = get_timestamp();
         if self.protocol.round() == 0 {
@@ -217,8 +222,10 @@ impl Task for GroupTask {
                 self.failed = Some("Too many rejections.".to_string());
             } else if self.communicator.accept_count() == self.devices.len() as u32 {
                 self.next_round();
+                return true;
             }
         }
+        false
     }
 
     fn acknowledge(&mut self, device_id: &[u8]) {
