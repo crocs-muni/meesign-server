@@ -2,7 +2,6 @@ pub(crate) mod group;
 pub(crate) mod sign_pdf;
 
 use crate::group::Group;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, PartialEq)]
 pub enum TaskStatus {
@@ -26,13 +25,6 @@ impl TaskResult {
             TaskResult::Signed(data) => data,
         }
     }
-}
-
-pub fn get_timestamp() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
 }
 
 pub enum TaskType {

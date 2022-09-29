@@ -1,4 +1,4 @@
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 
@@ -54,6 +54,13 @@ enum Commands {
         group_id: String,
         pdf_file: String,
     },
+}
+
+pub fn get_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }
 
 async fn register(server: String, identifier: &[u8], name: &str) -> Result<(), String> {

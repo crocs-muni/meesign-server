@@ -2,11 +2,12 @@ use prost::Message;
 
 use crate::communicator::Communicator;
 use crate::device::Device;
+use crate::get_timestamp;
 use crate::group::Group;
 use crate::proto::*;
 use crate::protocols::gg18::GG18Group;
 use crate::protocols::Protocol;
-use crate::tasks::{get_timestamp, Task, TaskResult, TaskStatus, TaskType};
+use crate::tasks::{Task, TaskResult, TaskStatus, TaskType};
 use log::info;
 use std::io::Read;
 use std::process::{Command, Stdio};

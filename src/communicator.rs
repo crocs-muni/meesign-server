@@ -1,7 +1,11 @@
 use crate::device::Device;
+use crate::get_timestamp;
 use crate::proto::Gg18Message;
 use prost::Message;
+use rand::prelude::SliceRandom;
+use rand::thread_rng;
 use std::collections::HashMap;
+use std::ops::Deref;
 use tonic::codegen::Arc;
 
 /// Communication state of a Task
@@ -158,14 +162,44 @@ impl Communicator {
     /// Set active devices
     pub fn set_active_devices(&mut self) -> Vec<Vec<u8>> {
         assert!(self.accept_count() >= self.threshold);
+        let agreeing_devices = self
+            .device_list
+            .iter()
+            .filter(|device| self.decisions.get(device.identifier()) == Some(&Some(true)))
+            .collect::<Vec<_>>();
+
+        let timestamp = get_timestamp();
+        let connected_devices = agreeing_devices
+            .iter()
+            .filter(|device| device.last_active() > timestamp - 5)
+            .map(Deref::deref)
+            .collect::<Vec<_>>();
+
+        let (devices, indices): (&Vec<&Arc<Device>>, Vec<_>) =
+            if connected_devices.len() >= self.threshold as usize {
+                (&connected_devices, (0..connected_devices.len()).collect())
+            } else {
+                (&agreeing_devices, (0..agreeing_devices.len()).collect())
+            };
+        let mut indices = indices
+            .choose_multiple(&mut thread_rng(), self.threshold as usize)
+            .cloned()
+            .collect::<Vec<_>>();
+        indices.sort();
+
         self.active_devices = Some(
-            self.device_list
+            devices
                 .iter()
-                .filter(|device| self.decisions.get(device.identifier()) == Some(&Some(true)))
-                .take(self.threshold as usize)
-                .map(|device| device.identifier().to_vec())
+                .enumerate()
+                .filter(|(idx, _)| indices.contains(idx))
+                .map(|(_, device)| device.identifier().to_vec())
                 .collect(),
         );
+        assert_eq!(
+            self.active_devices.as_ref().unwrap().len(),
+            self.threshold as usize
+        );
+
         self.active_devices.as_ref().unwrap().clone()
     }
 

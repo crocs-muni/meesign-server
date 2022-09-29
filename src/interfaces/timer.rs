@@ -1,5 +1,6 @@
+use crate::get_timestamp;
 use crate::state::State;
-use crate::tasks::{get_timestamp, TaskStatus};
+use crate::tasks::TaskStatus;
 
 use log::info;
 use tokio::{sync::Mutex, time};
