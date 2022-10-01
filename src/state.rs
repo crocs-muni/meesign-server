@@ -5,16 +5,21 @@ use uuid::Uuid;
 
 use crate::device::Device;
 use crate::group::Group;
+use crate::interfaces::grpc::format_task;
 use crate::proto::{KeyType, ProtocolType};
 use crate::tasks::group::GroupTask;
 use crate::tasks::sign_pdf::SignPDFTask;
 use crate::tasks::{Task, TaskResult, TaskStatus};
+use log::info;
+use tokio::sync::mpsc::Sender;
 use tonic::codegen::Arc;
+use tonic::Status;
 
 pub struct State {
     devices: HashMap<Vec<u8>, Arc<Device>>,
     groups: HashMap<Vec<u8>, Group>,
     tasks: HashMap<Uuid, Box<dyn Task + Send + Sync>>,
+    subscribers: HashMap<Vec<u8>, Sender<Result<crate::proto::Task, Status>>>,
 }
 
 impl State {
@@ -23,6 +28,7 @@ impl State {
             devices: HashMap::new(),
             groups: HashMap::new(),
             tasks: HashMap::new(),
+            subscribers: HashMap::new(),
         }
     }
 
@@ -86,7 +92,10 @@ impl State {
             ProtocolType::Gg18 => Box::new(GroupTask::new(name, &device_list, threshold)),
         };
 
-        Some(self.add_task(task))
+        let task_id = self.add_task(task);
+        self.send_updates(&task_id);
+
+        Some(task_id)
     }
 
     pub fn add_sign_task(&mut self, group: &[u8], name: &str, data: &[u8]) -> Option<Uuid> {
@@ -104,7 +113,9 @@ impl State {
                     data.to_vec(),
                 )),
             };
-            self.add_task(task)
+            let task_id = self.add_task(task);
+            self.send_updates(&task_id);
+            task_id
         })
     }
 
@@ -151,8 +162,13 @@ impl State {
         self.tasks.get(task)
     }
 
-    pub fn update_task(&mut self, task: &Uuid, device: &[u8], data: &[u8]) -> Result<bool, String> {
-        let task = self.tasks.get_mut(task).unwrap();
+    pub fn update_task(
+        &mut self,
+        task_id: &Uuid,
+        device: &[u8],
+        data: &[u8],
+    ) -> Result<bool, String> {
+        let task = self.tasks.get_mut(task_id).unwrap();
         let previous_status = task.get_status();
         let update_result = task.update(device, data);
         if previous_status != TaskStatus::Finished && task.get_status() == TaskStatus::Finished {
@@ -161,12 +177,19 @@ impl State {
                 self.groups.insert(group.identifier().to_vec(), group);
             }
         }
+        if let Ok(true) = update_result {
+            self.send_updates(&task_id);
+        }
         update_result
     }
 
-    pub fn decide_task(&mut self, task: &Uuid, device: &[u8], decision: bool) -> bool {
-        let task = self.tasks.get_mut(task).unwrap();
-        task.decide(device, decision)
+    pub fn decide_task(&mut self, task_id: &Uuid, device: &[u8], decision: bool) -> bool {
+        let task = self.tasks.get_mut(task_id).unwrap();
+        let change = task.decide(device, decision);
+        if change {
+            self.send_updates(task_id);
+        }
+        change
     }
 
     pub fn acknowledge_task(&mut self, task: &Uuid, device: &[u8]) {
@@ -178,8 +201,8 @@ impl State {
         &self.devices
     }
 
-    pub fn device_activated(&mut self, device_id: &[u8]) {
-        if let Some(device) = self.devices.get_mut(device_id) {
+    pub fn device_activated(&self, device_id: &[u8]) {
+        if let Some(device) = self.devices.get(device_id) {
             device.activated();
         } else {
             error!("Unknown Device ID {}", hex::encode(device_id));
@@ -191,5 +214,45 @@ impl State {
             .get_mut(task_id)
             .and_then(|task| task.restart().ok())
             .unwrap_or(false)
+    }
+
+    pub fn add_subscriber(
+        &mut self,
+        device_id: Vec<u8>,
+        tx: Sender<Result<crate::proto::Task, Status>>,
+    ) {
+        self.subscribers.insert(device_id, tx);
+    }
+
+    pub fn remove_subscriber(&mut self, device_id: &Vec<u8>) {
+        self.subscribers.remove(device_id);
+        info!("Removing subscriber device_id={:?}", hex::encode(device_id));
+    }
+
+    pub fn get_subscribers(&self) -> &HashMap<Vec<u8>, Sender<Result<crate::proto::Task, Status>>> {
+        &self.subscribers
+    }
+
+    fn send_updates(&mut self, task_id: &Uuid) {
+        let task = self.get_task(task_id).unwrap();
+        let mut remove = Vec::new();
+
+        for device_id in task.get_devices().iter().map(|device| device.identifier()) {
+            if let Some(tx) = self.subscribers.get(device_id) {
+                let result = tx.try_send(Ok(format_task(task_id, task, Some(device_id), None)));
+
+                if result.is_err() {
+                    info!(
+                        "Closed channel detected device_id={}",
+                        hex::encode(device_id)
+                    );
+                    remove.push(device_id.to_vec());
+                }
+            }
+        }
+
+        for device_id in remove {
+            self.remove_subscriber(&device_id);
+        }
     }
 }

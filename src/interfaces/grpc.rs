@@ -1,5 +1,5 @@
 use log::{debug, info};
-use tokio::sync::mpsc::{self, Sender};
+use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::Stream;
@@ -14,34 +14,15 @@ use crate::proto::{KeyType, ProtocolType};
 use crate::state::State;
 use crate::tasks::{Task, TaskStatus, TaskType};
 
-use std::collections::HashMap;
 use std::pin::Pin;
 
 pub struct MPCService {
     state: Arc<Mutex<State>>,
-    subscribers: Mutex<HashMap<Vec<u8>, Sender<Result<msg::Task, Status>>>>,
 }
 
 impl MPCService {
     pub fn new(state: Arc<Mutex<State>>) -> Self {
-        MPCService {
-            state,
-            subscribers: Mutex::new(HashMap::new()),
-        }
-    }
-
-    pub async fn send_updates(&self, task_id: &Uuid, task: &Box<dyn Task + Send + Sync>) {
-        let mut subscribers = self.subscribers.lock().await;
-        for device_id in task.get_devices().iter().map(|device| device.identifier()) {
-            if let Some(tx) = subscribers.get(device_id) {
-                let result = tx.try_send(Ok(format_task(task_id, task, Some(device_id), None)));
-
-                if result.is_err() {
-                    info!("Channel with device_id={} closed", hex::encode(device_id));
-                    subscribers.remove(device_id);
-                }
-            }
-        }
+        MPCService { state }
     }
 }
 
@@ -87,7 +68,6 @@ impl Mpc for MPCService {
         let mut state = self.state.lock().await;
         if let Some(task_id) = state.add_sign_task(&group_id, &name, &data) {
             let task = state.get_task(&task_id).unwrap();
-            self.send_updates(&task_id, &task).await;
             Ok(Response::new(format_task(&task_id, task, None, None)))
         } else {
             Err(Status::failed_precondition("Request failed"))
@@ -112,7 +92,7 @@ impl Mpc for MPCService {
             hex::encode(&device_id.clone().unwrap_or(&[]))
         );
 
-        let mut state = self.state.lock().await;
+        let state = self.state.lock().await;
         if device_id.is_some() {
             state.device_activated(device_id.as_ref().unwrap());
         }
@@ -142,15 +122,9 @@ impl Mpc for MPCService {
         let result = state.update_task(&task_id, &device_id, &data);
 
         match result {
-            Ok(next_round) => {
-                if next_round {
-                    self.send_updates(&task_id, &state.get_task(&task_id).unwrap())
-                        .await;
-                }
-                Ok(Response::new(msg::Resp {
-                    message: "OK".into(),
-                }))
-            }
+            Ok(_) => Ok(Response::new(msg::Resp {
+                message: "OK".into(),
+            })),
             Err(e) => Err(Status::failed_precondition(e)),
         }
     }
@@ -167,7 +141,7 @@ impl Mpc for MPCService {
             .unwrap_or("unknown".to_string());
         debug!("TasksRequest device_id={}", device_str);
 
-        let mut state = self.state.lock().await;
+        let state = self.state.lock().await;
         let tasks = if let Some(device_id) = device_id {
             state.device_activated(&device_id);
             state
@@ -198,7 +172,7 @@ impl Mpc for MPCService {
             .unwrap_or("unknown".to_string());
         debug!("GroupsRequest device_id={}", device_str);
 
-        let mut state = self.state.lock().await;
+        let state = self.state.lock().await;
         let groups = if let Some(device_id) = device_id {
             state.device_activated(&device_id);
             state
@@ -240,7 +214,6 @@ impl Mpc for MPCService {
             state.add_group_task(&name, &device_ids, threshold, protocol, key_type)
         {
             let task = state.get_task(&task_id).unwrap();
-            self.send_updates(&task_id, task).await;
             Ok(Response::new(format_task(&task_id, task, None, None)))
         } else {
             Err(Status::failed_precondition("Request failed"))
@@ -306,10 +279,7 @@ impl Mpc for MPCService {
 
         let mut state = self.state.lock().await;
         state.device_activated(&device_id);
-        if state.decide_task(&task_id, &device_id, accept) {
-            self.send_updates(&task_id, state.get_task(&task_id).unwrap())
-                .await;
-        }
+        state.decide_task(&task_id, &device_id, accept);
 
         Ok(Response::new(msg::Resp {
             message: "OK".into(),
@@ -348,13 +318,13 @@ impl Mpc for MPCService {
 
         let (tx, rx) = mpsc::channel(8);
 
-        self.subscribers.lock().await.insert(device_id, tx);
+        self.state.lock().await.add_subscriber(device_id, tx);
 
         Ok(Response::new(Box::pin(ReceiverStream::new(rx))))
     }
 }
 
-fn format_task(
+pub fn format_task(
     task_id: &Uuid,
     task: &Box<dyn Task + Send + Sync>,
     device_id: Option<&[u8]>,
