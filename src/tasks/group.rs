@@ -192,6 +192,7 @@ impl Task for GroupTask {
         if self.protocol.round() == 0 {
             if self.communicator.reject_count() > 0 {
                 self.failed = Some("Too many rejections.".to_string());
+                return true;
             } else if self.communicator.accept_count() == self.devices.len() as u32 {
                 self.next_round();
                 return true;

@@ -188,6 +188,7 @@ impl Task for SignPDFTask {
         if self.protocol.round() == 0 {
             if self.communicator.reject_count() >= self.group.reject_threshold() {
                 self.failed = Some("Too many rejections.".to_string());
+                return true;
             } else if self.communicator.accept_count() >= self.group.threshold() {
                 self.next_round();
                 return true;
