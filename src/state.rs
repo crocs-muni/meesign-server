@@ -97,11 +97,9 @@ impl State {
 
         self.groups.get(group).cloned().map(|group| {
             let task: Box<dyn Task + Send + Sync + 'static> = match group.protocol() {
-                ProtocolType::Gg18 => Box::new(SignPDFTask::new(
-                    group.clone(),
-                    name.to_string(),
-                    data.to_vec(),
-                )),
+                ProtocolType::Gg18 => {
+                    Box::new(SignPDFTask::new(group, name.to_string(), data.to_vec()))
+                }
             };
             self.add_task(task)
         })
@@ -122,7 +120,7 @@ impl State {
                     || (task.get_status() == TaskStatus::Finished
                         && !task.device_acknowledged(device)))
             {
-                tasks.push((uuid.clone(), task));
+                tasks.push((*uuid, task));
             }
         }
         tasks

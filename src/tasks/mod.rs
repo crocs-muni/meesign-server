@@ -4,7 +4,7 @@ pub(crate) mod sign_pdf;
 use crate::device::Device;
 use crate::group::Group;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum TaskStatus {
     Created,
     Running(u16),
@@ -13,7 +13,7 @@ pub enum TaskStatus {
     Failed(String),
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub enum TaskResult {
     GroupEstablished(Group),
     Signed(Vec<u8>),

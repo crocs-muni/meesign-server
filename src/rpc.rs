@@ -86,7 +86,7 @@ impl Mpc for MPCService {
         let mut state = self.state.lock().await;
         if let Some(task_id) = state.add_sign_task(&group_id, &name, &data) {
             let task = state.get_task(&task_id).unwrap();
-            self.send_updates(&task_id, &task).await;
+            self.send_updates(&task_id, task).await;
             Ok(Response::new(format_task(&task_id, task, None, None)))
         } else {
             Err(Status::failed_precondition("Request failed"))
@@ -108,7 +108,7 @@ impl Mpc for MPCService {
         debug!(
             "TaskRequest task_id={} device_id={}",
             hex::encode(&task_id),
-            hex::encode(&device_id.clone().unwrap_or(&[]))
+            hex::encode(&device_id.unwrap_or(&[]))
         );
 
         let mut state = self.state.lock().await;
@@ -143,7 +143,7 @@ impl Mpc for MPCService {
         match result {
             Ok(next_round) => {
                 if next_round {
-                    self.send_updates(&task_id, &state.get_task(&task_id).unwrap())
+                    self.send_updates(&task_id, state.get_task(&task_id).unwrap())
                         .await;
                 }
                 Ok(Response::new(msg::Resp {
@@ -163,7 +163,7 @@ impl Mpc for MPCService {
         let device_str = device_id
             .as_ref()
             .map(|x| hex::encode(&x))
-            .unwrap_or("unknown".to_string());
+            .unwrap_or_else(|| "unknown".to_string());
         debug!("TasksRequest device_id={}", device_str);
 
         let mut state = self.state.lock().await;
@@ -194,7 +194,7 @@ impl Mpc for MPCService {
         let device_str = device_id
             .as_ref()
             .map(|x| hex::encode(&x))
-            .unwrap_or("unknown".to_string());
+            .unwrap_or_else(|| "unknown".to_string());
         debug!("GroupsRequest device_id={}", device_str);
 
         let mut state = self.state.lock().await;
@@ -259,7 +259,7 @@ impl Mpc for MPCService {
                 .await
                 .get_devices()
                 .values()
-                .map(|device| msg::Device::from(device))
+                .map(msg::Device::from)
                 .collect(),
         };
         Ok(Response::new(resp))
@@ -271,7 +271,7 @@ impl Mpc for MPCService {
         let device_str = device_id
             .as_ref()
             .map(|x| hex::encode(&x))
-            .unwrap_or("unknown".to_string());
+            .unwrap_or_else(|| "unknown".to_string());
         let message = request.message;
         info!("LogRequest device_id={} message={}", device_str, message);
 

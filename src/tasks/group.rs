@@ -112,9 +112,9 @@ impl Task for GroupTask {
             self.result
                 .as_ref()
                 .map(|_| TaskStatus::Finished)
-                .unwrap_or(TaskStatus::Failed(String::from(
-                    "The group was not established.",
-                )))
+                .unwrap_or_else(|| {
+                    TaskStatus::Failed(String::from("The group was not established."))
+                })
         }
     }
 
