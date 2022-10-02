@@ -10,7 +10,7 @@ pub struct Device {
 
 impl Device {
     pub fn new(identifier: Vec<u8>, name: String) -> Self {
-        assert!(identifier.len() > 0);
+        assert!(!identifier.is_empty());
         Device {
             identifier,
             name,

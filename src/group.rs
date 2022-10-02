@@ -23,7 +23,7 @@ impl Group {
         key_type: KeyType,
         certificate: Option<Vec<u8>>,
     ) -> Self {
-        assert!(identifier.len() > 0);
+        assert!(!identifier.is_empty());
         assert!(devices.len() > 1);
         assert!(threshold > 1);
         assert!(threshold as usize <= devices.len());

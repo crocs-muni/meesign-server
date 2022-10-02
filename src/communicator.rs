@@ -95,7 +95,7 @@ impl Communicator {
 
         self.input
             .get(device_index)
-            .and_then(|messages| Some(!messages.iter().any(Option::is_some)))
+            .map(|messages| !messages.iter().any(Option::is_some))
             .unwrap_or(true)
     }
 
@@ -141,7 +141,7 @@ impl Communicator {
             .as_ref()
             .unwrap()
             .iter()
-            .zip((&self.input).into_iter())
+            .zip((&self.input).iter())
             .filter(|(_a, b)| b.iter().all(Option::is_none))
             .count()
             == 0
@@ -235,11 +235,7 @@ impl Communicator {
 
     /// Check whether a device submitted its decision
     pub fn device_decided(&self, device: &[u8]) -> bool {
-        if let Some(Some(_)) = self.decisions.get(device) {
-            true
-        } else {
-            false
-        }
+        matches!(self.decisions.get(device), Some(Some(_)))
     }
 
     /// Save acknowledgement by the given device; return true if successful
@@ -264,11 +260,11 @@ impl Communicator {
 
         let active_devices = self.get_active_devices().unwrap();
         let mut indices: Vec<u32> = Vec::new();
-        for i in 0..active_devices.len() {
+        for device in &active_devices {
             indices.push(
                 self.device_list
                     .iter()
-                    .position(|x| x.identifier() == &active_devices[i])
+                    .position(|x| x.identifier() == device)
                     .unwrap() as u32,
             );
         }

@@ -5,7 +5,7 @@ use crate::device::Device;
 use crate::group::Group;
 use tonic::codegen::Arc;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum TaskStatus {
     Created,
     Running(u16),

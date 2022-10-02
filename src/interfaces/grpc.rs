@@ -89,7 +89,7 @@ impl Mpc for MPCService {
         debug!(
             "TaskRequest task_id={} device_id={}",
             hex::encode(&task_id),
-            hex::encode(&device_id.clone().unwrap_or(&[]))
+            hex::encode(&device_id.unwrap_or(&[]))
         );
 
         let state = self.state.lock().await;
@@ -138,7 +138,7 @@ impl Mpc for MPCService {
         let device_str = device_id
             .as_ref()
             .map(|x| hex::encode(&x))
-            .unwrap_or("unknown".to_string());
+            .unwrap_or_else(|| "unknown".to_string());
         debug!("TasksRequest device_id={}", device_str);
 
         let state = self.state.lock().await;
@@ -169,7 +169,7 @@ impl Mpc for MPCService {
         let device_str = device_id
             .as_ref()
             .map(|x| hex::encode(&x))
-            .unwrap_or("unknown".to_string());
+            .unwrap_or_else(|| "unknown".to_string());
         debug!("GroupsRequest device_id={}", device_str);
 
         let state = self.state.lock().await;
@@ -245,7 +245,7 @@ impl Mpc for MPCService {
         let device_str = device_id
             .as_ref()
             .map(|x| hex::encode(&x))
-            .unwrap_or("unknown".to_string());
+            .unwrap_or_else(|| "unknown".to_string());
         let message = request.message;
         info!("LogRequest device_id={} message={}", device_str, message);
 

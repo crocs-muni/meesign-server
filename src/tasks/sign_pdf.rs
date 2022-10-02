@@ -34,7 +34,7 @@ impl SignPDFTask {
 
         let request = (SignRequest {
             group_id: group.identifier().to_vec(),
-            name: name.clone(),
+            name,
             data: data.clone(),
         })
         .encode_to_vec();
@@ -43,7 +43,7 @@ impl SignPDFTask {
             group,
             communicator,
             result: None,
-            document: data.clone(),
+            document: data,
             pdfhelper: None,
             failed: None,
             protocol: Box::new(GG18Sign::new()),
@@ -119,9 +119,9 @@ impl Task for SignPDFTask {
             self.result
                 .as_ref()
                 .map(|_| TaskStatus::Finished)
-                .unwrap_or(TaskStatus::Failed(String::from(
-                    "Server did not receive a signature",
-                )))
+                .unwrap_or_else(|| {
+                    TaskStatus::Failed(String::from("Server did not receive a signature"))
+                })
         }
     }
 
@@ -197,7 +197,7 @@ impl Task for SignPDFTask {
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
-        return self.group.contains(device_id);
+        self.group.contains(device_id)
     }
 
     fn get_devices(&self) -> Vec<Arc<Device>> {
@@ -220,6 +220,7 @@ impl Task for SignPDFTask {
         if self.protocol.round() == 0 {
             if self.communicator.reject_count() >= self.group.reject_threshold() {
                 self.failed = Some("Too many rejections.".to_string());
+                return true;
             } else if self.communicator.accept_count() >= self.group.threshold() {
                 self.next_round();
                 return true;
@@ -245,7 +246,7 @@ fn request_hash(process: &mut Child, certificate: &[u8]) -> Vec<u8> {
     let process_stdin = process.stdin.as_mut().unwrap();
     let process_stdout = process.stdout.as_mut().unwrap();
 
-    process_stdin.write(certificate).unwrap();
+    process_stdin.write_all(certificate).unwrap();
     process_stdin.flush().unwrap();
 
     let mut in_buffer = [0u8; 65]; // \n
@@ -260,9 +261,9 @@ fn include_signature(process: &mut Child, signature: &[u8]) -> Vec<u8> {
 
     let mut out_buffer = [0u8; 129];
     out_buffer[..128].copy_from_slice(hex::encode(&signature).as_bytes());
-    out_buffer[128] = '\n' as u8;
+    out_buffer[128] = b'\n';
 
-    process_stdin.write(&out_buffer).unwrap();
+    process_stdin.write_all(&out_buffer).unwrap();
 
     let mut result = Vec::new();
     process_stdout.read_to_end(&mut result).unwrap();
