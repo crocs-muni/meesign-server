@@ -147,13 +147,13 @@ impl Mpc for MPCService {
             state
                 .get_device_tasks(&device_id)
                 .iter()
-                .map(|(task_id, task)| format_task(task_id, task, Some(&device_id), None))
+                .map(|(task_id, task)| format_task(task_id, *task, Some(&device_id), None))
                 .collect()
         } else {
             state
                 .get_tasks()
                 .iter()
-                .map(|(task_id, task)| format_task(task_id, task, None, None))
+                .map(|(task_id, task)| format_task(task_id, task.as_ref(), None, None))
                 .collect()
         };
 
@@ -326,7 +326,7 @@ impl Mpc for MPCService {
 
 pub fn format_task(
     task_id: &Uuid,
-    task: &Box<dyn Task + Send + Sync>,
+    task: &dyn Task,
     device_id: Option<&[u8]>,
     request: Option<&[u8]>,
 ) -> crate::proto::Task {

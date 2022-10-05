@@ -106,7 +106,7 @@ impl State {
         }
 
         self.groups.get(group).cloned().map(|group| {
-            let task: Box<dyn Task + Send + Sync + 'static> = match group.protocol() {
+            let task: Box<dyn Task + Send + Sync> = match group.protocol() {
                 ProtocolType::Gg18 => {
                     Box::new(SignPDFTask::new(group, name.to_string(), data.to_vec()))
                 }
@@ -123,7 +123,7 @@ impl State {
         uuid
     }
 
-    pub fn get_device_tasks(&self, device: &[u8]) -> Vec<(Uuid, &Box<dyn Task + Send + Sync>)> {
+    pub fn get_device_tasks(&self, device: &[u8]) -> Vec<(Uuid, &dyn Task)> {
         let mut tasks = Vec::new();
         for (uuid, task) in self.tasks.iter() {
             // TODO refactor
@@ -132,13 +132,13 @@ impl State {
                     || (task.get_status() == TaskStatus::Finished
                         && !task.device_acknowledged(device)))
             {
-                tasks.push((*uuid, task));
+                tasks.push((*uuid, task.as_ref() as &dyn Task));
             }
         }
         tasks
     }
 
-    pub fn get_device_groups(&self, device: &Vec<u8>) -> Vec<Group> {
+    pub fn get_device_groups(&self, device: &[u8]) -> Vec<Group> {
         let mut groups = Vec::new();
         for group in self.groups.values() {
             if group.contains(device) {
@@ -156,8 +156,8 @@ impl State {
         &self.tasks
     }
 
-    pub fn get_task(&self, task: &Uuid) -> Option<&Box<dyn Task + Send + Sync>> {
-        self.tasks.get(task)
+    pub fn get_task(&self, task: &Uuid) -> Option<&dyn Task> {
+        self.tasks.get(task).map(|task| task.as_ref() as &dyn Task)
     }
 
     pub fn update_task(
@@ -176,7 +176,7 @@ impl State {
             }
         }
         if let Ok(true) = update_result {
-            self.send_updates(&task_id);
+            self.send_updates(task_id);
         }
         update_result
     }

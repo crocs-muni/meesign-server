@@ -26,7 +26,7 @@ fn check_tasks(state: &mut MutexGuard<State>) {
             && timestamp - task.last_update() > 30
         {
             info!("Stale task detected task_id={:?}", hex::encode(task_id));
-            restarts.push(task_id.clone());
+            restarts.push(*task_id);
         }
     }
     for task_id in restarts {
@@ -44,7 +44,7 @@ fn check_subscribers(state: &mut MutexGuard<State>) {
             );
             remove.push(device_id.clone());
         } else {
-            state.device_activated(&device_id);
+            state.device_activated(device_id);
         }
     }
     for device_id in remove {
