@@ -208,10 +208,17 @@ impl State {
     }
 
     pub fn restart_task(&mut self, task_id: &Uuid) -> bool {
-        self.tasks
+        if self
+            .tasks
             .get_mut(task_id)
             .and_then(|task| task.restart().ok())
             .unwrap_or(false)
+        {
+            self.send_updates(task_id);
+            true
+        } else {
+            false
+        }
     }
 
     pub fn add_subscriber(
