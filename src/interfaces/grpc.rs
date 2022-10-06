@@ -31,6 +31,16 @@ impl Mpc for MPCService {
     type SubscribeUpdatesStream =
         Pin<Box<dyn Stream<Item = Result<msg::Task, Status>> + Send + 'static>>;
 
+    async fn get_server_info(
+        &self,
+        _request: Request<msg::ServerInfoRequest>,
+    ) -> Result<Response<msg::ServerInfo>, Status> {
+        debug!("ServerInfoRequest");
+        Ok(Response::new(msg::ServerInfo {
+            version: crate::VERSION.unwrap_or("unknown").to_string(),
+        }))
+    }
+
     async fn register(
         &self,
         request: Request<msg::RegistrationRequest>,

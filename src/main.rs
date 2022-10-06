@@ -20,6 +20,8 @@ mod proto {
     tonic::include_proto!("meesign");
 }
 
+const VERSION: Option<&str> = option_env!("CARGO_PKG_VERSION");
+
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
 struct Args {

@@ -2,6 +2,7 @@ syntax = "proto3";
 package meesign;
 
 service MPC {
+  rpc GetServerInfo(ServerInfoRequest) returns (ServerInfo);
   rpc Register(RegistrationRequest) returns (Resp);
   rpc Sign(SignRequest) returns (Task);
   rpc Group(GroupRequest) returns (Task);
@@ -14,6 +15,12 @@ service MPC {
   rpc GetDevices(DevicesRequest) returns (Devices);
   rpc Log(LogRequest) returns (Resp);
   rpc SubscribeUpdates(SubscribeRequest) returns (stream Task);
+}
+
+message ServerInfoRequest {}
+
+message ServerInfo {
+  string version = 1;
 }
 
 enum ProtocolType {
