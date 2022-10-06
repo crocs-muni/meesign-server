@@ -72,6 +72,10 @@ impl SignPDFTask {
             .unwrap();
 
         let hash = request_hash(&mut pdfhelper, self.group.certificate().unwrap());
+        if hash.is_empty() {
+            self.failed = Some("PDFHelper failed.".to_string());
+            return;
+        }
         self.pdfhelper = Some(pdfhelper);
         std::fs::remove_file("document.pdf").unwrap();
         self.protocol.initialize(&mut self.communicator, &hash);
@@ -257,9 +261,11 @@ fn request_hash(process: &mut Child, certificate: &[u8]) -> Vec<u8> {
     process_stdin.flush().unwrap();
 
     let mut in_buffer = [0u8; 65]; // \n
-    process_stdout.read_exact(&mut in_buffer).unwrap();
-
-    hex::decode(String::from_utf8(Vec::from(&in_buffer[..64])).unwrap()).unwrap()
+    if let Ok(()) = process_stdout.read_exact(&mut in_buffer) {
+        hex::decode(String::from_utf8(Vec::from(&in_buffer[..64])).unwrap()).unwrap()
+    } else {
+        Vec::new()
+    }
 }
 
 fn include_signature(process: &mut Child, signature: &[u8]) -> Vec<u8> {
