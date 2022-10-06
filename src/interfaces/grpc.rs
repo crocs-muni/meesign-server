@@ -277,9 +277,12 @@ impl Mpc for MPCService {
             accept
         );
 
-        let mut state = self.state.lock().await;
-        state.device_activated(&device_id);
-        state.decide_task(&task_id, &device_id, accept);
+        let state = self.state.clone();
+        tokio::task::spawn(async move {
+            let mut state = state.lock().await;
+            state.device_activated(&device_id);
+            state.decide_task(&task_id, &device_id, accept);
+        });
 
         Ok(Response::new(msg::Resp {
             message: "OK".into(),
