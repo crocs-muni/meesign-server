@@ -71,4 +71,6 @@ pub trait Task {
     fn acknowledge(&mut self, device_id: &[u8]);
     fn device_acknowledged(&self, device_id: &[u8]) -> bool;
     fn get_request(&self) -> &[u8];
+
+    fn get_attempts(&self) -> u32;
 }

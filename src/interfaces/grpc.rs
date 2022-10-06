@@ -365,6 +365,7 @@ pub fn format_task(
         reject: reject as u32,
         data,
         request: request.map(Vec::from),
+        attempt: task.get_attempts(),
     }
 }
 

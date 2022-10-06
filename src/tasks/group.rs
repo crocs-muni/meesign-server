@@ -23,6 +23,7 @@ pub struct GroupTask {
     protocol: Box<dyn Protocol + Send + Sync>,
     request: Vec<u8>,
     last_update: u64,
+    attempts: u32,
 }
 
 impl GroupTask {
@@ -54,6 +55,7 @@ impl GroupTask {
             protocol: Box::new(GG18Group::new(devices_len, threshold)),
             request,
             last_update: get_timestamp(),
+            attempts: 0,
         }
     }
 
@@ -177,6 +179,7 @@ impl Task for GroupTask {
         }
 
         if self.is_approved() {
+            self.attempts += 1;
             self.start_task();
             Ok(true)
         } else {
@@ -239,6 +242,10 @@ impl Task for GroupTask {
 
     fn get_request(&self) -> &[u8] {
         &self.request
+    }
+
+    fn get_attempts(&self) -> u32 {
+        self.attempts
     }
 }
 

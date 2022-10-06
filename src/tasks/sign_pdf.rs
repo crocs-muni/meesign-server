@@ -23,6 +23,7 @@ pub struct SignPDFTask {
     protocol: Box<dyn Protocol + Send + Sync>,
     request: Vec<u8>,
     last_update: u64,
+    attempts: u32,
 }
 
 impl SignPDFTask {
@@ -49,6 +50,7 @@ impl SignPDFTask {
             protocol: Box::new(GG18Sign::new()),
             request,
             last_update: get_timestamp(),
+            attempts: 0,
         }
     }
 
@@ -181,6 +183,7 @@ impl Task for SignPDFTask {
                 pdfhelper.kill().unwrap();
                 self.pdfhelper = None;
             }
+            self.attempts += 1;
             self.start_task();
             Ok(true)
         } else {
@@ -239,6 +242,10 @@ impl Task for SignPDFTask {
 
     fn get_request(&self) -> &[u8] {
         &self.request
+    }
+
+    fn get_attempts(&self) -> u32 {
+        self.attempts
     }
 }
 

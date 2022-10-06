@@ -87,10 +87,11 @@ message Task {
   }
   TaskState state = 3;
   uint32 round = 4;
-  uint32 accept = 5; // Number of task accepts
-  uint32 reject = 6; // Number of task rejects
-  optional bytes data = 7; // If present, the task is waiting for recipient's action
-  optional bytes request = 8; // Serialized SignRequest or TaskRequest; present only when queried directly
+  uint32 attempt = 5;
+  uint32 accept = 6; // Number of task accepts
+  uint32 reject = 7; // Number of task rejects
+  optional bytes data = 8; // If present, the task is waiting for recipient's action
+  optional bytes request = 9; // Serialized SignRequest or TaskRequest; present only when queried directly
 }
 
 message TaskUpdate {
