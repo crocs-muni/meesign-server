@@ -6,11 +6,11 @@ use crate::proto::{Gg18Message, SignRequest};
 use crate::protocols::gg18::GG18Sign;
 use crate::protocols::Protocol;
 use crate::tasks::{Task, TaskResult, TaskStatus, TaskType};
-use log::info;
+use log::{error, info};
 use prost::Message;
-use std::fs::File;
 use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};
+use tempfile::NamedTempFile;
 use tonic::codegen::Arc;
 
 pub struct SignPDFTask {
@@ -54,20 +54,34 @@ impl SignPDFTask {
 
     fn start_task(&mut self) {
         assert!(self.communicator.accept_count() >= self.group.threshold());
-        {
-            let mut file = File::create("document.pdf").unwrap();
-            file.write_all(&self.document).unwrap();
+        let file = NamedTempFile::new();
+        if file.is_err() {
+            error!("Could not create temporary file");
+            self.result = Some(Err("Task failed (server error)".to_string()));
+            return;
+        }
+        let mut file = file.unwrap();
+        if file.write_all(&self.document).is_err() {
+            error!("Could not write in temporary file");
+            self.result = Some(Err("Task failed (server error)".to_string()));
+            return;
         }
 
-        let mut pdfhelper = Command::new("java")
+        let pdfhelper = Command::new("java")
             .arg("-jar")
             .arg("MeeSignHelper.jar")
             .arg("sign")
-            .arg("document.pdf")
+            .arg(file.path().to_str().unwrap())
             .stdout(Stdio::piped())
             .stdin(Stdio::piped())
-            .spawn()
-            .unwrap();
+            .spawn();
+
+        if pdfhelper.is_err() {
+            error!("Could not start PDFHelper");
+            self.result = Some(Err("Task failed (server error)".to_string()));
+            return;
+        }
+        let mut pdfhelper = pdfhelper.unwrap();
 
         let hash = request_hash(&mut pdfhelper, self.group.certificate().unwrap());
         if hash.is_empty() {
@@ -75,7 +89,6 @@ impl SignPDFTask {
             return;
         }
         self.pdfhelper = Some(pdfhelper);
-        std::fs::remove_file("document.pdf").unwrap();
         self.protocol.initialize(&mut self.communicator, &hash);
     }
 
