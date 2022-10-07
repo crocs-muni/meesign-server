@@ -73,7 +73,7 @@ impl SignPDFTask {
 
         let hash = request_hash(&mut pdfhelper, self.group.certificate().unwrap());
         if hash.is_empty() {
-            self.failed = Some("PDFHelper failed.".to_string());
+            self.failed = Some("Task failed (invalid PDF)".to_string());
             return;
         }
         self.pdfhelper = Some(pdfhelper);
@@ -224,9 +224,9 @@ impl Task for SignPDFTask {
     fn decide(&mut self, device_id: &[u8], decision: bool) -> bool {
         self.communicator.decide(device_id, decision);
         self.last_update = get_timestamp();
-        if self.protocol.round() == 0 {
+        if self.failed.is_none() && self.protocol.round() == 0 {
             if self.communicator.reject_count() >= self.group.reject_threshold() {
-                self.failed = Some("Too many rejections.".to_string());
+                self.failed = Some("Task declined".to_string());
                 return true;
             } else if self.communicator.accept_count() >= self.group.threshold() {
                 self.next_round();
