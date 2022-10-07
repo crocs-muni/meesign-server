@@ -43,10 +43,10 @@ impl Protocol for GG18Group {
         self.round += 1;
     }
 
-    fn finalize(&mut self, communicator: &mut Communicator) -> Vec<u8> {
+    fn finalize(&mut self, communicator: &mut Communicator) -> Option<Vec<u8>> {
         assert_eq!(self.last_round(), self.round);
         self.round += 1;
-        communicator.get_final_message().unwrap()
+        communicator.get_final_message()
     }
 
     fn round(&self) -> u16 {
@@ -91,10 +91,10 @@ impl Protocol for GG18Sign {
         self.round += 1;
     }
 
-    fn finalize(&mut self, communicator: &mut Communicator) -> Vec<u8> {
+    fn finalize(&mut self, communicator: &mut Communicator) -> Option<Vec<u8>> {
         assert_eq!(self.last_round(), self.round);
         self.round += 1;
-        communicator.get_final_message().unwrap()
+        communicator.get_final_message()
     }
 
     fn round(&self) -> u16 {

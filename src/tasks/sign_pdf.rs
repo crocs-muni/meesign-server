@@ -16,10 +16,9 @@ use tonic::codegen::Arc;
 pub struct SignPDFTask {
     group: Group,
     communicator: Communicator,
-    result: Option<Vec<u8>>,
+    result: Option<Result<Vec<u8>, String>>,
     document: Vec<u8>,
     pdfhelper: Option<Child>,
-    failed: Option<String>,
     protocol: Box<dyn Protocol + Send + Sync>,
     request: Vec<u8>,
     last_update: u64,
@@ -46,7 +45,6 @@ impl SignPDFTask {
             result: None,
             document: data,
             pdfhelper: None,
-            failed: None,
             protocol: Box::new(GG18Sign::new()),
             request,
             last_update: get_timestamp(),
@@ -73,7 +71,7 @@ impl SignPDFTask {
 
         let hash = request_hash(&mut pdfhelper, self.group.certificate().unwrap());
         if hash.is_empty() {
-            self.failed = Some("Task failed (invalid PDF)".to_string());
+            self.result = Some(Err("Task failed (invalid PDF)".to_string()));
             return;
         }
         self.pdfhelper = Some(pdfhelper);
@@ -87,6 +85,11 @@ impl SignPDFTask {
 
     fn finalize_task(&mut self) {
         let signature = self.protocol.finalize(&mut self.communicator);
+        if signature.is_none() {
+            self.result = Some(Err("Task failed (signature not output)".to_string()));
+            return;
+        }
+        let signature = signature.unwrap();
         let signed = include_signature(self.pdfhelper.as_mut().unwrap(), &signature);
         self.pdfhelper = None;
 
@@ -95,7 +98,7 @@ impl SignPDFTask {
             hex::encode(self.group.identifier())
         );
 
-        self.result = Some(signed);
+        self.result = Some(Ok(signed));
 
         self.communicator.clear_input();
     }
@@ -113,21 +116,16 @@ impl SignPDFTask {
 
 impl Task for SignPDFTask {
     fn get_status(&self) -> TaskStatus {
-        if self.failed.is_some() {
-            return TaskStatus::Failed(self.failed.clone().unwrap());
-        }
-
-        if self.protocol.round() == 0 {
-            TaskStatus::Created
-        } else if self.protocol.round() <= self.protocol.last_round() {
-            TaskStatus::Running(self.protocol.round())
-        } else {
-            self.result
-                .as_ref()
-                .map(|_| TaskStatus::Finished)
-                .unwrap_or_else(|| {
-                    TaskStatus::Failed(String::from("Server did not receive a signature"))
-                })
+        match &self.result {
+            Some(Err(e)) => TaskStatus::Failed(e.clone()),
+            Some(Ok(_)) => TaskStatus::Finished,
+            None => {
+                if self.protocol.round() == 0 {
+                    TaskStatus::Created
+                } else {
+                    TaskStatus::Running(self.protocol.round())
+                }
+            }
         }
     }
 
@@ -144,7 +142,11 @@ impl Task for SignPDFTask {
     }
 
     fn get_result(&self) -> Option<TaskResult> {
-        self.result.as_ref().map(|x| TaskResult::Signed(x.clone()))
+        if let Some(Ok(signature)) = &self.result {
+            Some(TaskResult::Signed(signature.clone()))
+        } else {
+            None
+        }
     }
 
     fn get_decisions(&self) -> (u32, u32) {
@@ -178,7 +180,7 @@ impl Task for SignPDFTask {
 
     fn restart(&mut self) -> Result<bool, String> {
         self.last_update = get_timestamp();
-        if self.failed.is_some() {
+        if self.result.is_some() {
             return Ok(false);
         }
 
@@ -224,9 +226,9 @@ impl Task for SignPDFTask {
     fn decide(&mut self, device_id: &[u8], decision: bool) -> bool {
         self.communicator.decide(device_id, decision);
         self.last_update = get_timestamp();
-        if self.failed.is_none() && self.protocol.round() == 0 {
+        if self.result.is_none() && self.protocol.round() == 0 {
             if self.communicator.reject_count() >= self.group.reject_threshold() {
-                self.failed = Some("Task declined".to_string());
+                self.result = Some(Err("Task declined".to_string()));
                 return true;
             } else if self.communicator.accept_count() >= self.group.threshold() {
                 self.next_round();
