@@ -121,15 +121,17 @@ impl Mpc for MPCService {
         let task_id = Uuid::from_slice(&request.task).unwrap();
         let device_id = request.device_id;
         let data = request.data;
+        let attempt = request.attempt;
         info!(
-            "TaskUpdate task_id={} device_id={}",
+            "TaskUpdate task_id={} device_id={} attempt={}",
             hex::encode(&task_id),
-            hex::encode(&device_id)
+            hex::encode(&device_id),
+            attempt
         );
 
         let mut state = self.state.lock().await;
         state.device_activated(&device_id);
-        let result = state.update_task(&task_id, &device_id, &data);
+        let result = state.update_task(&task_id, &device_id, &data, attempt);
 
         match result {
             Ok(_) => Ok(Response::new(msg::Resp {

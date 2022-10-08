@@ -165,8 +165,19 @@ impl State {
         task_id: &Uuid,
         device: &[u8],
         data: &[u8],
+        attempt: u32,
     ) -> Result<bool, String> {
         let task = self.tasks.get_mut(task_id).unwrap();
+        if attempt != task.get_attempts() {
+            warn!(
+                "Stale update discarded task_id={} device_id={} attempt={}",
+                hex::encode(task_id),
+                hex::encode(device),
+                attempt
+            );
+            return Err("Stale update".to_string());
+        }
+
         let previous_status = task.get_status();
         let update_result = task.update(device, data);
         if previous_status != TaskStatus::Finished && task.get_status() == TaskStatus::Finished {

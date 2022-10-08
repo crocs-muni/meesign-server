@@ -105,6 +105,7 @@ message TaskUpdate {
   bytes device_id = 1;
   bytes task = 2;
   bytes data = 3;
+  uint32 attempt = 4;
 }
 
 message TasksRequest {
