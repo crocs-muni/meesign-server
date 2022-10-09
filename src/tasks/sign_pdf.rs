@@ -6,7 +6,7 @@ use crate::proto::{Gg18Message, SignRequest};
 use crate::protocols::gg18::GG18Sign;
 use crate::protocols::Protocol;
 use crate::tasks::{Task, TaskResult, TaskStatus, TaskType};
-use log::{error, info};
+use log::{error, info, warn};
 use prost::Message;
 use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};
@@ -26,7 +26,13 @@ pub struct SignPDFTask {
 }
 
 impl SignPDFTask {
-    pub fn new(group: Group, name: String, data: Vec<u8>) -> Self {
+    pub fn try_new(group: Group, name: String, data: Vec<u8>) -> Result<Self, String> {
+        if data.len() > 8 * 1024 * 1024 || name.len() > 256 || name.chars().any(|x| x.is_control())
+        {
+            warn!("Invalid input name={} len={}", name, data.len());
+            return Err("Invalid input".to_string());
+        }
+
         let mut devices: Vec<Arc<Device>> = group.devices().to_vec();
         devices.sort_by_key(|x| x.identifier().to_vec());
 
@@ -39,7 +45,7 @@ impl SignPDFTask {
         })
         .encode_to_vec();
 
-        SignPDFTask {
+        Ok(SignPDFTask {
             group,
             communicator,
             result: None,
@@ -49,7 +55,7 @@ impl SignPDFTask {
             request,
             last_update: get_timestamp(),
             attempts: 0,
-        }
+        })
     }
 
     fn start_task(&mut self) {

@@ -1,56 +1,46 @@
-use prost::Message;
-
 use crate::communicator::Communicator;
 use crate::device::Device;
 use crate::get_timestamp;
 use crate::group::Group;
-use crate::proto::{KeyType, ProtocolType};
-use crate::protocols::gg18::GG18Group;
+use crate::proto::{Gg18Message, SignRequest};
+use crate::protocols::gg18::GG18Sign;
 use crate::protocols::Protocol;
 use crate::tasks::{Task, TaskResult, TaskStatus, TaskType};
 use log::info;
-use std::io::Read;
-use std::process::{Command, Stdio};
+use prost::Message;
 use tonic::codegen::Arc;
 
-pub struct GroupTask {
-    name: String,
-    threshold: u32,
-    devices: Vec<Arc<Device>>,
+pub struct SignChallengeTask {
+    group: Group,
     communicator: Communicator,
-    result: Option<Result<Group, String>>,
+    result: Option<Result<Vec<u8>, String>>,
+    challenge: Vec<u8>,
     protocol: Box<dyn Protocol + Send + Sync>,
     request: Vec<u8>,
     last_update: u64,
     attempts: u32,
 }
 
-impl GroupTask {
-    pub fn new(name: &str, devices: &[Arc<Device>], threshold: u32, key_type: KeyType) -> Self {
-        let devices_len = devices.len() as u32;
-        assert!(threshold <= devices_len);
-
-        let mut devices = devices.to_vec();
+impl SignChallengeTask {
+    pub fn new(group: Group, name: String, data: Vec<u8>) -> Self {
+        let mut devices: Vec<Arc<Device>> = group.devices().to_vec();
         devices.sort_by_key(|x| x.identifier().to_vec());
 
-        let communicator = Communicator::new(&devices, devices.len() as u32);
+        let communicator = Communicator::new(&devices, group.threshold());
 
-        let request = (crate::proto::GroupRequest {
-            device_ids: devices.iter().map(|x| x.identifier().to_vec()).collect(),
-            name: String::from(name),
-            threshold,
-            protocol: ProtocolType::Gg18 as i32,
-            key_type: key_type as i32,
+        let request = (SignRequest {
+            group_id: group.identifier().to_vec(),
+            name,
+            data: data.clone(),
         })
         .encode_to_vec();
 
-        GroupTask {
-            name: name.into(),
-            threshold,
-            devices,
+        SignChallengeTask {
+            group,
             communicator,
             result: None,
-            protocol: Box::new(GG18Group::new(devices_len, threshold)),
+            challenge: data,
+            protocol: Box::new(GG18Sign::new()),
             request,
             last_update: get_timestamp(),
             attempts: 0,
@@ -58,41 +48,29 @@ impl GroupTask {
     }
 
     fn start_task(&mut self) {
-        self.protocol.initialize(&mut self.communicator, &[]);
+        assert!(self.communicator.accept_count() >= self.group.threshold());
+        self.protocol
+            .initialize(&mut self.communicator, &self.challenge);
     }
 
     fn advance_task(&mut self) {
-        self.protocol.advance(&mut self.communicator);
+        self.protocol.advance(&mut self.communicator)
     }
 
     fn finalize_task(&mut self) {
-        let identifier = self.protocol.finalize(&mut self.communicator);
-        if identifier.is_none() {
-            self.result = Some(Err("Task failed (group key not output)".to_string()));
+        let signature = self.protocol.finalize(&mut self.communicator);
+        if signature.is_none() {
+            self.result = Some(Err("Task failed (signature not output)".to_string()));
             return;
         }
-        let identifier = identifier.unwrap();
-        let certificate = issue_certificate(&self.name, &identifier);
+        let signature = signature.unwrap();
 
         info!(
-            "Group established group_id={} devices={:?}",
-            hex::encode(&identifier),
-            self.devices
-                .iter()
-                .map(|device| hex::encode(device.identifier()))
-                .collect::<Vec<_>>()
+            "Challenge signed by group_id={}",
+            hex::encode(self.group.identifier())
         );
 
-        self.result = Some(Ok(Group::new(
-            identifier,
-            self.name.clone(),
-            self.devices.iter().map(Arc::clone).collect(),
-            self.threshold,
-            ProtocolType::Gg18,
-            KeyType::SignPdf,
-            Some(certificate),
-        )));
-
+        self.result = Some(Ok(signature));
         self.communicator.clear_input();
     }
 
@@ -107,7 +85,7 @@ impl GroupTask {
     }
 }
 
-impl Task for GroupTask {
+impl Task for SignChallengeTask {
     fn get_status(&self) -> TaskStatus {
         match &self.result {
             Some(Err(e)) => TaskStatus::Failed(e.clone()),
@@ -123,7 +101,7 @@ impl Task for GroupTask {
     }
 
     fn get_type(&self) -> TaskType {
-        TaskType::Group
+        TaskType::Sign
     }
 
     fn get_work(&self, device_id: Option<&[u8]>) -> Option<Vec<u8>> {
@@ -135,8 +113,8 @@ impl Task for GroupTask {
     }
 
     fn get_result(&self) -> Option<TaskResult> {
-        if let Some(Ok(group)) = &self.result {
-            Some(TaskResult::GroupEstablished(group.clone()))
+        if let Some(Ok(signature)) = &self.result {
+            Some(TaskResult::Signed(signature.clone()))
         } else {
             None
         }
@@ -150,7 +128,7 @@ impl Task for GroupTask {
     }
 
     fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<bool, String> {
-        if self.communicator.accept_count() != self.devices.len() as u32 {
+        if self.communicator.accept_count() < self.group.threshold() {
             return Err("Not enough agreements to proceed with the protocol.".to_string());
         }
 
@@ -158,7 +136,7 @@ impl Task for GroupTask {
             return Err("Wasn't waiting for a message from this ID.".to_string());
         }
 
-        let data: crate::proto::Gg18Message =
+        let data: Gg18Message =
             Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
         self.communicator.receive_messages(device_id, data.message);
         self.last_update = get_timestamp();
@@ -168,7 +146,6 @@ impl Task for GroupTask {
             self.next_round();
             return Ok(true);
         }
-
         Ok(false)
     }
 
@@ -192,19 +169,15 @@ impl Task for GroupTask {
     }
 
     fn is_approved(&self) -> bool {
-        self.communicator.accept_count() == self.devices.len() as u32
+        self.communicator.accept_count() >= self.group.threshold()
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
-        return self
-            .devices
-            .iter()
-            .map(|device| device.identifier())
-            .any(|x| x == device_id);
+        self.group.contains(device_id)
     }
 
     fn get_devices(&self) -> Vec<Arc<Device>> {
-        self.devices.clone()
+        self.group.devices().to_vec()
     }
 
     fn waiting_for(&self, device: &[u8]) -> bool {
@@ -221,10 +194,10 @@ impl Task for GroupTask {
         self.communicator.decide(device_id, decision);
         self.last_update = get_timestamp();
         if self.result.is_none() && self.protocol.round() == 0 {
-            if self.communicator.reject_count() > 0 {
+            if self.communicator.reject_count() >= self.group.reject_threshold() {
                 self.result = Some(Err("Task declined".to_string()));
                 return true;
-            } else if self.communicator.accept_count() == self.devices.len() as u32 {
+            } else if self.communicator.accept_count() >= self.group.threshold() {
                 self.next_round();
                 return true;
             }
@@ -247,26 +220,4 @@ impl Task for GroupTask {
     fn get_attempts(&self) -> u32 {
         self.attempts
     }
-}
-
-fn issue_certificate(name: &str, public_key: &[u8]) -> Vec<u8> {
-    assert_eq!(public_key.len(), 65);
-    let mut process = Command::new("java")
-        .arg("-jar")
-        .arg("MeeSignHelper.jar")
-        .arg("cert")
-        .arg(name)
-        .arg(hex::encode(public_key))
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-
-    let mut result = Vec::new();
-    process
-        .stdout
-        .as_mut()
-        .unwrap()
-        .read_to_end(&mut result)
-        .unwrap();
-    result
 }

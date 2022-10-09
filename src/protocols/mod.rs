@@ -7,7 +7,7 @@ impl ProtocolType {
     pub fn check_key_type(self, key_type: KeyType) -> bool {
         match (key_type, self) {
             (KeyType::SignPdf, ProtocolType::Gg18) => true,
-            (KeyType::SignDigest, _) => true,
+            (KeyType::SignChallenge, _) => true,
         }
     }
 }
