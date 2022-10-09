@@ -2,6 +2,7 @@ syntax = "proto3";
 package meesign;
 
 service MPC {
+  rpc GetServerInfo(ServerInfoRequest) returns (ServerInfo);
   rpc Register(RegistrationRequest) returns (Resp);
   rpc Sign(SignRequest) returns (Task);
   rpc Group(GroupRequest) returns (Task);
@@ -13,6 +14,13 @@ service MPC {
   rpc GetGroups(GroupsRequest) returns (Groups);
   rpc GetDevices(DevicesRequest) returns (Devices);
   rpc Log(LogRequest) returns (Resp);
+  rpc SubscribeUpdates(SubscribeRequest) returns (stream Task);
+}
+
+message ServerInfoRequest {}
+
+message ServerInfo {
+  string version = 1;
 }
 
 enum ProtocolType {
@@ -86,16 +94,18 @@ message Task {
   }
   TaskState state = 3;
   uint32 round = 4;
-  uint32 accept = 5; // Number of task accepts
-  uint32 reject = 6; // Number of task rejects
-  optional bytes data = 7; // If present, the task is waiting for recipient's action
-  optional bytes request = 8; // Serialized SignRequest or TaskRequest; present only when queried directly
+  uint32 attempt = 5;
+  uint32 accept = 6; // Number of task accepts
+  uint32 reject = 7; // Number of task rejects
+  optional bytes data = 8; // If present, the task is waiting for recipient's action
+  optional bytes request = 9; // Serialized SignRequest or TaskRequest; present only when queried directly
 }
 
 message TaskUpdate {
   bytes device_id = 1;
   bytes task = 2;
   bytes data = 3;
+  uint32 attempt = 4;
 }
 
 message TasksRequest {
@@ -132,6 +142,10 @@ message TaskAcknowledgement {
 message LogRequest {
   string message = 1;
   optional bytes device_id = 2;
+};
+
+message SubscribeRequest {
+  bytes device_id = 1;
 };
 
 message GG18KeyGenInit {

@@ -1,37 +1,40 @@
 use crate::communicator::Communicator;
 use crate::device::Device;
+use crate::get_timestamp;
 use crate::group::Group;
 use crate::proto::{Gg18Message, SignRequest};
 use crate::protocols::gg18::GG18Sign;
 use crate::protocols::Protocol;
 use crate::tasks::{Task, TaskResult, TaskStatus, TaskType};
-use log::info;
+use log::{error, info};
 use prost::Message;
-use std::fs::File;
 use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};
+use tempfile::NamedTempFile;
+use tonic::codegen::Arc;
 
 pub struct SignPDFTask {
     group: Group,
     communicator: Communicator,
-    result: Option<Vec<u8>>,
+    result: Option<Result<Vec<u8>, String>>,
     document: Vec<u8>,
     pdfhelper: Option<Child>,
-    failed: Option<String>,
     protocol: Box<dyn Protocol + Send + Sync>,
     request: Vec<u8>,
+    last_update: u64,
+    attempts: u32,
 }
 
 impl SignPDFTask {
     pub fn new(group: Group, name: String, data: Vec<u8>) -> Self {
-        let mut devices: Vec<Device> = group.devices().to_vec();
+        let mut devices: Vec<Arc<Device>> = group.devices().to_vec();
         devices.sort_by_key(|x| x.identifier().to_vec());
 
         let communicator = Communicator::new(&devices, group.threshold());
 
         let request = (SignRequest {
             group_id: group.identifier().to_vec(),
-            name: name.clone(),
+            name,
             data: data.clone(),
         })
         .encode_to_vec();
@@ -40,34 +43,52 @@ impl SignPDFTask {
             group,
             communicator,
             result: None,
-            document: data.clone(),
+            document: data,
             pdfhelper: None,
-            failed: None,
             protocol: Box::new(GG18Sign::new()),
             request,
+            last_update: get_timestamp(),
+            attempts: 0,
         }
     }
 
     fn start_task(&mut self) {
         assert!(self.communicator.accept_count() >= self.group.threshold());
-        {
-            let mut file = File::create("document.pdf").unwrap();
-            file.write_all(&self.document).unwrap();
+        let file = NamedTempFile::new();
+        if file.is_err() {
+            error!("Could not create temporary file");
+            self.result = Some(Err("Task failed (server error)".to_string()));
+            return;
+        }
+        let mut file = file.unwrap();
+        if file.write_all(&self.document).is_err() {
+            error!("Could not write in temporary file");
+            self.result = Some(Err("Task failed (server error)".to_string()));
+            return;
         }
 
-        let mut pdfhelper = Command::new("java")
+        let pdfhelper = Command::new("java")
             .arg("-jar")
             .arg("MeeSignHelper.jar")
             .arg("sign")
-            .arg("document.pdf")
+            .arg(file.path().to_str().unwrap())
             .stdout(Stdio::piped())
             .stdin(Stdio::piped())
-            .spawn()
-            .unwrap();
+            .spawn();
+
+        if pdfhelper.is_err() {
+            error!("Could not start PDFHelper");
+            self.result = Some(Err("Task failed (server error)".to_string()));
+            return;
+        }
+        let mut pdfhelper = pdfhelper.unwrap();
 
         let hash = request_hash(&mut pdfhelper, self.group.certificate().unwrap());
+        if hash.is_empty() {
+            self.result = Some(Err("Task failed (invalid PDF)".to_string()));
+            return;
+        }
         self.pdfhelper = Some(pdfhelper);
-        std::fs::remove_file("document.pdf").unwrap();
         self.protocol.initialize(&mut self.communicator, &hash);
     }
 
@@ -77,6 +98,11 @@ impl SignPDFTask {
 
     fn finalize_task(&mut self) {
         let signature = self.protocol.finalize(&mut self.communicator);
+        if signature.is_none() {
+            self.result = Some(Err("Task failed (signature not output)".to_string()));
+            return;
+        }
+        let signature = signature.unwrap();
         let signed = include_signature(self.pdfhelper.as_mut().unwrap(), &signature);
         self.pdfhelper = None;
 
@@ -85,7 +111,7 @@ impl SignPDFTask {
             hex::encode(self.group.identifier())
         );
 
-        self.result = Some(signed);
+        self.result = Some(Ok(signed));
 
         self.communicator.clear_input();
     }
@@ -103,21 +129,16 @@ impl SignPDFTask {
 
 impl Task for SignPDFTask {
     fn get_status(&self) -> TaskStatus {
-        if self.failed.is_some() {
-            return TaskStatus::Failed(self.failed.clone().unwrap());
-        }
-
-        if self.protocol.round() == 0 {
-            TaskStatus::Created
-        } else if self.protocol.round() <= self.protocol.last_round() {
-            TaskStatus::Running(self.protocol.round())
-        } else {
-            self.result
-                .as_ref()
-                .map(|_| TaskStatus::Finished)
-                .unwrap_or(TaskStatus::Failed(String::from(
-                    "Server did not receive a signature",
-                )))
+        match &self.result {
+            Some(Err(e)) => TaskStatus::Failed(e.clone()),
+            Some(Ok(_)) => TaskStatus::Finished,
+            None => {
+                if self.protocol.round() == 0 {
+                    TaskStatus::Created
+                } else {
+                    TaskStatus::Running(self.protocol.round())
+                }
+            }
         }
     }
 
@@ -134,7 +155,11 @@ impl Task for SignPDFTask {
     }
 
     fn get_result(&self) -> Option<TaskResult> {
-        self.result.as_ref().map(|x| TaskResult::Signed(x.clone()))
+        if let Some(Ok(signature)) = &self.result {
+            Some(TaskResult::Signed(signature.clone()))
+        } else {
+            None
+        }
     }
 
     fn get_decisions(&self) -> (u32, u32) {
@@ -144,7 +169,7 @@ impl Task for SignPDFTask {
         )
     }
 
-    fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<(), String> {
+    fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<bool, String> {
         if self.communicator.accept_count() < self.group.threshold() {
             return Err("Not enough agreements to proceed with the protocol.".to_string());
         }
@@ -156,16 +181,49 @@ impl Task for SignPDFTask {
         let data: Gg18Message =
             Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
         self.communicator.receive_messages(device_id, data.message);
+        self.last_update = get_timestamp();
 
         if self.communicator.round_received() && self.protocol.round() <= self.protocol.last_round()
         {
             self.next_round();
+            return Ok(true);
         }
-        Ok(())
+        Ok(false)
+    }
+
+    fn restart(&mut self) -> Result<bool, String> {
+        self.last_update = get_timestamp();
+        if self.result.is_some() {
+            return Ok(false);
+        }
+
+        if self.is_approved() {
+            if let Some(pdfhelper) = self.pdfhelper.as_mut() {
+                pdfhelper.kill().unwrap();
+                self.pdfhelper = None;
+            }
+            self.attempts += 1;
+            self.start_task();
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn last_update(&self) -> u64 {
+        self.last_update
+    }
+
+    fn is_approved(&self) -> bool {
+        self.communicator.accept_count() >= self.group.threshold()
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
-        return self.group.contains(device_id);
+        self.group.contains(device_id)
+    }
+
+    fn get_devices(&self) -> Vec<Arc<Device>> {
+        self.group.devices().to_vec()
     }
 
     fn waiting_for(&self, device: &[u8]) -> bool {
@@ -178,15 +236,19 @@ impl Task for SignPDFTask {
         self.communicator.waiting_for(device)
     }
 
-    fn decide(&mut self, device_id: &[u8], decision: bool) {
+    fn decide(&mut self, device_id: &[u8], decision: bool) -> bool {
         self.communicator.decide(device_id, decision);
-        if self.protocol.round() == 0 {
+        self.last_update = get_timestamp();
+        if self.result.is_none() && self.protocol.round() == 0 {
             if self.communicator.reject_count() >= self.group.reject_threshold() {
-                self.failed = Some("Too many rejections.".to_string());
+                self.result = Some(Err("Task declined".to_string()));
+                return true;
             } else if self.communicator.accept_count() >= self.group.threshold() {
                 self.next_round();
+                return true;
             }
         }
+        false
     }
 
     fn acknowledge(&mut self, device_id: &[u8]) {
@@ -200,19 +262,25 @@ impl Task for SignPDFTask {
     fn get_request(&self) -> &[u8] {
         &self.request
     }
+
+    fn get_attempts(&self) -> u32 {
+        self.attempts
+    }
 }
 
 fn request_hash(process: &mut Child, certificate: &[u8]) -> Vec<u8> {
     let process_stdin = process.stdin.as_mut().unwrap();
     let process_stdout = process.stdout.as_mut().unwrap();
 
-    process_stdin.write(certificate).unwrap();
+    process_stdin.write_all(certificate).unwrap();
     process_stdin.flush().unwrap();
 
     let mut in_buffer = [0u8; 65]; // \n
-    process_stdout.read_exact(&mut in_buffer).unwrap();
-
-    hex::decode(String::from_utf8(Vec::from(&in_buffer[..64])).unwrap()).unwrap()
+    if let Ok(()) = process_stdout.read_exact(&mut in_buffer) {
+        hex::decode(String::from_utf8(Vec::from(&in_buffer[..64])).unwrap()).unwrap()
+    } else {
+        Vec::new()
+    }
 }
 
 fn include_signature(process: &mut Child, signature: &[u8]) -> Vec<u8> {
@@ -221,9 +289,9 @@ fn include_signature(process: &mut Child, signature: &[u8]) -> Vec<u8> {
 
     let mut out_buffer = [0u8; 129];
     out_buffer[..128].copy_from_slice(hex::encode(&signature).as_bytes());
-    out_buffer[128] = '\n' as u8;
+    out_buffer[128] = b'\n';
 
-    process_stdin.write(&out_buffer).unwrap();
+    process_stdin.write_all(&out_buffer).unwrap();
 
     let mut result = Vec::new();
     process_stdout.read_to_end(&mut result).unwrap();

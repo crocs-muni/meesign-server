@@ -2,6 +2,7 @@ use prost::Message;
 
 use crate::communicator::Communicator;
 use crate::device::Device;
+use crate::get_timestamp;
 use crate::group::Group;
 use crate::proto::*;
 use crate::protocols::gg18::GG18Group;
@@ -10,20 +11,22 @@ use crate::tasks::{Task, TaskResult, TaskStatus, TaskType};
 use log::info;
 use std::io::Read;
 use std::process::{Command, Stdio};
+use tonic::codegen::Arc;
 
 pub struct GroupTask {
     name: String,
     threshold: u32,
-    devices: Vec<Device>,
+    devices: Vec<Arc<Device>>,
     communicator: Communicator,
-    result: Option<Group>,
-    failed: Option<String>,
+    result: Option<Result<Group, String>>,
     protocol: Box<dyn Protocol + Send + Sync>,
     request: Vec<u8>,
+    last_update: u64,
+    attempts: u32,
 }
 
 impl GroupTask {
-    pub fn new(name: &str, devices: &[Device], threshold: u32) -> Self {
+    pub fn new(name: &str, devices: &[Arc<Device>], threshold: u32) -> Self {
         let devices_len = devices.len() as u32;
         assert!(threshold <= devices_len);
 
@@ -47,9 +50,10 @@ impl GroupTask {
             devices,
             communicator,
             result: None,
-            failed: None,
             protocol: Box::new(GG18Group::new(devices_len, threshold)),
             request,
+            last_update: get_timestamp(),
+            attempts: 0,
         }
     }
 
@@ -63,6 +67,11 @@ impl GroupTask {
 
     fn finalize_task(&mut self) {
         let identifier = self.protocol.finalize(&mut self.communicator);
+        if identifier.is_none() {
+            self.result = Some(Err("Task failed (group key not output)".to_string()));
+            return;
+        }
+        let identifier = identifier.unwrap();
         let certificate = issue_certificate(&self.name, &identifier);
 
         info!(
@@ -74,15 +83,15 @@ impl GroupTask {
                 .collect::<Vec<_>>()
         );
 
-        self.result = Some(Group::new(
+        self.result = Some(Ok(Group::new(
             identifier,
             self.name.clone(),
-            self.devices.iter().map(Device::clone).collect(),
+            self.devices.iter().map(Arc::clone).collect(),
             self.threshold,
             ProtocolType::Gg18,
             KeyType::SignPdf,
             Some(certificate),
-        ));
+        )));
 
         self.communicator.clear_input();
     }
@@ -100,21 +109,16 @@ impl GroupTask {
 
 impl Task for GroupTask {
     fn get_status(&self) -> TaskStatus {
-        if self.failed.is_some() {
-            return TaskStatus::Failed(self.failed.clone().unwrap());
-        }
-
-        if self.protocol.round() == 0 {
-            TaskStatus::Created
-        } else if self.protocol.round() <= self.protocol.last_round() {
-            TaskStatus::Running(self.protocol.round())
-        } else {
-            self.result
-                .as_ref()
-                .map(|_| TaskStatus::Finished)
-                .unwrap_or(TaskStatus::Failed(String::from(
-                    "The group was not established.",
-                )))
+        match &self.result {
+            Some(Err(e)) => TaskStatus::Failed(e.clone()),
+            Some(Ok(_)) => TaskStatus::Finished,
+            None => {
+                if self.protocol.round() == 0 {
+                    TaskStatus::Created
+                } else {
+                    TaskStatus::Running(self.protocol.round())
+                }
+            }
         }
     }
 
@@ -131,9 +135,11 @@ impl Task for GroupTask {
     }
 
     fn get_result(&self) -> Option<TaskResult> {
-        self.result
-            .as_ref()
-            .map(|x| TaskResult::GroupEstablished(x.clone()))
+        if let Some(Ok(group)) = &self.result {
+            Some(TaskResult::GroupEstablished(group.clone()))
+        } else {
+            None
+        }
     }
 
     fn get_decisions(&self) -> (u32, u32) {
@@ -143,7 +149,7 @@ impl Task for GroupTask {
         )
     }
 
-    fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<(), String> {
+    fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<bool, String> {
         if self.communicator.accept_count() != self.devices.len() as u32 {
             return Err("Not enough agreements to proceed with the protocol.".to_string());
         }
@@ -155,21 +161,50 @@ impl Task for GroupTask {
         let data: Gg18Message =
             Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
         self.communicator.receive_messages(device_id, data.message);
+        self.last_update = get_timestamp();
 
         if self.communicator.round_received() && self.protocol.round() <= self.protocol.last_round()
         {
             self.next_round();
+            return Ok(true);
         }
 
-        Ok(())
+        Ok(false)
+    }
+
+    fn restart(&mut self) -> Result<bool, String> {
+        self.last_update = get_timestamp();
+        if self.result.is_some() {
+            return Ok(false);
+        }
+
+        if self.is_approved() {
+            self.attempts += 1;
+            self.start_task();
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn last_update(&self) -> u64 {
+        self.last_update
+    }
+
+    fn is_approved(&self) -> bool {
+        self.communicator.accept_count() == self.devices.len() as u32
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
         return self
             .devices
             .iter()
-            .map(Device::identifier)
+            .map(|device| device.identifier())
             .any(|x| x == device_id);
+    }
+
+    fn get_devices(&self) -> Vec<Arc<Device>> {
+        self.devices.clone()
     }
 
     fn waiting_for(&self, device: &[u8]) -> bool {
@@ -182,15 +217,19 @@ impl Task for GroupTask {
         self.communicator.waiting_for(device)
     }
 
-    fn decide(&mut self, device_id: &[u8], decision: bool) {
+    fn decide(&mut self, device_id: &[u8], decision: bool) -> bool {
         self.communicator.decide(device_id, decision);
-        if self.protocol.round() == 0 {
+        self.last_update = get_timestamp();
+        if self.result.is_none() && self.protocol.round() == 0 {
             if self.communicator.reject_count() > 0 {
-                self.failed = Some("Too many rejections.".to_string());
+                self.result = Some(Err("Task declined".to_string()));
+                return true;
             } else if self.communicator.accept_count() == self.devices.len() as u32 {
                 self.next_round();
+                return true;
             }
         }
+        false
     }
 
     fn acknowledge(&mut self, device_id: &[u8]) {
@@ -203,6 +242,10 @@ impl Task for GroupTask {
 
     fn get_request(&self) -> &[u8] {
         &self.request
+    }
+
+    fn get_attempts(&self) -> u32 {
+        self.attempts
     }
 }
 

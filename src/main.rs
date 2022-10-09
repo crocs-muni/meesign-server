@@ -1,21 +1,26 @@
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 
 use crate::proto::mpc_client::MpcClient;
 use crate::state::State;
+use tokio::{join, sync::Mutex};
+use tonic::codegen::Arc;
 
 mod communicator;
 mod device;
 mod group;
+mod interfaces;
 mod protocols;
-mod rpc;
 mod state;
 mod tasks;
 
 mod proto {
+    #![allow(clippy::derive_partial_eq_without_eq)]
     tonic::include_proto!("meesign");
 }
+
+const VERSION: Option<&str> = option_env!("CARGO_PKG_VERSION");
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -52,6 +57,13 @@ enum Commands {
         group_id: String,
         pdf_file: String,
     },
+}
+
+pub fn get_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }
 
 async fn register(server: String, identifier: &[u8], name: &str) -> Result<(), String> {
@@ -283,6 +295,12 @@ async fn main() -> Result<(), String> {
             }
         }
     } else {
-        rpc::run_rpc(State::new(), &args.addr, args.port).await
+        let state = Arc::new(Mutex::new(State::new()));
+
+        let grpc = interfaces::grpc::run_grpc(state.clone(), &args.addr, args.port);
+        let timer = interfaces::timer::run_timer(state);
+
+        let (grpc_result, timer_result) = join!(grpc, timer);
+        grpc_result.and(timer_result)
     }
 }

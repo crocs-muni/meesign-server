@@ -1,14 +1,19 @@
 use crate::device::Device;
+use crate::get_timestamp;
 use crate::proto::Gg18Message;
 use prost::Message;
+use rand::prelude::SliceRandom;
+use rand::thread_rng;
 use std::collections::HashMap;
+use std::ops::Deref;
+use tonic::codegen::Arc;
 
 /// Communication state of a Task
 pub struct Communicator {
     /// The minimal number of parties needed to successfully complete the task
     threshold: u32,
     /// Ordered list of devices
-    device_list: Vec<Device>,
+    device_list: Vec<Arc<Device>>,
     /// Ordered list of active devices (participating in the protocol)
     active_devices: Option<Vec<Vec<u8>>>,
     /// A mapping of device identifiers to their Task decision
@@ -27,7 +32,7 @@ impl Communicator {
     /// # Arguments
     /// * `devices` - Sorted list of devices; items of the list need to be unique
     /// * `threshold` - The minimal number of devices to successfully complete the task
-    pub fn new(devices: &[Device], threshold: u32) -> Self {
+    pub fn new(devices: &[Arc<Device>], threshold: u32) -> Self {
         assert!(devices.len() > 1);
         assert!(threshold <= devices.len() as u32);
         // TODO uncomment once is_sorted is stabilized
@@ -35,7 +40,7 @@ impl Communicator {
 
         let mut communicator = Communicator {
             threshold,
-            device_list: devices.iter().map(Device::clone).collect(),
+            device_list: devices.iter().map(Arc::clone).collect(),
             active_devices: None,
             decisions: devices
                 .iter()
@@ -90,7 +95,7 @@ impl Communicator {
 
         self.input
             .get(device_index)
-            .and_then(|messages| Some(!messages.iter().any(Option::is_some)))
+            .map(|messages| !messages.iter().any(Option::is_some))
             .unwrap_or(true)
     }
 
@@ -136,7 +141,7 @@ impl Communicator {
             .as_ref()
             .unwrap()
             .iter()
-            .zip((&self.input).into_iter())
+            .zip((&self.input).iter())
             .filter(|(_a, b)| b.iter().all(Option::is_none))
             .count()
             == 0
@@ -157,14 +162,44 @@ impl Communicator {
     /// Set active devices
     pub fn set_active_devices(&mut self) -> Vec<Vec<u8>> {
         assert!(self.accept_count() >= self.threshold);
+        let agreeing_devices = self
+            .device_list
+            .iter()
+            .filter(|device| self.decisions.get(device.identifier()) == Some(&Some(true)))
+            .collect::<Vec<_>>();
+
+        let timestamp = get_timestamp();
+        let connected_devices = agreeing_devices
+            .iter()
+            .filter(|device| device.last_active() > timestamp - 5)
+            .map(Deref::deref)
+            .collect::<Vec<_>>();
+
+        let (devices, indices): (&Vec<&Arc<Device>>, Vec<_>) =
+            if connected_devices.len() >= self.threshold as usize {
+                (&connected_devices, (0..connected_devices.len()).collect())
+            } else {
+                (&agreeing_devices, (0..agreeing_devices.len()).collect())
+            };
+        let mut indices = indices
+            .choose_multiple(&mut thread_rng(), self.threshold as usize)
+            .cloned()
+            .collect::<Vec<_>>();
+        indices.sort();
+
         self.active_devices = Some(
-            self.device_list
+            devices
                 .iter()
-                .filter(|device| self.decisions.get(device.identifier()) == Some(&Some(true)))
-                .take(self.threshold as usize)
-                .map(|device| device.identifier().to_vec())
+                .enumerate()
+                .filter(|(idx, _)| indices.contains(idx))
+                .map(|(_, device)| device.identifier().to_vec())
                 .collect(),
         );
+        assert_eq!(
+            self.active_devices.as_ref().unwrap().len(),
+            self.threshold as usize
+        );
+
         self.active_devices.as_ref().unwrap().clone()
     }
 
@@ -200,11 +235,7 @@ impl Communicator {
 
     /// Check whether a device submitted its decision
     pub fn device_decided(&self, device: &[u8]) -> bool {
-        if let Some(Some(_)) = self.decisions.get(device) {
-            true
-        } else {
-            false
-        }
+        matches!(self.decisions.get(device), Some(Some(_)))
     }
 
     /// Save acknowledgement by the given device; return true if successful
@@ -229,11 +260,11 @@ impl Communicator {
 
         let active_devices = self.get_active_devices().unwrap();
         let mut indices: Vec<u32> = Vec::new();
-        for i in 0..active_devices.len() {
+        for device in &active_devices {
             indices.push(
                 self.device_list
                     .iter()
-                    .position(|x| x.identifier() == &active_devices[i])
+                    .position(|x| x.identifier() == device)
                     .unwrap() as u32,
             );
         }
@@ -473,10 +504,10 @@ mod tests {
         assert_eq!(communicator.acknowledge(devices[0].identifier()), false);
     }
 
-    fn prepare_devices(n: usize) -> Vec<Device> {
+    fn prepare_devices(n: usize) -> Vec<Arc<Device>> {
         assert!(n < u8::MAX as usize);
         (0..n)
-            .map(|i| Device::new(vec![i as u8], format!("d{}", i)))
+            .map(|i| Arc::new(Device::new(vec![i as u8], format!("d{}", i))))
             .collect()
     }
 }

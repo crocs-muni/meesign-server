@@ -1,5 +1,9 @@
 use log::{debug, info};
+use tokio::sync::mpsc;
 use tokio::sync::Mutex;
+use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::Stream;
+use tonic::codegen::Arc;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
@@ -10,20 +14,33 @@ use crate::proto::{KeyType, ProtocolType};
 use crate::state::State;
 use crate::tasks::{Task, TaskStatus, TaskType};
 
+use std::pin::Pin;
+
 pub struct MPCService {
-    state: Mutex<State>,
+    state: Arc<Mutex<State>>,
 }
 
 impl MPCService {
-    pub fn new(state: State) -> Self {
-        MPCService {
-            state: Mutex::new(state),
-        }
+    pub fn new(state: Arc<Mutex<State>>) -> Self {
+        MPCService { state }
     }
 }
 
 #[tonic::async_trait]
 impl Mpc for MPCService {
+    type SubscribeUpdatesStream =
+        Pin<Box<dyn Stream<Item = Result<msg::Task, Status>> + Send + 'static>>;
+
+    async fn get_server_info(
+        &self,
+        _request: Request<msg::ServerInfoRequest>,
+    ) -> Result<Response<msg::ServerInfo>, Status> {
+        debug!("ServerInfoRequest");
+        Ok(Response::new(msg::ServerInfo {
+            version: crate::VERSION.unwrap_or("unknown").to_string(),
+        }))
+    }
+
     async fn register(
         &self,
         request: Request<msg::RegistrationRequest>,
@@ -82,10 +99,10 @@ impl Mpc for MPCService {
         debug!(
             "TaskRequest task_id={} device_id={}",
             hex::encode(&task_id),
-            hex::encode(&device_id.clone().unwrap_or(&[]))
+            hex::encode(&device_id.unwrap_or(&[]))
         );
 
-        let mut state = self.state.lock().await;
+        let state = self.state.lock().await;
         if device_id.is_some() {
             state.device_activated(device_id.as_ref().unwrap());
         }
@@ -101,18 +118,20 @@ impl Mpc for MPCService {
         request: Request<msg::TaskUpdate>,
     ) -> Result<Response<msg::Resp>, Status> {
         let request = request.into_inner();
-        let task = Uuid::from_slice(&request.task).unwrap();
+        let task_id = Uuid::from_slice(&request.task).unwrap();
         let device_id = request.device_id;
         let data = request.data;
+        let attempt = request.attempt;
         info!(
-            "TaskUpdate task_id={} device_id={}",
-            hex::encode(&task),
-            hex::encode(&device_id)
+            "TaskUpdate task_id={} device_id={} attempt={}",
+            hex::encode(&task_id),
+            hex::encode(&device_id),
+            attempt
         );
 
         let mut state = self.state.lock().await;
         state.device_activated(&device_id);
-        let result = state.update_task(&task, &device_id, &data);
+        let result = state.update_task(&task_id, &device_id, &data, attempt);
 
         match result {
             Ok(_) => Ok(Response::new(msg::Resp {
@@ -131,22 +150,22 @@ impl Mpc for MPCService {
         let device_str = device_id
             .as_ref()
             .map(|x| hex::encode(&x))
-            .unwrap_or("unknown".to_string());
+            .unwrap_or_else(|| "unknown".to_string());
         debug!("TasksRequest device_id={}", device_str);
 
-        let mut state = self.state.lock().await;
+        let state = self.state.lock().await;
         let tasks = if let Some(device_id) = device_id {
             state.device_activated(&device_id);
             state
                 .get_device_tasks(&device_id)
                 .iter()
-                .map(|(task_id, task)| format_task(task_id, task, Some(&device_id), None))
+                .map(|(task_id, task)| format_task(task_id, *task, Some(&device_id), None))
                 .collect()
         } else {
             state
                 .get_tasks()
                 .iter()
-                .map(|(task_id, task)| format_task(task_id, task, None, None))
+                .map(|(task_id, task)| format_task(task_id, task.as_ref(), None, None))
                 .collect()
         };
 
@@ -162,10 +181,10 @@ impl Mpc for MPCService {
         let device_str = device_id
             .as_ref()
             .map(|x| hex::encode(&x))
-            .unwrap_or("unknown".to_string());
+            .unwrap_or_else(|| "unknown".to_string());
         debug!("GroupsRequest device_id={}", device_str);
 
-        let mut state = self.state.lock().await;
+        let state = self.state.lock().await;
         let groups = if let Some(device_id) = device_id {
             state.device_activated(&device_id);
             state
@@ -226,7 +245,7 @@ impl Mpc for MPCService {
                 .await
                 .get_devices()
                 .values()
-                .map(|device| msg::Device::from(device))
+                .map(|device| device.as_ref().into())
                 .collect(),
         };
         Ok(Response::new(resp))
@@ -238,7 +257,7 @@ impl Mpc for MPCService {
         let device_str = device_id
             .as_ref()
             .map(|x| hex::encode(&x))
-            .unwrap_or("unknown".to_string());
+            .unwrap_or_else(|| "unknown".to_string());
         let message = request.message;
         info!("LogRequest device_id={} message={}", device_str, message);
 
@@ -259,7 +278,7 @@ impl Mpc for MPCService {
         request: Request<msg::TaskDecision>,
     ) -> Result<Response<msg::Resp>, Status> {
         let request = request.into_inner();
-        let task_id = request.task;
+        let task_id = Uuid::from_slice(&request.task).unwrap();
         let device_id = request.device;
         let accept = request.accept;
 
@@ -270,9 +289,12 @@ impl Mpc for MPCService {
             accept
         );
 
-        let mut state = self.state.lock().await;
-        state.device_activated(&device_id);
-        state.decide_task(&Uuid::from_slice(&task_id).unwrap(), &device_id, accept);
+        let state = self.state.clone();
+        tokio::task::spawn(async move {
+            let mut state = state.lock().await;
+            state.device_activated(&device_id);
+            state.decide_task(&task_id, &device_id, accept);
+        });
 
         Ok(Response::new(msg::Resp {
             message: "OK".into(),
@@ -301,11 +323,25 @@ impl Mpc for MPCService {
             message: "OK".into(),
         }))
     }
+
+    async fn subscribe_updates(
+        &self,
+        request: Request<msg::SubscribeRequest>,
+    ) -> Result<Response<Self::SubscribeUpdatesStream>, Status> {
+        let request = request.into_inner();
+        let device_id = request.device_id;
+
+        let (tx, rx) = mpsc::channel(8);
+
+        self.state.lock().await.add_subscriber(device_id, tx);
+
+        Ok(Response::new(Box::pin(ReceiverStream::new(rx))))
+    }
 }
 
-fn format_task(
+pub fn format_task(
     task_id: &Uuid,
-    task: &Box<dyn Task + Send + Sync>,
+    task: &dyn Task,
     device_id: Option<&[u8]>,
     request: Option<&[u8]>,
 ) -> crate::proto::Task {
@@ -344,10 +380,11 @@ fn format_task(
         reject: reject as u32,
         data,
         request: request.map(Vec::from),
+        attempt: task.get_attempts(),
     }
 }
 
-pub async fn run_rpc(state: State, addr: &str, port: u16) -> Result<(), String> {
+pub async fn run_grpc(state: Arc<Mutex<State>>, addr: &str, port: u16) -> Result<(), String> {
     let addr = format!("{}:{}", addr, port)
         .parse()
         .map_err(|_| String::from("Unable to parse server address"))?;
@@ -357,7 +394,7 @@ pub async fn run_rpc(state: State, addr: &str, port: u16) -> Result<(), String> 
         .add_service(MpcServer::new(node))
         .serve(addr)
         .await
-        .map_err(|_| String::from("Unable to run server"))?;
+        .map_err(|_| String::from("Unable to run grpc server"))?;
 
     Ok(())
 }
