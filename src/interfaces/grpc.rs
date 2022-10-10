@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::Stream;
 use tonic::codegen::Arc;
-use tonic::transport::Server;
+use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
@@ -390,11 +390,20 @@ pub async fn run_grpc(state: Arc<Mutex<State>>, addr: &str, port: u16) -> Result
         .map_err(|_| String::from("Unable to parse server address"))?;
     let node = MPCService::new(state);
 
+    let cert = tokio::fs::read("key/server-cert.pem")
+        .await
+        .map_err(|_| "Unable to load server certificate".to_string())?;
+    let key = tokio::fs::read("key/server-key.pem")
+        .await
+        .map_err(|_| "Unable to load server key".to_string())?;
+
     Server::builder()
+        .tls_config(ServerTlsConfig::new().identity(Identity::from_pem(&cert, &key)))
+        .map_err(|_| "Unable to setup TLS for gRPC server")?
         .add_service(MpcServer::new(node))
         .serve(addr)
         .await
-        .map_err(|_| String::from("Unable to run grpc server"))?;
+        .map_err(|_| String::from("Unable to run gRPC server"))?;
 
     Ok(())
 }
