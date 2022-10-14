@@ -50,12 +50,20 @@ enum Commands {
     },
     RequestGroup {
         name: String,
+        threshold: u32,
+        #[clap(help = "sign_pdf or sign_challenge")]
+        key_type: String,
         device_ids: Vec<String>,
     },
-    RequestSign {
+    RequestSignPdf {
         name: String,
         group_id: String,
         pdf_file: String,
+    },
+    RequestSignChallenge {
+        name: String,
+        group_id: String,
+        data: String,
     },
 }
 
@@ -178,6 +186,8 @@ async fn get_tasks(server: String, device_id: Option<Vec<u8>>) -> Result<(), Str
 async fn request_group(
     server: String,
     name: String,
+    threshold: u32,
+    key_type: String,
     device_ids: Vec<Vec<u8>>,
 ) -> Result<(), String> {
     let device_count = device_ids.len();
@@ -189,12 +199,18 @@ async fn request_group(
         .await
         .map_err(|_| String::from("Unable to connect to server"))?;
 
+    let key_type = match key_type.as_str() {
+        "sign_pdf" => Ok(crate::proto::KeyType::SignPdf as i32),
+        "sign_challenge" => Ok(crate::proto::KeyType::SignChallenge as i32),
+        _ => Err("Unknown key type".to_string()),
+    }?;
+
     let request = tonic::Request::new(crate::proto::GroupRequest {
         name,
         device_ids,
-        threshold: device_count as u32,
+        threshold,
         protocol: crate::proto::ProtocolType::Gg18 as i32,
-        key_type: crate::proto::KeyType::SignPdf as i32,
+        key_type,
     });
 
     let response = client
@@ -280,17 +296,31 @@ async fn main() -> Result<(), String> {
                 let device_id = device_id.map(|x| hex::decode(x).unwrap());
                 get_tasks(server, device_id).await
             }
-            Commands::RequestGroup { name, device_ids } => {
+            Commands::RequestGroup {
+                name,
+                threshold,
+                key_type,
+                device_ids,
+            } => {
                 let device_ids = device_ids.iter().map(|x| hex::decode(x).unwrap()).collect();
-                request_group(server, name, device_ids).await
+                request_group(server, name, threshold, key_type, device_ids).await
             }
-            Commands::RequestSign {
+            Commands::RequestSignPdf {
                 name,
                 group_id,
                 pdf_file,
             } => {
                 let group_id = hex::decode(group_id).unwrap();
                 let data = std::fs::read(pdf_file).unwrap();
+                request_sign(server, name, group_id, data).await
+            }
+            Commands::RequestSignChallenge {
+                name,
+                group_id,
+                data,
+            } => {
+                let group_id = hex::decode(group_id).unwrap();
+                let data = hex::decode(data).unwrap();
                 request_sign(server, name, group_id, data).await
             }
         }
