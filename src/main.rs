@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 
 use crate::proto::mpc_client::MpcClient;
 use crate::state::State;
-use tokio::{join, sync::Mutex};
+use tokio::{sync::Mutex, try_join};
 use tonic::codegen::Arc;
 
 mod communicator;
@@ -300,7 +300,6 @@ async fn main() -> Result<(), String> {
         let grpc = interfaces::grpc::run_grpc(state.clone(), &args.addr, args.port);
         let timer = interfaces::timer::run_timer(state);
 
-        let (grpc_result, timer_result) = join!(grpc, timer);
-        grpc_result.and(timer_result)
+        try_join!(grpc, timer).map(|_| ())
     }
 }
