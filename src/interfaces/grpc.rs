@@ -390,10 +390,10 @@ pub async fn run_grpc(state: Arc<Mutex<State>>, addr: &str, port: u16) -> Result
         .map_err(|_| String::from("Unable to parse server address"))?;
     let node = MPCService::new(state);
 
-    let cert = tokio::fs::read("key/meesign-server-cert.pem")
+    let cert = tokio::fs::read("keys/meesign-server-cert.pem")
         .await
         .map_err(|_| "Unable to load server certificate".to_string())?;
-    let key = tokio::fs::read("key/meesign-server-key.pem")
+    let key = tokio::fs::read("keys/meesign-server-key.pem")
         .await
         .map_err(|_| "Unable to load server key".to_string())?;
 

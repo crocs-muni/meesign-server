@@ -1,6 +1,7 @@
 #!/bin/bash
 
-KEY_FOLDER="key"
+KEY_FOLDER="keys"
+HOSTNAME=${1:-"meesign.local"}
 mkdir --parent "./${KEY_FOLDER}"
 
 # MeeSign CA certificate configuration
@@ -33,8 +34,8 @@ utf8 = yes
 [req_distinguished_name]
 C = CS
 O = MeeSign
-CN = meesign.local
 EOT
+echo "CN = ${HOSTNAME}" >> server-csr.conf
 
 # Standard server X509v3 extensions
 cat > server-ext.conf << EOT
