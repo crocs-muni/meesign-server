@@ -7,6 +7,7 @@ use crate::proto::mpc_client::MpcClient;
 use crate::state::State;
 use hyper::client::HttpConnector;
 use hyper::Uri;
+use proto::KeyType;
 use rustls::{self, ClientConfig};
 use tokio::{sync::Mutex, try_join};
 use tonic::codegen::Arc;
@@ -54,12 +55,20 @@ enum Commands {
     },
     RequestGroup {
         name: String,
+        threshold: u32,
+        #[clap(help = "sign_pdf or sign_challenge")]
+        key_type: String,
         device_ids: Vec<String>,
     },
-    RequestSign {
+    RequestSignPdf {
         name: String,
         group_id: String,
         pdf_file: String,
+    },
+    RequestSignChallenge {
+        name: String,
+        group_id: String,
+        data: String,
     },
 }
 
@@ -215,20 +224,29 @@ async fn main() -> Result<(), String> {
                     );
                 }
             }
-            Commands::RequestGroup { name, device_ids } => {
+            Commands::RequestGroup {
+                name,
+                threshold,
+                key_type,
+                device_ids,
+            } => {
                 let device_ids: Vec<_> =
                     device_ids.iter().map(|x| hex::decode(x).unwrap()).collect();
                 let device_count = device_ids.len();
-                if device_count <= 1 {
+                if device_ids.len() <= 1 {
                     return Err(String::from("Not enough parties to create a group"));
                 }
 
                 let request = tonic::Request::new(crate::proto::GroupRequest {
                     name,
                     device_ids,
-                    threshold: device_count as u32,
+                    threshold,
                     protocol: crate::proto::ProtocolType::Gg18 as i32,
-                    key_type: crate::proto::KeyType::SignPdf as i32,
+                    key_type: match key_type.as_str() {
+                        "sign_pdf" => KeyType::SignPdf,
+                        "sign_challenge" => KeyType::SignChallenge,
+                        _ => panic!("Incorrect key type"),
+                    } as i32,
                 });
 
                 let response = client
@@ -251,13 +269,47 @@ async fn main() -> Result<(), String> {
                     task.round
                 );
             }
-            Commands::RequestSign {
+            Commands::RequestSignPdf {
                 name,
                 group_id,
                 pdf_file,
             } => {
                 let group_id = hex::decode(group_id).unwrap();
                 let data = std::fs::read(pdf_file).unwrap();
+                let request = tonic::Request::new(crate::proto::SignRequest {
+                    name,
+                    group_id,
+                    data,
+                });
+
+                let response = client
+                    .sign(request)
+                    .await
+                    .map_err(|_| String::from("Request failed"))?
+                    .into_inner();
+
+                let task = response;
+                let task_type = match task.r#type {
+                    0 => "Group",
+                    1 => "Sign",
+                    _ => "Unknown",
+                };
+                println!(
+                    "Task {} [{}] (state {}:{})",
+                    task_type,
+                    hex::encode(task.id),
+                    task.state,
+                    task.round
+                );
+            }
+            Commands::RequestSignChallenge {
+                name,
+                group_id,
+                data,
+            } => {
+                let group_id = hex::decode(group_id).unwrap();
+                let data = hex::decode(data).unwrap();
+
                 let request = tonic::Request::new(crate::proto::SignRequest {
                     name,
                     group_id,

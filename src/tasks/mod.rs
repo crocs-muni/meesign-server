@@ -1,4 +1,5 @@
 pub(crate) mod group;
+pub(crate) mod sign_challenge;
 pub(crate) mod sign_pdf;
 
 use crate::device::Device;

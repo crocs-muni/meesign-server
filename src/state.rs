@@ -8,6 +8,7 @@ use crate::group::Group;
 use crate::interfaces::grpc::format_task;
 use crate::proto::{KeyType, ProtocolType};
 use crate::tasks::group::GroupTask;
+use crate::tasks::sign_challenge::SignChallengeTask;
 use crate::tasks::sign_pdf::SignPDFTask;
 use crate::tasks::{Task, TaskResult, TaskStatus};
 use log::info;
@@ -89,7 +90,7 @@ impl State {
         }
 
         let task: Box<dyn Task + Send + Sync + 'static> = match protocol {
-            ProtocolType::Gg18 => Box::new(GroupTask::new(name, &device_list, threshold)),
+            ProtocolType::Gg18 => Box::new(GroupTask::new(name, &device_list, threshold, key_type)),
         };
 
         let task_id = self.add_task(task);
@@ -98,26 +99,38 @@ impl State {
         Some(task_id)
     }
 
-    pub fn add_sign_task(&mut self, group: &[u8], name: &str, data: &[u8]) -> Option<Uuid> {
-        if data.len() > 8 * 1024 * 1024 || name.len() > 256 || name.chars().any(|x| x.is_control())
-        {
-            warn!("Invalid PDF name {} ({} B)", name, data.len());
+    pub fn add_sign_task(&mut self, group_id: &[u8], name: &str, data: &[u8]) -> Option<Uuid> {
+        let group = self.groups.get(group_id);
+        if group.is_none() {
+            warn!(
+                "Signing requested from an unknown group group_id={}",
+                hex::encode(group_id)
+            );
             return None;
         }
+        let group = group.unwrap();
+        let task = match group.key_type() {
+            KeyType::SignPdf => {
+                SignPDFTask::try_new(group.clone(), name.to_string(), data.to_vec())
+                    .ok()
+                    .map(|task| Box::new(task) as Box<dyn Task + Sync + Send>)
+            }
+            KeyType::SignChallenge => Some(SignChallengeTask::new(
+                group.clone(),
+                name.to_string(),
+                data.to_vec(),
+            ))
+            .map(|task| Box::new(task) as Box<dyn Task + Sync + Send>),
+        };
 
-        self.groups.get(group).cloned().map(|group| {
-            let task: Box<dyn Task + Send + Sync> = match group.protocol() {
-                ProtocolType::Gg18 => {
-                    Box::new(SignPDFTask::new(group, name.to_string(), data.to_vec()))
-                }
-            };
-            let task_id = self.add_task(task);
-            self.send_updates(&task_id);
-            task_id
-        })
+        let task_id = task.map(|task| self.add_task(task));
+        if let Some(task_id) = &task_id {
+            self.send_updates(task_id);
+        }
+        task_id
     }
 
-    fn add_task(&mut self, task: Box<dyn Task + Send + Sync>) -> Uuid {
+    fn add_task(&mut self, task: Box<dyn Task + Sync + Send>) -> Uuid {
         let uuid = Uuid::new_v4();
         self.tasks.insert(uuid, task);
         uuid
