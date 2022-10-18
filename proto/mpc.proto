@@ -32,6 +32,12 @@ enum KeyType {
   SignChallenge = 1;
 }
 
+enum TaskType {
+  GROUP = 0;
+  SIGN_PDF = 1;
+  SIGN_CHALLENGE = 2;
+}
+
 message RegistrationRequest {
   bytes identifier = 1;
   string name = 2;
@@ -81,10 +87,6 @@ message TaskRequest {
 
 message Task {
   bytes id = 1;
-  enum TaskType {
-    GROUP = 0;
-    SIGN = 1;
-  }
   TaskType type = 2;
   enum TaskState {
     CREATED = 0;

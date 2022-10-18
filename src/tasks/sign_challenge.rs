@@ -2,10 +2,10 @@ use crate::communicator::Communicator;
 use crate::device::Device;
 use crate::get_timestamp;
 use crate::group::Group;
-use crate::proto::{Gg18Message, SignRequest};
+use crate::proto::{Gg18Message, SignRequest, TaskType};
 use crate::protocols::gg18::GG18Sign;
 use crate::protocols::Protocol;
-use crate::tasks::{Task, TaskResult, TaskStatus, TaskType};
+use crate::tasks::{Task, TaskResult, TaskStatus};
 use log::info;
 use prost::Message;
 use tonic::codegen::Arc;
@@ -101,7 +101,7 @@ impl Task for SignChallengeTask {
     }
 
     fn get_type(&self) -> TaskType {
-        TaskType::Sign
+        TaskType::SignChallenge
     }
 
     fn get_work(&self, device_id: Option<&[u8]>) -> Option<Vec<u8>> {

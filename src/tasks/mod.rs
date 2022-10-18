@@ -30,14 +30,9 @@ impl TaskResult {
     }
 }
 
-pub enum TaskType {
-    Group,
-    Sign,
-}
-
 pub trait Task {
     fn get_status(&self) -> TaskStatus;
-    fn get_type(&self) -> TaskType;
+    fn get_type(&self) -> crate::proto::TaskType;
     fn get_work(&self, device_id: Option<&[u8]>) -> Option<Vec<u8>>;
     fn get_result(&self) -> Option<TaskResult>;
     fn get_decisions(&self) -> (u32, u32);

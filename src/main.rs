@@ -232,7 +232,6 @@ async fn main() -> Result<(), String> {
             } => {
                 let device_ids: Vec<_> =
                     device_ids.iter().map(|x| hex::decode(x).unwrap()).collect();
-                let device_count = device_ids.len();
                 if device_ids.len() <= 1 {
                     return Err(String::from("Not enough parties to create a group"));
                 }

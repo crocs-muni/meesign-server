@@ -12,7 +12,7 @@ use crate::proto as msg;
 use crate::proto::mpc_server::{Mpc, MpcServer};
 use crate::proto::{KeyType, ProtocolType};
 use crate::state::State;
-use crate::tasks::{Task, TaskStatus, TaskType};
+use crate::tasks::{Task, TaskStatus};
 
 use std::pin::Pin;
 
@@ -370,10 +370,7 @@ pub fn format_task(
 
     msg::Task {
         id: task_id.as_bytes().to_vec(),
-        r#type: match task.get_type() {
-            TaskType::Group => msg::task::TaskType::Group as i32,
-            TaskType::Sign => msg::task::TaskType::Sign as i32,
-        },
+        r#type: task.get_type() as i32,
         state: task_status as i32,
         round: round.into(),
         accept: accept as u32,
