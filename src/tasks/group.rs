@@ -16,6 +16,7 @@ use tonic::codegen::Arc;
 pub struct GroupTask {
     name: String,
     threshold: u32,
+    key_type: KeyType,
     devices: Vec<Arc<Device>>,
     communicator: Communicator,
     result: Option<Result<Group, String>>,
@@ -48,6 +49,7 @@ impl GroupTask {
             name: name.into(),
             threshold,
             devices,
+            key_type,
             communicator,
             result: None,
             protocol: Box::new(GG18Group::new(devices_len, threshold)),
@@ -89,7 +91,7 @@ impl GroupTask {
             self.devices.iter().map(Arc::clone).collect(),
             self.threshold,
             ProtocolType::Gg18,
-            KeyType::SignPdf,
+            self.key_type,
             Some(certificate),
         )));
 
