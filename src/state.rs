@@ -89,14 +89,15 @@ impl State {
             device_list.push(self.devices.get(device.as_slice()).unwrap().clone());
         }
 
-        let task: Box<dyn Task + Send + Sync + 'static> = match protocol {
-            ProtocolType::Gg18 => Box::new(GroupTask::new(name, &device_list, threshold, key_type)),
-        };
+        let task = GroupTask::try_new(name, &device_list, threshold, key_type)
+            .ok()
+            .map(|task| Box::new(task) as Box<dyn Task + Send + Sync>);
 
-        let task_id = self.add_task(task);
-        self.send_updates(&task_id);
-
-        Some(task_id)
+        let task_id = task.map(|task| self.add_task(task));
+        if let Some(task_id) = &task_id {
+            self.send_updates(task_id);
+        }
+        task_id
     }
 
     pub fn add_sign_task(&mut self, group_id: &[u8], name: &str, data: &[u8]) -> Option<Uuid> {

@@ -8,7 +8,7 @@ use crate::proto::{KeyType, ProtocolType, TaskType};
 use crate::protocols::gg18::GG18Group;
 use crate::protocols::Protocol;
 use crate::tasks::{Task, TaskResult, TaskStatus};
-use log::info;
+use log::{info, warn};
 use std::io::Read;
 use std::process::{Command, Stdio};
 use tonic::codegen::Arc;
@@ -27,9 +27,21 @@ pub struct GroupTask {
 }
 
 impl GroupTask {
-    pub fn new(name: &str, devices: &[Arc<Device>], threshold: u32, key_type: KeyType) -> Self {
+    pub fn try_new(
+        name: &str,
+        devices: &[Arc<Device>],
+        threshold: u32,
+        key_type: KeyType,
+    ) -> Result<Self, String> {
         let devices_len = devices.len() as u32;
-        assert!(threshold <= devices_len);
+        if devices_len < 1 {
+            warn!("Invalid number of devices {}", devices_len);
+            return Err("Invalid input".to_string());
+        }
+        if !ProtocolType::Gg18.check_threshold(threshold, devices_len) {
+            warn!("Invalid group threshold {}-of-{}", threshold, devices_len);
+            return Err("Invalid input".to_string());
+        }
 
         let mut devices = devices.to_vec();
         devices.sort_by_key(|x| x.identifier().to_vec());
@@ -45,7 +57,7 @@ impl GroupTask {
         })
         .encode_to_vec();
 
-        GroupTask {
+        Ok(GroupTask {
             name: name.into(),
             threshold,
             devices,
@@ -56,7 +68,7 @@ impl GroupTask {
             request,
             last_update: get_timestamp(),
             attempts: 0,
-        }
+        })
     }
 
     fn start_task(&mut self) {
