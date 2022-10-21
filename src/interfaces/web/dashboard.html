@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf8">
+        <title>MeeSign Dashboard</title>
+    </head>
+    <body>
+        <h1>MeeSign Dashboard</h1>
+        <h2>Devices ({{ devices | length }})</h2>
+        <ul>
+        {% for device in devices %}
+            <li>{{ device }}</li>
+        {% endfor %}
+        </ul>
+        <h2>Groups ({{ groups | length }})</h2>
+        <ul>
+            {% for group in groups %}
+            <li>{{ group }}</li>
+            {% endfor %}
+        </ul>
+        <h2>Tasks ({{ tasks | length }})</h2>
+        <ul>
+            {% for task in tasks %}
+            <li>{{ task }}</li>
+            {% endfor %}
+        </ul>
+    </body>
+</html>
