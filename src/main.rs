@@ -1,16 +1,16 @@
-use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use clap::{Parser, Subcommand};
+use clap::Parser;
 
-use crate::proto::mpc_client::MpcClient;
 use crate::state::State;
-use hyper::client::HttpConnector;
-use hyper::Uri;
-use proto::KeyType;
-use rustls::{self, ClientConfig};
 use tokio::{sync::Mutex, try_join};
 use tonic::codegen::Arc;
+
+#[cfg(feature = "cli")]
+use {
+    crate::proto::mpc_client::MpcClient, clap::Subcommand, hyper::client::HttpConnector,
+    hyper::Uri, proto::KeyType, rustls::ClientConfig, std::str::FromStr,
+};
 
 mod communicator;
 mod device;
@@ -36,10 +36,12 @@ struct Args {
     #[clap(short, long, default_value_t = String::from("127.0.0.1"))]
     addr: String,
 
+    #[cfg(feature = "cli")]
     #[clap(subcommand)]
     command: Option<Commands>,
 }
 
+#[cfg(feature = "cli")]
 #[derive(Subcommand)]
 enum Commands {
     Register {
@@ -81,14 +83,17 @@ pub fn get_timestamp() -> u64 {
 
 // Skip server certificate validation for testing from CLI
 // Based on https://quinn-rs.github.io/quinn/quinn/certificate.html
+#[cfg(feature = "cli")]
 struct SkipServerVerification;
 
+#[cfg(feature = "cli")]
 impl SkipServerVerification {
     fn new() -> Arc<Self> {
         Arc::new(Self)
     }
 }
 
+#[cfg(feature = "cli")]
 impl rustls::client::ServerCertVerifier for SkipServerVerification {
     fn verify_server_cert(
         &self,
@@ -107,6 +112,22 @@ impl rustls::client::ServerCertVerifier for SkipServerVerification {
 async fn main() -> Result<(), String> {
     env_logger::init();
     let args = Args::parse();
+
+    #[cfg(feature = "cli")]
+    if args.command.is_some() {
+        return handle_command(args).await;
+    }
+
+    let state = Arc::new(Mutex::new(State::new()));
+
+    let grpc = interfaces::grpc::run_grpc(state.clone(), &args.addr, args.port);
+    let timer = interfaces::timer::run_timer(state);
+
+    try_join!(grpc, timer).map(|_| ())
+}
+
+#[cfg(feature = "cli")]
+async fn handle_command(args: Args) -> Result<(), String> {
     if let Some(command) = args.command {
         let server = format!("https://{}:{}", &args.addr, args.port);
         let server_move = server.clone();
@@ -336,13 +357,6 @@ async fn main() -> Result<(), String> {
                 );
             }
         }
-        Ok(())
-    } else {
-        let state = Arc::new(Mutex::new(State::new()));
-
-        let grpc = interfaces::grpc::run_grpc(state.clone(), &args.addr, args.port);
-        let timer = interfaces::timer::run_timer(state);
-
-        try_join!(grpc, timer).map(|_| ())
     }
+    Ok(())
 }

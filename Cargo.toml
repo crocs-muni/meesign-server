@@ -15,10 +15,16 @@ hex = "0.4.3"
 clap = { version = "3.1.8", features = ["derive"] }
 rand = "0.8.5"
 tempfile = "3.3.0"
-rustls = { version = "0.20.6", features = ["dangerous_configuration"] }
-tower = "0.4.13"
-hyper = "0.14.20"
-hyper-rustls = { version = "0.23.0", features = ["http2"] }
+
+# cli feature dependecies
+rustls = { version = "0.20.7", features = ["dangerous_configuration"], optional = true }
+tower = { version = "0.4.13", optional = true }
+hyper = { version = "0.14.20", optional = true }
+hyper-rustls = { version = "0.23.0", features = ["http2"], optional = true }
 
 [build-dependencies]
 tonic-build = "0.8.2"
+
+[features]
+default = ["cli"]
+cli = ["dep:rustls", "dep:tower", "dep:hyper", "dep:hyper-rustls"]
