@@ -6,12 +6,6 @@ use crate::state::State;
 use tokio::{sync::Mutex, try_join};
 use tonic::codegen::Arc;
 
-#[cfg(feature = "cli")]
-use {
-    crate::proto::mpc_client::MpcClient, clap::Subcommand, hyper::client::HttpConnector,
-    hyper::Uri, proto::KeyType, rustls::ClientConfig, std::str::FromStr,
-};
-
 mod communicator;
 mod device;
 mod group;
@@ -29,7 +23,7 @@ const VERSION: Option<&str> = option_env!("CARGO_PKG_VERSION");
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
-struct Args {
+pub(self) struct Args {
     #[clap(short, long, default_value_t = 1337)]
     port: u16,
 
@@ -38,40 +32,7 @@ struct Args {
 
     #[cfg(feature = "cli")]
     #[clap(subcommand)]
-    command: Option<Commands>,
-}
-
-#[cfg(feature = "cli")]
-#[derive(Subcommand)]
-enum Commands {
-    Register {
-        identifier: String,
-        name: String,
-    },
-    GetDevices,
-    GetGroups {
-        device_id: Option<String>,
-    },
-    GetTasks {
-        device_id: Option<String>,
-    },
-    RequestGroup {
-        name: String,
-        threshold: u32,
-        #[clap(help = "sign_pdf or sign_challenge")]
-        key_type: String,
-        device_ids: Vec<String>,
-    },
-    RequestSignPdf {
-        name: String,
-        group_id: String,
-        pdf_file: String,
-    },
-    RequestSignChallenge {
-        name: String,
-        group_id: String,
-        data: String,
-    },
+    command: Option<cli::Commands>,
 }
 
 pub fn get_timestamp() -> u64 {
@@ -81,33 +42,6 @@ pub fn get_timestamp() -> u64 {
         .as_secs()
 }
 
-// Skip server certificate validation for testing from CLI
-// Based on https://quinn-rs.github.io/quinn/quinn/certificate.html
-#[cfg(feature = "cli")]
-struct SkipServerVerification;
-
-#[cfg(feature = "cli")]
-impl SkipServerVerification {
-    fn new() -> Arc<Self> {
-        Arc::new(Self)
-    }
-}
-
-#[cfg(feature = "cli")]
-impl rustls::client::ServerCertVerifier for SkipServerVerification {
-    fn verify_server_cert(
-        &self,
-        _end_entity: &rustls::Certificate,
-        _intermediates: &[rustls::Certificate],
-        _server_name: &rustls::ServerName,
-        _scts: &mut dyn Iterator<Item = &[u8]>,
-        _ocsp_response: &[u8],
-        _now: SystemTime,
-    ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::ServerCertVerified::assertion())
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<(), String> {
     env_logger::init();
@@ -115,7 +49,7 @@ async fn main() -> Result<(), String> {
 
     #[cfg(feature = "cli")]
     if args.command.is_some() {
-        return handle_command(args).await;
+        return cli::handle_command(args).await;
     }
 
     let state = Arc::new(Mutex::new(State::new()));
@@ -127,110 +61,290 @@ async fn main() -> Result<(), String> {
 }
 
 #[cfg(feature = "cli")]
-async fn handle_command(args: Args) -> Result<(), String> {
-    if let Some(command) = args.command {
-        let server = format!("https://{}:{}", &args.addr, args.port);
-        let server_move = server.clone();
+mod cli {
+    use crate::proto::mpc_client::MpcClient;
+    use crate::proto::KeyType;
+    use crate::Args;
+    use clap::Subcommand;
+    use hyper::client::HttpConnector;
+    use hyper::Uri;
+    use rustls::ClientConfig;
+    use std::str::FromStr;
+    use std::time::SystemTime;
+    use tonic::codegen::Arc;
 
-        // Based on https://github.com/hyperium/tonic/blob/675b3b2e75b896632cc8cbc291133d7a44d790a1/examples/src/tls/client_rustls.rs
-        let connector = tower::ServiceBuilder::new()
-            .layer_fn(|s| {
-                let tls = ClientConfig::builder()
-                    .with_safe_defaults()
-                    .with_custom_certificate_verifier(SkipServerVerification::new())
-                    .with_no_client_auth();
+    #[derive(Subcommand)]
+    pub enum Commands {
+        Register {
+            identifier: String,
+            name: String,
+        },
+        GetDevices,
+        GetGroups {
+            device_id: Option<String>,
+        },
+        GetTasks {
+            device_id: Option<String>,
+        },
+        RequestGroup {
+            name: String,
+            threshold: u32,
+            #[clap(help = "sign_pdf or sign_challenge")]
+            key_type: String,
+            device_ids: Vec<String>,
+        },
+        RequestSignPdf {
+            name: String,
+            group_id: String,
+            pdf_file: String,
+        },
+        RequestSignChallenge {
+            name: String,
+            group_id: String,
+            data: String,
+        },
+    }
 
-                hyper_rustls::HttpsConnectorBuilder::new()
-                    .with_tls_config(tls)
-                    .https_or_http()
-                    .enable_http2()
-                    .wrap_connector(s)
-            })
-            .map_request(move |_| Uri::from_str(&server_move).unwrap())
-            .service({
-                let mut http = HttpConnector::new();
-                http.enforce_http(false);
-                http
-            });
+    // Skip server certificate validation for testing from CLI
+    // Based on https://quinn-rs.github.io/quinn/quinn/certificate.html
+    struct SkipServerVerification;
 
-        let mut client = MpcClient::with_origin(
-            hyper::Client::builder().build(connector),
-            Uri::from_str(&server).unwrap(),
-        );
+    impl SkipServerVerification {
+        fn new() -> Arc<Self> {
+            Arc::new(Self)
+        }
+    }
 
-        // TODO Refactor once MpcClient (GrpcClient) can be passed to functions more ergonomically
-        // More info here https://github.com/hyperium/tonic/issues/110
-        match command {
-            Commands::Register { identifier, name } => {
-                let identifier = hex::decode(identifier).unwrap();
-                let request = tonic::Request::new(crate::proto::RegistrationRequest {
-                    identifier: identifier.to_vec(),
-                    name: name.to_string(),
+    impl rustls::client::ServerCertVerifier for SkipServerVerification {
+        fn verify_server_cert(
+            &self,
+            _end_entity: &rustls::Certificate,
+            _intermediates: &[rustls::Certificate],
+            _server_name: &rustls::ServerName,
+            _scts: &mut dyn Iterator<Item = &[u8]>,
+            _ocsp_response: &[u8],
+            _now: SystemTime,
+        ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
+            Ok(rustls::client::ServerCertVerified::assertion())
+        }
+    }
+
+    pub(super) async fn handle_command(args: Args) -> Result<(), String> {
+        if let Some(command) = args.command {
+            let server = format!("https://{}:{}", &args.addr, args.port);
+            let server_move = server.clone();
+
+            // Based on https://github.com/hyperium/tonic/blob/675b3b2e75b896632cc8cbc291133d7a44d790a1/examples/src/tls/client_rustls.rs
+            let connector = tower::ServiceBuilder::new()
+                .layer_fn(|s| {
+                    let tls = ClientConfig::builder()
+                        .with_safe_defaults()
+                        .with_custom_certificate_verifier(SkipServerVerification::new())
+                        .with_no_client_auth();
+
+                    hyper_rustls::HttpsConnectorBuilder::new()
+                        .with_tls_config(tls)
+                        .https_or_http()
+                        .enable_http2()
+                        .wrap_connector(s)
+                })
+                .map_request(move |_| Uri::from_str(&server_move).unwrap())
+                .service({
+                    let mut http = HttpConnector::new();
+                    http.enforce_http(false);
+                    http
                 });
 
-                let response = client
-                    .register(request)
-                    .await
-                    .map_err(|_| String::from("Request failed"))?
-                    .into_inner();
+            let mut client = MpcClient::with_origin(
+                hyper::Client::builder().build(connector),
+                Uri::from_str(&server).unwrap(),
+            );
 
-                println!("{}", response.message);
-            }
-            Commands::GetDevices => {
-                let request = tonic::Request::new(crate::proto::DevicesRequest {});
+            // TODO Refactor once MpcClient (GrpcClient) can be passed to functions more ergonomically
+            // More info here https://github.com/hyperium/tonic/issues/110
+            match command {
+                Commands::Register { identifier, name } => {
+                    let identifier = hex::decode(identifier).unwrap();
+                    let request = tonic::Request::new(crate::proto::RegistrationRequest {
+                        identifier: identifier.to_vec(),
+                        name: name.to_string(),
+                    });
 
-                let mut response = client
-                    .get_devices(request)
-                    .await
-                    .map_err(|_| String::from("Request failed"))?
-                    .into_inner();
+                    let response = client
+                        .register(request)
+                        .await
+                        .map_err(|_| String::from("Request failed"))?
+                        .into_inner();
 
-                let now = SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
+                    println!("{}", response.message);
+                }
+                Commands::GetDevices => {
+                    let request = tonic::Request::new(crate::proto::DevicesRequest {});
 
-                response.devices.sort_by_key(|x| u64::MAX - x.last_active);
-                for device in response.devices {
+                    let mut response = client
+                        .get_devices(request)
+                        .await
+                        .map_err(|_| String::from("Request failed"))?
+                        .into_inner();
+
+                    let now = SystemTime::now()
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs();
+
+                    response.devices.sort_by_key(|x| u64::MAX - x.last_active);
+                    for device in response.devices {
+                        println!(
+                            "[{}] {} (seen before {}s)",
+                            hex::encode(device.identifier),
+                            &device.name,
+                            now - device.last_active
+                        );
+                    }
+                }
+                Commands::GetGroups { device_id } => {
+                    let device_id = device_id.map(|x| hex::decode(x).unwrap());
+                    let request = tonic::Request::new(crate::proto::GroupsRequest { device_id });
+
+                    let response = client
+                        .get_groups(request)
+                        .await
+                        .map_err(|_| String::from("Request failed"))?
+                        .into_inner();
+
+                    for group in response.groups {
+                        println!(
+                            "[{}] {} ({}-of-{})",
+                            hex::encode(group.identifier),
+                            &group.name,
+                            group.threshold,
+                            group.device_ids.len()
+                        );
+                    }
+                }
+                Commands::GetTasks { device_id } => {
+                    let device_id = device_id.map(|x| hex::decode(x).unwrap());
+                    let request = tonic::Request::new(crate::proto::TasksRequest { device_id });
+
+                    let response = client
+                        .get_tasks(request)
+                        .await
+                        .map_err(|_| String::from("Request failed"))?
+                        .into_inner();
+
+                    for task in response.tasks {
+                        let task_type = match task.r#type {
+                            0 => "Group",
+                            1 => "Sign",
+                            _ => "Unknown",
+                        };
+                        println!(
+                            "Task {} [{}] (state {}:{})",
+                            task_type,
+                            hex::encode(task.id),
+                            task.state,
+                            task.round
+                        );
+                    }
+                }
+                Commands::RequestGroup {
+                    name,
+                    threshold,
+                    key_type,
+                    device_ids,
+                } => {
+                    let device_ids: Vec<_> =
+                        device_ids.iter().map(|x| hex::decode(x).unwrap()).collect();
+                    if device_ids.len() <= 1 {
+                        return Err(String::from("Not enough parties to create a group"));
+                    }
+
+                    let request = tonic::Request::new(crate::proto::GroupRequest {
+                        name,
+                        device_ids,
+                        threshold,
+                        protocol: crate::proto::ProtocolType::Gg18 as i32,
+                        key_type: match key_type.as_str() {
+                            "sign_pdf" => KeyType::SignPdf,
+                            "sign_challenge" => KeyType::SignChallenge,
+                            _ => panic!("Incorrect key type"),
+                        } as i32,
+                    });
+
+                    let response = client
+                        .group(request)
+                        .await
+                        .map_err(|_| String::from("Request failed"))?
+                        .into_inner();
+
+                    let task = response;
+                    let task_type = match task.r#type {
+                        0 => "Group",
+                        1 => "Sign",
+                        _ => "Unknown",
+                    };
                     println!(
-                        "[{}] {} (seen before {}s)",
-                        hex::encode(device.identifier),
-                        &device.name,
-                        now - device.last_active
+                        "Task {} [{}] (state {}:{})",
+                        task_type,
+                        hex::encode(task.id),
+                        task.state,
+                        task.round
                     );
                 }
-            }
-            Commands::GetGroups { device_id } => {
-                let device_id = device_id.map(|x| hex::decode(x).unwrap());
-                let request = tonic::Request::new(crate::proto::GroupsRequest { device_id });
+                Commands::RequestSignPdf {
+                    name,
+                    group_id,
+                    pdf_file,
+                } => {
+                    let group_id = hex::decode(group_id).unwrap();
+                    let data = std::fs::read(pdf_file).unwrap();
+                    let request = tonic::Request::new(crate::proto::SignRequest {
+                        name,
+                        group_id,
+                        data,
+                    });
 
-                let response = client
-                    .get_groups(request)
-                    .await
-                    .map_err(|_| String::from("Request failed"))?
-                    .into_inner();
+                    let response = client
+                        .sign(request)
+                        .await
+                        .map_err(|_| String::from("Request failed"))?
+                        .into_inner();
 
-                for group in response.groups {
+                    let task = response;
+                    let task_type = match task.r#type {
+                        0 => "Group",
+                        1 => "Sign",
+                        _ => "Unknown",
+                    };
                     println!(
-                        "[{}] {} ({}-of-{})",
-                        hex::encode(group.identifier),
-                        &group.name,
-                        group.threshold,
-                        group.device_ids.len()
+                        "Task {} [{}] (state {}:{})",
+                        task_type,
+                        hex::encode(task.id),
+                        task.state,
+                        task.round
                     );
                 }
-            }
-            Commands::GetTasks { device_id } => {
-                let device_id = device_id.map(|x| hex::decode(x).unwrap());
-                let request = tonic::Request::new(crate::proto::TasksRequest { device_id });
+                Commands::RequestSignChallenge {
+                    name,
+                    group_id,
+                    data,
+                } => {
+                    let group_id = hex::decode(group_id).unwrap();
+                    let data = hex::decode(data).unwrap();
 
-                let response = client
-                    .get_tasks(request)
-                    .await
-                    .map_err(|_| String::from("Request failed"))?
-                    .into_inner();
+                    let request = tonic::Request::new(crate::proto::SignRequest {
+                        name,
+                        group_id,
+                        data,
+                    });
 
-                for task in response.tasks {
+                    let response = client
+                        .sign(request)
+                        .await
+                        .map_err(|_| String::from("Request failed"))?
+                        .into_inner();
+
+                    let task = response;
                     let task_type = match task.r#type {
                         0 => "Group",
                         1 => "Sign",
@@ -245,118 +359,7 @@ async fn handle_command(args: Args) -> Result<(), String> {
                     );
                 }
             }
-            Commands::RequestGroup {
-                name,
-                threshold,
-                key_type,
-                device_ids,
-            } => {
-                let device_ids: Vec<_> =
-                    device_ids.iter().map(|x| hex::decode(x).unwrap()).collect();
-                if device_ids.len() <= 1 {
-                    return Err(String::from("Not enough parties to create a group"));
-                }
-
-                let request = tonic::Request::new(crate::proto::GroupRequest {
-                    name,
-                    device_ids,
-                    threshold,
-                    protocol: crate::proto::ProtocolType::Gg18 as i32,
-                    key_type: match key_type.as_str() {
-                        "sign_pdf" => KeyType::SignPdf,
-                        "sign_challenge" => KeyType::SignChallenge,
-                        _ => panic!("Incorrect key type"),
-                    } as i32,
-                });
-
-                let response = client
-                    .group(request)
-                    .await
-                    .map_err(|_| String::from("Request failed"))?
-                    .into_inner();
-
-                let task = response;
-                let task_type = match task.r#type {
-                    0 => "Group",
-                    1 => "Sign",
-                    _ => "Unknown",
-                };
-                println!(
-                    "Task {} [{}] (state {}:{})",
-                    task_type,
-                    hex::encode(task.id),
-                    task.state,
-                    task.round
-                );
-            }
-            Commands::RequestSignPdf {
-                name,
-                group_id,
-                pdf_file,
-            } => {
-                let group_id = hex::decode(group_id).unwrap();
-                let data = std::fs::read(pdf_file).unwrap();
-                let request = tonic::Request::new(crate::proto::SignRequest {
-                    name,
-                    group_id,
-                    data,
-                });
-
-                let response = client
-                    .sign(request)
-                    .await
-                    .map_err(|_| String::from("Request failed"))?
-                    .into_inner();
-
-                let task = response;
-                let task_type = match task.r#type {
-                    0 => "Group",
-                    1 => "Sign",
-                    _ => "Unknown",
-                };
-                println!(
-                    "Task {} [{}] (state {}:{})",
-                    task_type,
-                    hex::encode(task.id),
-                    task.state,
-                    task.round
-                );
-            }
-            Commands::RequestSignChallenge {
-                name,
-                group_id,
-                data,
-            } => {
-                let group_id = hex::decode(group_id).unwrap();
-                let data = hex::decode(data).unwrap();
-
-                let request = tonic::Request::new(crate::proto::SignRequest {
-                    name,
-                    group_id,
-                    data,
-                });
-
-                let response = client
-                    .sign(request)
-                    .await
-                    .map_err(|_| String::from("Request failed"))?
-                    .into_inner();
-
-                let task = response;
-                let task_type = match task.r#type {
-                    0 => "Group",
-                    1 => "Sign",
-                    _ => "Unknown",
-                };
-                println!(
-                    "Task {} [{}] (state {}:{})",
-                    task_type,
-                    hex::encode(task.id),
-                    task.state,
-                    task.round
-                );
-            }
         }
+        Ok(())
     }
-    Ok(())
 }
