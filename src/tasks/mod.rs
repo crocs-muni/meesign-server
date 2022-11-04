@@ -1,5 +1,5 @@
 pub(crate) mod group;
-pub(crate) mod sign_challenge;
+pub(crate) mod sign;
 pub(crate) mod sign_pdf;
 
 use crate::device::Device;
@@ -19,6 +19,7 @@ pub enum TaskStatus {
 pub enum TaskResult {
     GroupEstablished(Group),
     Signed(Vec<u8>),
+    SignedPdf(Vec<u8>),
 }
 
 impl TaskResult {
@@ -26,6 +27,7 @@ impl TaskResult {
         match self {
             TaskResult::GroupEstablished(group) => group.identifier(),
             TaskResult::Signed(data) => data,
+            TaskResult::SignedPdf(data) => data,
         }
     }
 }
@@ -61,8 +63,10 @@ pub trait Task {
     /// Store `decision` by `device_id`
     ///
     /// # Returns
-    /// `true` if this decision caused the protocol to start; `false` otherwise.
-    fn decide(&mut self, device_id: &[u8], decision: bool) -> bool;
+    /// `Some(true)` if this decision caused the protocol to start;
+    /// `Some(false)` if this decision caused the protocol to fail;
+    /// `None` otherwise.
+    fn decide(&mut self, device_id: &[u8], decision: bool) -> Option<bool>;
 
     fn acknowledge(&mut self, device_id: &[u8]);
     fn device_acknowledged(&self, device_id: &[u8]) -> bool;

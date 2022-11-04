@@ -10,18 +10,18 @@ use log::info;
 use prost::Message;
 use tonic::codegen::Arc;
 
-pub struct SignChallengeTask {
+pub struct SignTask {
     group: Group,
     communicator: Communicator,
     result: Option<Result<Vec<u8>, String>>,
-    challenge: Vec<u8>,
-    protocol: Box<dyn Protocol + Send + Sync>,
+    pub(super) data: Vec<u8>,
+    pub(super) protocol: Box<dyn Protocol + Send + Sync>,
     request: Vec<u8>,
-    last_update: u64,
-    attempts: u32,
+    pub(super) last_update: u64,
+    pub(super) attempts: u32,
 }
 
-impl SignChallengeTask {
+impl SignTask {
     pub fn new(group: Group, name: String, data: Vec<u8>) -> Self {
         let mut devices: Vec<Arc<Device>> = group.devices().to_vec();
         devices.sort_by_key(|x| x.identifier().to_vec());
@@ -35,11 +35,11 @@ impl SignChallengeTask {
         })
         .encode_to_vec();
 
-        SignChallengeTask {
+        SignTask {
             group,
             communicator,
             result: None,
-            challenge: data,
+            data,
             protocol: Box::new(GG18Sign::new()),
             request,
             last_update: get_timestamp(),
@@ -47,17 +47,20 @@ impl SignChallengeTask {
         }
     }
 
-    fn start_task(&mut self) {
-        assert!(self.communicator.accept_count() >= self.group.threshold());
-        self.protocol
-            .initialize(&mut self.communicator, &self.challenge);
+    pub fn get_group(&self) -> &Group {
+        &self.group
     }
 
-    fn advance_task(&mut self) {
+    pub(super) fn start_task(&mut self) {
+        assert!(self.communicator.accept_count() >= self.group.threshold());
+        self.protocol.initialize(&mut self.communicator, &self.data);
+    }
+
+    pub(super) fn advance_task(&mut self) {
         self.protocol.advance(&mut self.communicator)
     }
 
-    fn finalize_task(&mut self) {
+    pub(super) fn finalize_task(&mut self) {
         let signature = self.protocol.finalize(&mut self.communicator);
         if signature.is_none() {
             self.result = Some(Err("Task failed (signature not output)".to_string()));
@@ -66,7 +69,7 @@ impl SignChallengeTask {
         let signature = signature.unwrap();
 
         info!(
-            "Challenge signed by group_id={}",
+            "Signature created by group_id={}",
             hex::encode(self.group.identifier())
         );
 
@@ -74,7 +77,7 @@ impl SignChallengeTask {
         self.communicator.clear_input();
     }
 
-    fn next_round(&mut self) {
+    pub(super) fn next_round(&mut self) {
         if self.protocol.round() == 0 {
             self.start_task();
         } else if self.protocol.round() < self.protocol.last_round() {
@@ -83,9 +86,48 @@ impl SignChallengeTask {
             self.finalize_task()
         }
     }
+
+    pub(super) fn update_internal(
+        &mut self,
+        device_id: &[u8],
+        data: &[u8],
+    ) -> Result<bool, String> {
+        if self.communicator.accept_count() < self.group.threshold() {
+            return Err("Not enough agreements to proceed with the protocol.".to_string());
+        }
+
+        if !self.waiting_for(device_id) {
+            return Err("Wasn't waiting for a message from this ID.".to_string());
+        }
+
+        let data: Gg18Message =
+            Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
+        self.communicator.receive_messages(device_id, data.message);
+        self.last_update = get_timestamp();
+
+        if self.communicator.round_received() && self.protocol.round() <= self.protocol.last_round()
+        {
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    pub(super) fn decide_internal(&mut self, device_id: &[u8], decision: bool) -> Option<bool> {
+        self.communicator.decide(device_id, decision);
+        self.last_update = get_timestamp();
+        if self.result.is_none() && self.protocol.round() == 0 {
+            if self.communicator.reject_count() >= self.group.reject_threshold() {
+                self.result = Some(Err("Task declined".to_string()));
+                return Some(false);
+            } else if self.communicator.accept_count() >= self.group.threshold() {
+                return Some(true);
+            }
+        }
+        None
+    }
 }
 
-impl Task for SignChallengeTask {
+impl Task for SignTask {
     fn get_status(&self) -> TaskStatus {
         match &self.result {
             Some(Err(e)) => TaskStatus::Failed(e.clone()),
@@ -128,25 +170,11 @@ impl Task for SignChallengeTask {
     }
 
     fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<bool, String> {
-        if self.communicator.accept_count() < self.group.threshold() {
-            return Err("Not enough agreements to proceed with the protocol.".to_string());
-        }
-
-        if !self.waiting_for(device_id) {
-            return Err("Wasn't waiting for a message from this ID.".to_string());
-        }
-
-        let data: Gg18Message =
-            Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
-        self.communicator.receive_messages(device_id, data.message);
-        self.last_update = get_timestamp();
-
-        if self.communicator.round_received() && self.protocol.round() <= self.protocol.last_round()
-        {
+        let result = self.update_internal(device_id, data);
+        if let Ok(true) = result {
             self.next_round();
-            return Ok(true);
-        }
-        Ok(false)
+        };
+        result
     }
 
     fn restart(&mut self) -> Result<bool, String> {
@@ -190,19 +218,12 @@ impl Task for SignChallengeTask {
         self.communicator.waiting_for(device)
     }
 
-    fn decide(&mut self, device_id: &[u8], decision: bool) -> bool {
-        self.communicator.decide(device_id, decision);
-        self.last_update = get_timestamp();
-        if self.result.is_none() && self.protocol.round() == 0 {
-            if self.communicator.reject_count() >= self.group.reject_threshold() {
-                self.result = Some(Err("Task declined".to_string()));
-                return true;
-            } else if self.communicator.accept_count() >= self.group.threshold() {
-                self.next_round();
-                return true;
-            }
-        }
-        false
+    fn decide(&mut self, device_id: &[u8], decision: bool) -> Option<bool> {
+        let result = self.decide_internal(device_id, decision);
+        if let Some(true) = result {
+            self.next_round();
+        };
+        result
     }
 
     fn acknowledge(&mut self, device_id: &[u8]) {

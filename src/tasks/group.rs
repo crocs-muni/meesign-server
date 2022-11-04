@@ -231,19 +231,19 @@ impl Task for GroupTask {
         self.communicator.waiting_for(device)
     }
 
-    fn decide(&mut self, device_id: &[u8], decision: bool) -> bool {
+    fn decide(&mut self, device_id: &[u8], decision: bool) -> Option<bool> {
         self.communicator.decide(device_id, decision);
         self.last_update = get_timestamp();
         if self.result.is_none() && self.protocol.round() == 0 {
             if self.communicator.reject_count() > 0 {
                 self.result = Some(Err("Task declined".to_string()));
-                return true;
+                return Some(false);
             } else if self.communicator.accept_count() == self.devices.len() as u32 {
                 self.next_round();
-                return true;
+                return Some(true);
             }
         }
-        false
+        None
     }
 
     fn acknowledge(&mut self, device_id: &[u8]) {

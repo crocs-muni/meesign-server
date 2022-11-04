@@ -8,7 +8,7 @@ use crate::group::Group;
 use crate::interfaces::grpc::format_task;
 use crate::proto::{KeyType, ProtocolType};
 use crate::tasks::group::GroupTask;
-use crate::tasks::sign_challenge::SignChallengeTask;
+use crate::tasks::sign::SignTask;
 use crate::tasks::sign_pdf::SignPDFTask;
 use crate::tasks::{Task, TaskResult, TaskStatus};
 use log::info;
@@ -116,7 +116,7 @@ impl State {
                     .ok()
                     .map(|task| Box::new(task) as Box<dyn Task + Sync + Send>)
             }
-            KeyType::SignChallenge => Some(SignChallengeTask::new(
+            KeyType::SignChallenge => Some(SignTask::new(
                 group.clone(),
                 name.to_string(),
                 data.to_vec(),
@@ -209,10 +209,10 @@ impl State {
     pub fn decide_task(&mut self, task_id: &Uuid, device: &[u8], decision: bool) -> bool {
         let task = self.tasks.get_mut(task_id).unwrap();
         let change = task.decide(device, decision);
-        if change {
+        if change.is_some() {
             self.send_updates(task_id);
         }
-        change
+        change.is_some()
     }
 
     pub fn acknowledge_task(&mut self, task: &Uuid, device: &[u8]) {
