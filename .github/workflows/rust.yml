@@ -18,6 +18,10 @@ jobs:
         toolchain: nightly
         override: true
         components: rustfmt, clippy
+    - name: Install protoc
+      uses: arduino/setup-protoc@v1
+      with:
+        version: 3.x
     - name: Build
       run: cargo build --verbose
     - name: Run tests

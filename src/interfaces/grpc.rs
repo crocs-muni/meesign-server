@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::Stream;
 use tonic::codegen::Arc;
-use tonic::transport::Server;
+use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
@@ -12,7 +12,7 @@ use crate::proto as msg;
 use crate::proto::mpc_server::{Mpc, MpcServer};
 use crate::proto::{KeyType, ProtocolType};
 use crate::state::State;
-use crate::tasks::{Task, TaskStatus, TaskType};
+use crate::tasks::{Task, TaskStatus};
 
 use std::pin::Pin;
 
@@ -370,10 +370,7 @@ pub fn format_task(
 
     msg::Task {
         id: task_id.as_bytes().to_vec(),
-        r#type: match task.get_type() {
-            TaskType::Group => msg::task::TaskType::Group as i32,
-            TaskType::Sign => msg::task::TaskType::Sign as i32,
-        },
+        r#type: task.get_type() as i32,
         state: task_status as i32,
         round: round.into(),
         accept: accept as u32,
@@ -390,11 +387,20 @@ pub async fn run_grpc(state: Arc<Mutex<State>>, addr: &str, port: u16) -> Result
         .map_err(|_| String::from("Unable to parse server address"))?;
     let node = MPCService::new(state);
 
+    let cert = tokio::fs::read("keys/meesign-server-cert.pem")
+        .await
+        .map_err(|_| "Unable to load server certificate".to_string())?;
+    let key = tokio::fs::read("keys/meesign-server-key.pem")
+        .await
+        .map_err(|_| "Unable to load server key".to_string())?;
+
     Server::builder()
+        .tls_config(ServerTlsConfig::new().identity(Identity::from_pem(&cert, &key)))
+        .map_err(|_| "Unable to setup TLS for gRPC server")?
         .add_service(MpcServer::new(node))
         .serve(addr)
         .await
-        .map_err(|_| String::from("Unable to run grpc server"))?;
+        .map_err(|_| String::from("Unable to run gRPC server"))?;
 
     Ok(())
 }

@@ -5,9 +5,15 @@ pub mod gg18;
 
 impl ProtocolType {
     pub fn check_key_type(self, key_type: KeyType) -> bool {
-        match (key_type, self) {
-            (KeyType::SignPdf, ProtocolType::Gg18) => true,
-            (KeyType::SignDigest, _) => true,
+        match (self, key_type) {
+            (ProtocolType::Gg18, KeyType::SignPdf) => true,
+            (_, KeyType::SignChallenge) => true,
+        }
+    }
+
+    pub fn check_threshold(self, threshold: u32, group_size: u32) -> bool {
+        match self {
+            ProtocolType::Gg18 => threshold >= 2 && threshold <= group_size,
         }
     }
 }

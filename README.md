@@ -14,10 +14,10 @@ Server-side implementation for MeeSign system.
    git clone https://github.com/crocs-muni/meesign-server
    ```
 
-3. Generate server private key and certificate:
+3. Generate private keys and certificates:
 
     ```bash
-    bash generate_certificates.sh
+    bash generate_keys.sh
     ```
 
 4. [Prepare MeeSignHelper](https://github.com/dufkan/meesign-helper)
@@ -30,10 +30,10 @@ Server-side implementation for MeeSign system.
 
 ### Run in a Docker Container
 
-1. Generate server private key and certificate:
+1. Generate private keys and certificates:
 
     ```bash
-    bash generate_certificates.sh
+    bash generate_keys.sh
     ```
 
 2. Run a nightly release

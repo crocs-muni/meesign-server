@@ -24,8 +24,7 @@ impl Group {
         certificate: Option<Vec<u8>>,
     ) -> Self {
         assert!(!identifier.is_empty());
-        assert!(devices.len() > 1);
-        assert!(threshold > 1);
+        assert!(threshold >= 1);
         assert!(threshold as usize <= devices.len());
         Group {
             identifier,

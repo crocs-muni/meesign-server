@@ -4,11 +4,11 @@ use crate::communicator::Communicator;
 use crate::device::Device;
 use crate::get_timestamp;
 use crate::group::Group;
-use crate::proto::*;
+use crate::proto::{KeyType, ProtocolType, TaskType};
 use crate::protocols::gg18::GG18Group;
 use crate::protocols::Protocol;
-use crate::tasks::{Task, TaskResult, TaskStatus, TaskType};
-use log::info;
+use crate::tasks::{Task, TaskResult, TaskStatus};
+use log::{info, warn};
 use std::io::Read;
 use std::process::{Command, Stdio};
 use tonic::codegen::Arc;
@@ -16,6 +16,7 @@ use tonic::codegen::Arc;
 pub struct GroupTask {
     name: String,
     threshold: u32,
+    key_type: KeyType,
     devices: Vec<Arc<Device>>,
     communicator: Communicator,
     result: Option<Result<Group, String>>,
@@ -26,35 +27,48 @@ pub struct GroupTask {
 }
 
 impl GroupTask {
-    pub fn new(name: &str, devices: &[Arc<Device>], threshold: u32) -> Self {
+    pub fn try_new(
+        name: &str,
+        devices: &[Arc<Device>],
+        threshold: u32,
+        key_type: KeyType,
+    ) -> Result<Self, String> {
         let devices_len = devices.len() as u32;
-        assert!(threshold <= devices_len);
+        if devices_len < 1 {
+            warn!("Invalid number of devices {}", devices_len);
+            return Err("Invalid input".to_string());
+        }
+        if !ProtocolType::Gg18.check_threshold(threshold, devices_len) {
+            warn!("Invalid group threshold {}-of-{}", threshold, devices_len);
+            return Err("Invalid input".to_string());
+        }
 
         let mut devices = devices.to_vec();
         devices.sort_by_key(|x| x.identifier().to_vec());
 
         let communicator = Communicator::new(&devices, devices.len() as u32);
 
-        let request = (GroupRequest {
+        let request = (crate::proto::GroupRequest {
             device_ids: devices.iter().map(|x| x.identifier().to_vec()).collect(),
             name: String::from(name),
             threshold,
             protocol: ProtocolType::Gg18 as i32,
-            key_type: KeyType::SignPdf as i32,
+            key_type: key_type as i32,
         })
         .encode_to_vec();
 
-        GroupTask {
+        Ok(GroupTask {
             name: name.into(),
             threshold,
             devices,
+            key_type,
             communicator,
             result: None,
             protocol: Box::new(GG18Group::new(devices_len, threshold)),
             request,
             last_update: get_timestamp(),
             attempts: 0,
-        }
+        })
     }
 
     fn start_task(&mut self) {
@@ -89,7 +103,7 @@ impl GroupTask {
             self.devices.iter().map(Arc::clone).collect(),
             self.threshold,
             ProtocolType::Gg18,
-            KeyType::SignPdf,
+            self.key_type,
             Some(certificate),
         )));
 
@@ -158,7 +172,7 @@ impl Task for GroupTask {
             return Err("Wasn't waiting for a message from this ID.".to_string());
         }
 
-        let data: Gg18Message =
+        let data: crate::proto::Gg18Message =
             Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
         self.communicator.receive_messages(device_id, data.message);
         self.last_update = get_timestamp();
@@ -217,19 +231,19 @@ impl Task for GroupTask {
         self.communicator.waiting_for(device)
     }
 
-    fn decide(&mut self, device_id: &[u8], decision: bool) -> bool {
+    fn decide(&mut self, device_id: &[u8], decision: bool) -> Option<bool> {
         self.communicator.decide(device_id, decision);
         self.last_update = get_timestamp();
         if self.result.is_none() && self.protocol.round() == 0 {
             if self.communicator.reject_count() > 0 {
                 self.result = Some(Err("Task declined".to_string()));
-                return true;
+                return Some(false);
             } else if self.communicator.accept_count() == self.devices.len() as u32 {
                 self.next_round();
-                return true;
+                return Some(true);
             }
         }
-        false
+        None
     }
 
     fn acknowledge(&mut self, device_id: &[u8]) {
