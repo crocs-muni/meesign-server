@@ -1,6 +1,9 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
+use lazy_static::lazy_static;
+use openssl::pkey::{PKey, Private};
+use openssl::x509::X509;
 
 use crate::state::State;
 use tokio::{sync::Mutex, try_join};
@@ -17,6 +20,13 @@ mod tasks;
 mod proto {
     #![allow(clippy::derive_partial_eq_without_eq)]
     tonic::include_proto!("meesign");
+}
+
+lazy_static! {
+    static ref CA_CERT: X509 =
+        X509::from_pem(&std::fs::read("keys/meesign-ca-cert.pem").unwrap()).unwrap();
+    static ref CA_KEY: PKey<Private> =
+        PKey::private_key_from_pem(&std::fs::read("keys/meesign-ca-key.pem").unwrap()).unwrap();
 }
 
 const VERSION: Option<&str> = option_env!("CARGO_PKG_VERSION");
@@ -75,10 +85,6 @@ mod cli {
 
     #[derive(Subcommand)]
     pub enum Commands {
-        Register {
-            identifier: String,
-            name: String,
-        },
         GetDevices,
         GetGroups {
             device_id: Option<String>,
@@ -163,21 +169,6 @@ mod cli {
             // TODO Refactor once MpcClient (GrpcClient) can be passed to functions more ergonomically
             // More info here https://github.com/hyperium/tonic/issues/110
             match command {
-                Commands::Register { identifier, name } => {
-                    let identifier = hex::decode(identifier).unwrap();
-                    let request = tonic::Request::new(crate::proto::RegistrationRequest {
-                        identifier: identifier.to_vec(),
-                        name: name.to_string(),
-                    });
-
-                    let response = client
-                        .register(request)
-                        .await
-                        .map_err(|_| String::from("Request failed"))?
-                        .into_inner();
-
-                    println!("{}", response.message);
-                }
                 Commands::GetDevices => {
                     let request = tonic::Request::new(crate::proto::DevicesRequest {});
 

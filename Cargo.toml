@@ -15,6 +15,7 @@ hex = "0.4.3"
 clap = { version = "3.1.8", features = ["derive"] }
 rand = "0.8.5"
 tempfile = "3.3.0"
+lazy_static = "1.4.0"
 
 # cli feature dependecies
 rustls = { version = "0.20.7", features = ["dangerous_configuration"], optional = true }
