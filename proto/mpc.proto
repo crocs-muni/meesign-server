@@ -3,7 +3,7 @@ package meesign;
 
 service MPC {
   rpc GetServerInfo(ServerInfoRequest) returns (ServerInfo);
-  rpc Register(RegistrationRequest) returns (Resp);
+  rpc Register(RegistrationRequest) returns (RegistrationResponse);
   rpc Sign(SignRequest) returns (Task);
   rpc Group(GroupRequest) returns (Task);
   rpc GetTask(TaskRequest) returns (Task);
@@ -41,6 +41,11 @@ enum TaskType {
 message RegistrationRequest {
   bytes identifier = 1;
   string name = 2;
+  string csr = 3; // CSR in PEM format
+}
+
+message RegistrationResponse {
+  bytes certificate = 1;
 }
 
 message GroupRequest {
@@ -71,7 +76,8 @@ message Devices {
 message Device {
   bytes identifier = 1;
   string name = 2;
-  uint64 last_active = 3;
+  bytes certificate = 3;
+  uint64 last_active = 4;
 }
 
 message SignRequest {

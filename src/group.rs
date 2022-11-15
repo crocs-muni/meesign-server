@@ -177,7 +177,13 @@ mod tests {
     fn prepare_devices(n: usize) -> Vec<Arc<Device>> {
         assert!(n < u8::MAX as usize);
         (0..n)
-            .map(|i| Arc::new(Device::new(vec![i as u8], format!("d{}", i))))
+            .map(|i| {
+                Arc::new(Device::new(
+                    vec![i as u8],
+                    format!("d{}", i),
+                    vec![0xf0 | i as u8],
+                ))
+            })
             .collect()
     }
 }
