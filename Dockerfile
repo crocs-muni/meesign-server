@@ -6,7 +6,7 @@ RUN cd meesign-helper && mvn clean compile assembly:single
 
 
 # Build and statically link the meesign binary
-FROM ekidd/rust-musl-builder:stable as rust-builder
+FROM kristianmika/rust-musl-builder:stable as rust-builder
 WORKDIR /home/rust/src/
 ADD --chown=rust:rust . .
 RUN cargo build --release --target x86_64-unknown-linux-musl
