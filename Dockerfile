@@ -9,6 +9,12 @@ RUN cd meesign-helper && mvn clean compile assembly:single
 FROM kristianmika/rust-musl-builder:stable as rust-builder
 WORKDIR /home/rust/src/
 ADD --chown=rust:rust . .
+# Install protobuf compiler
+ENV PATH="${PATH}:/home/rust/.local/bin"
+RUN curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v21.9/protoc-21.9-linux-x86_64.zip" && \
+    unzip ./protoc-21.9-linux-x86_64.zip -d $HOME/.local && \
+    rm -rf ./protoc-21.9-linux-x86_64.zip && \
+    protoc --version
 RUN cargo build --release --target x86_64-unknown-linux-musl
 
 
