@@ -9,7 +9,7 @@ use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::Stream;
 use tonic::codegen::Arc;
-use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
+use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig, ClientTlsAuth};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
@@ -50,6 +50,8 @@ impl Mpc for MPCService {
         &self,
         request: Request<msg::RegistrationRequest>,
     ) -> Result<Response<msg::RegistrationResponse>, Status> {
+        debug!("RegistrationRequest certificate {:?}", request.peer_certs());
+
         let request = request.into_inner();
         let identifier = request.identifier;
         let name = request.name;
@@ -157,6 +159,7 @@ impl Mpc for MPCService {
         &self,
         request: Request<msg::TasksRequest>,
     ) -> Result<Response<msg::Tasks>, Status> {
+        debug!("TasksRequest certificate {:?}", request.peer_certs());
         let request = request.into_inner();
         let device_id = request.device_id;
         let device_str = device_id
@@ -454,7 +457,7 @@ pub async fn run_grpc(state: Arc<Mutex<State>>, addr: &str, port: u16) -> Result
         .tls_config(
             ServerTlsConfig::new()
                 .identity(Identity::from_pem(&cert, &key))
-                .client_ca_root(Certificate::from_pem(ca_cert)),
+                .client_auth(ClientTlsAuth::Optional(Certificate::from_pem(ca_cert))),
         )
         .map_err(|_| "Unable to setup TLS for gRPC server")?
         .add_service(MpcServer::new(node))

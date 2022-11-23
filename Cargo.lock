@@ -1123,8 +1123,7 @@ dependencies = [
 [[package]]
 name = "tonic"
 version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55b9af819e54b8f33d453655bef9b9acc171568fb49523078d0cc4e7484200ec"
+source = "git+https://github.com/dufkan/tonic.git#95921a9799ca0785e392708cdf907027b4494266"
 dependencies = [
  "async-stream",
  "async-trait",
