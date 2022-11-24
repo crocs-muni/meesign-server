@@ -21,8 +21,13 @@ RUN cargo build --release --target x86_64-unknown-linux-musl
 # Use a clean container to run the binary 
 # note it must be a JRE image for meesign helper
 FROM eclipse-temurin:11-jre-alpine as runner
-COPY --from=rust-builder /home/rust/src/target/x86_64-unknown-linux-musl/release/meesign-server /usr/local/bin/meesign-server
-COPY --from=java-builder /meesign-helper/target/signPDF-1.0-SNAPSHOT-jar-with-dependencies.jar /meesign/MeeSignHelper.jar
+
+# Set specific UID and GID so the meesign user is compatible with the owner UID of the mapped key volume
+RUN addgroup -S meesign -g 1000 && adduser -u 1000 -S meesign -G meesign
+USER meesign
+
+COPY --chown=meesign:meesign --from=rust-builder /home/rust/src/target/x86_64-unknown-linux-musl/release/meesign-server /usr/local/bin/meesign-server
+COPY --chown=meesign:meesign --from=java-builder /meesign-helper/target/signPDF-1.0-SNAPSHOT-jar-with-dependencies.jar /meesign/MeeSignHelper.jar
 
 ARG SERVER_PORT=1337
 ARG BUILD_DATE
