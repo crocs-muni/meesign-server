@@ -7,14 +7,14 @@ service MPC {
   rpc Sign(SignRequest) returns (Task);
   rpc Group(GroupRequest) returns (Task);
   rpc GetTask(TaskRequest) returns (Task);
-  rpc UpdateTask(TaskUpdate) returns (Resp);
-  rpc DecideTask(TaskDecision) returns (Resp);
-  rpc AcknowledgeTask(TaskAcknowledgement) returns (Resp);
+  rpc UpdateTask(TaskUpdate) returns (Resp); // auth required
+  rpc DecideTask(TaskDecision) returns (Resp); // auth required
+  rpc AcknowledgeTask(TaskAcknowledgement) returns (Resp); // auth required
   rpc GetTasks(TasksRequest) returns (Tasks);
   rpc GetGroups(GroupsRequest) returns (Groups);
   rpc GetDevices(DevicesRequest) returns (Devices);
-  rpc Log(LogRequest) returns (Resp);
-  rpc SubscribeUpdates(SubscribeRequest) returns (stream Task);
+  rpc Log(LogRequest) returns (Resp); // auth optional
+  rpc SubscribeUpdates(SubscribeRequest) returns (stream Task); // auth required
 }
 
 message ServerInfoRequest {}
@@ -39,13 +39,13 @@ enum TaskType {
 }
 
 message RegistrationRequest {
-  bytes identifier = 1;
-  string name = 2;
-  string csr = 3; // CSR in PEM format
+  string name = 1;
+  bytes csr = 2; // CSR in DER format
 }
 
 message RegistrationResponse {
-  bytes certificate = 1;
+  bytes device_id = 1;
+  bytes certificate = 2; // cert in DER format
 }
 
 message GroupRequest {
@@ -110,10 +110,9 @@ message Task {
 }
 
 message TaskUpdate {
-  bytes device_id = 1;
-  bytes task = 2;
-  bytes data = 3;
-  uint32 attempt = 4;
+  bytes task = 1;
+  bytes data = 2;
+  uint32 attempt = 3;
 }
 
 message TasksRequest {
@@ -138,23 +137,18 @@ message Resp {
 
 message TaskDecision {
   bytes task = 1;
-  bytes device = 2;
-  bool accept = 3;
+  bool accept = 2;
 };
 
 message TaskAcknowledgement {
   bytes task_id = 1;
-  bytes device_id = 2;
 };
 
 message LogRequest {
   string message = 1;
-  optional bytes device_id = 2;
 };
 
-message SubscribeRequest {
-  bytes device_id = 1;
-};
+message SubscribeRequest {};
 
 message GG18KeyGenInit {
   uint32 index = 1;
