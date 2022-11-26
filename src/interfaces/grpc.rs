@@ -4,6 +4,7 @@ use openssl::bn::BigNum;
 use openssl::hash::MessageDigest;
 use openssl::pkey::PKey;
 use openssl::x509::{X509Builder, X509Extension, X509NameBuilder, X509Req};
+use rand::Rng;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
@@ -409,7 +410,8 @@ pub fn issue_certificate(device_name: &str, csr: &[u8]) -> Result<Vec<u8>, Strin
 
     cert_builder.set_version(2).unwrap();
 
-    let sn = BigNum::from_u32(1).unwrap();
+    let sn: [u8; 16] = rand::thread_rng().gen(); // TODO consider stateful approach
+    let sn = BigNum::from_slice(&sn).unwrap();
     cert_builder
         .set_serial_number(&Asn1Integer::from_bn(&sn).unwrap())
         .unwrap();
@@ -428,23 +430,51 @@ pub fn issue_certificate(device_name: &str, csr: &[u8]) -> Result<Vec<u8>, Strin
         .set_pubkey(&PKey::public_key_from_pem(&public_key).unwrap())
         .unwrap();
 
-    let context = cert_builder.x509v3_context(Some(&CA_CERT), None);
-
-    let alt_name = X509Extension::new(
-        None,
-        Some(&context),
-        "subjectAltName",
-        &format!("DNS: {}.meesign.local", device_name),
-    )
-    .unwrap();
-
-    cert_builder.append_extension(alt_name).unwrap();
-
-    cert_builder.sign(&CA_KEY, MessageDigest::sha256()).unwrap();
-
     let mut subject = X509NameBuilder::new().unwrap();
     subject.append_entry_by_text("CN", device_name).unwrap();
     cert_builder.set_subject_name(&subject.build()).unwrap();
+
+    let context = cert_builder.x509v3_context(Some(&CA_CERT), None);
+
+    let basic_constraints = X509Extension::new(
+        None,
+        Some(&context),
+        "basicConstraints",
+        "critical, CA:FALSE",
+    )
+    .unwrap();
+
+    let subject_key_identifier =
+        X509Extension::new(None, Some(&context), "subjectKeyIdentifier", "hash").unwrap();
+
+    let authority_key_identifier = X509Extension::new(
+        None,
+        Some(&context),
+        "authorityKeyIdentifier",
+        "keyid,issuer",
+    )
+    .unwrap();
+    let key_usage = X509Extension::new(
+        None,
+        Some(&context),
+        "keyUsage",
+        "critical, nonRepudiation, digitalSignature, keyEncipherment, keyAgreement",
+    )
+    .unwrap();
+    let extended_key_usage =
+        X509Extension::new(None, Some(&context), "extendedKeyUsage", "clientAuth").unwrap();
+
+    cert_builder.append_extension(key_usage).unwrap();
+    cert_builder.append_extension(extended_key_usage).unwrap();
+    cert_builder.append_extension(basic_constraints).unwrap();
+    cert_builder
+        .append_extension(subject_key_identifier)
+        .unwrap();
+    cert_builder
+        .append_extension(authority_key_identifier)
+        .unwrap();
+
+    cert_builder.sign(&CA_KEY, MessageDigest::sha256()).unwrap();
 
     Ok(cert_builder.build().to_pem().unwrap())
 }
