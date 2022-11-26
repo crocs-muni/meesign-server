@@ -3,13 +3,13 @@ use openssl::asn1::{Asn1Integer, Asn1Time};
 use openssl::bn::BigNum;
 use openssl::hash::MessageDigest;
 use openssl::pkey::PKey;
-use openssl::x509::{X509Builder, X509NameBuilder, X509Req};
+use openssl::x509::{X509Builder, X509Extension, X509NameBuilder, X509Req};
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::Stream;
 use tonic::codegen::Arc;
-use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig, ClientTlsAuth};
+use tonic::transport::{Certificate, ClientTlsAuth, Identity, Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
@@ -427,6 +427,18 @@ pub fn issue_certificate(device_name: &str, csr: &[u8]) -> Result<Vec<u8>, Strin
     cert_builder
         .set_pubkey(&PKey::public_key_from_pem(&public_key).unwrap())
         .unwrap();
+
+    let context = cert_builder.x509v3_context(Some(&CA_CERT), None);
+
+    let alt_name = X509Extension::new(
+        None,
+        Some(&context),
+        "subjectAltName",
+        &format!("DNS: {}.meesign.local", device_name),
+    )
+    .unwrap();
+
+    cert_builder.append_extension(alt_name).unwrap();
 
     cert_builder.sign(&CA_KEY, MessageDigest::sha256()).unwrap();
 
