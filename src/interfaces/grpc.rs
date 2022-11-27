@@ -121,7 +121,7 @@ impl Mpc for MPCService {
         let task = state.get_task(&task_id).unwrap();
         let request = Some(task.get_request());
 
-        let resp = format_task(&task_id, task, device_id.as_deref(), request);
+        let resp = format_task(&task_id, task, device_id, request);
         Ok(Response::new(resp))
     }
 

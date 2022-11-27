@@ -141,7 +141,7 @@ impl Communicator {
             .as_ref()
             .unwrap()
             .iter()
-            .zip((&self.input).iter())
+            .zip(self.input.iter())
             .filter(|(_a, b)| b.iter().all(Option::is_none))
             .count()
             == 0
@@ -221,7 +221,7 @@ impl Communicator {
     pub fn accept_count(&self) -> u32 {
         self.decisions
             .iter()
-            .map(|x| if x.1.unwrap_or(false) { 1 } else { 0 })
+            .map(|x| u32::from(x.1.unwrap_or(false)))
             .sum()
     }
 
@@ -229,7 +229,7 @@ impl Communicator {
     pub fn reject_count(&self) -> u32 {
         self.decisions
             .iter()
-            .map(|x| if x.1.unwrap_or(true) { 0 } else { 1 })
+            .map(|x| u32::from(!x.1.unwrap_or(true)))
             .sum()
     }
 
