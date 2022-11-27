@@ -40,6 +40,9 @@ pub(self) struct Args {
     #[clap(short, long, default_value_t = String::from("127.0.0.1"))]
     addr: String,
 
+    #[clap(short, long, default_value_t = String::from("meesign.local"))]
+    host: String,
+
     #[cfg(feature = "cli")]
     #[clap(subcommand)]
     command: Option<cli::Commands>,
@@ -74,14 +77,11 @@ async fn main() -> Result<(), String> {
 mod cli {
     use crate::proto::mpc_client::MpcClient;
     use crate::proto::KeyType;
-    use crate::Args;
+    use crate::{Args, CA_CERT};
     use clap::Subcommand;
-    use hyper::client::HttpConnector;
-    use hyper::Uri;
-    use rustls::ClientConfig;
     use std::str::FromStr;
     use std::time::SystemTime;
-    use tonic::codegen::Arc;
+    use tonic::transport::{Certificate, Channel, ClientTlsConfig, Uri};
 
     #[derive(Subcommand)]
     pub enum Commands {
@@ -111,60 +111,27 @@ mod cli {
         },
     }
 
-    // Skip server certificate validation for testing from CLI
-    // Based on https://quinn-rs.github.io/quinn/quinn/certificate.html
-    struct SkipServerVerification;
-
-    impl SkipServerVerification {
-        fn new() -> Arc<Self> {
-            Arc::new(Self)
-        }
-    }
-
-    impl rustls::client::ServerCertVerifier for SkipServerVerification {
-        fn verify_server_cert(
-            &self,
-            _end_entity: &rustls::Certificate,
-            _intermediates: &[rustls::Certificate],
-            _server_name: &rustls::ServerName,
-            _scts: &mut dyn Iterator<Item = &[u8]>,
-            _ocsp_response: &[u8],
-            _now: SystemTime,
-        ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
-            Ok(rustls::client::ServerCertVerified::assertion())
-        }
-    }
-
     pub(super) async fn handle_command(args: Args) -> Result<(), String> {
         if let Some(command) = args.command {
-            let server = format!("https://{}:{}", &args.addr, args.port);
-            let server_move = server.clone();
+            let tls = ClientTlsConfig::new()
+                .domain_name(&args.host)
+                .ca_certificate(Certificate::from_pem(
+                    CA_CERT
+                        .to_pem()
+                        .map_err(|_| "Unable to load CA certificate".to_string())?,
+                ));
 
-            // Based on https://github.com/hyperium/tonic/blob/675b3b2e75b896632cc8cbc291133d7a44d790a1/examples/src/tls/client_rustls.rs
-            let connector = tower::ServiceBuilder::new()
-                .layer_fn(|s| {
-                    let tls = ClientConfig::builder()
-                        .with_safe_defaults()
-                        .with_custom_certificate_verifier(SkipServerVerification::new())
-                        .with_no_client_auth();
+            let channel = Channel::builder(
+                Uri::from_str(&format!("https://{}:{}", &args.host, args.port))
+                    .map_err(|_| "Unable to parse URI".to_string())?,
+            )
+            .tls_config(tls)
+            .map_err(|_| "Unable to configure TLS connection".to_string())?
+            .connect()
+            .await
+            .map_err(|_| "Unable to connect to the server".to_string())?;
 
-                    hyper_rustls::HttpsConnectorBuilder::new()
-                        .with_tls_config(tls)
-                        .https_or_http()
-                        .enable_http2()
-                        .wrap_connector(s)
-                })
-                .map_request(move |_| Uri::from_str(&server_move).unwrap())
-                .service({
-                    let mut http = HttpConnector::new();
-                    http.enforce_http(false);
-                    http
-                });
-
-            let mut client = MpcClient::with_origin(
-                hyper::Client::builder().build(connector),
-                Uri::from_str(&server).unwrap(),
-            );
+            let mut client = MpcClient::new(channel);
 
             // TODO Refactor once MpcClient (GrpcClient) can be passed to functions more ergonomically
             // More info here https://github.com/hyperium/tonic/issues/110

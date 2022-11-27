@@ -19,15 +19,9 @@ lazy_static = "1.4.0"
 openssl = "0.10.42"
 sha2 = "0.10.6"
 
-# cli feature dependecies
-rustls = { version = "0.20.7", features = ["dangerous_configuration"], optional = true }
-tower = { version = "0.4.13", optional = true }
-hyper = { version = "0.14.20", optional = true }
-hyper-rustls = { version = "0.23.0", features = ["http2"], optional = true }
-
 [build-dependencies]
 tonic-build = "0.8.2"
 
 [features]
 default = ["cli"]
-cli = ["dep:rustls", "dep:tower", "dep:hyper", "dep:hyper-rustls"]
+cli = []
