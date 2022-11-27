@@ -1,18 +1,24 @@
 use log::{debug, info};
+use openssl::asn1::{Asn1Integer, Asn1Time};
+use openssl::bn::BigNum;
+use openssl::hash::MessageDigest;
+use openssl::pkey::PKey;
+use openssl::x509::{X509Builder, X509Extension, X509NameBuilder, X509Req};
+use rand::Rng;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::Stream;
 use tonic::codegen::Arc;
-use tonic::transport::{Identity, Server, ServerTlsConfig};
+use tonic::transport::{Certificate, ClientTlsAuth, Identity, Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use crate::proto as msg;
 use crate::proto::mpc_server::{Mpc, MpcServer};
 use crate::proto::{KeyType, ProtocolType};
 use crate::state::State;
 use crate::tasks::{Task, TaskStatus};
+use crate::{proto as msg, CA_CERT, CA_KEY};
 
 use std::pin::Pin;
 
@@ -44,31 +50,37 @@ impl Mpc for MPCService {
     async fn register(
         &self,
         request: Request<msg::RegistrationRequest>,
-    ) -> Result<Response<msg::Resp>, Status> {
+    ) -> Result<Response<msg::RegistrationResponse>, Status> {
         let request = request.into_inner();
-        let identifier = request.identifier;
         let name = request.name;
-        info!(
-            "RegistrationRequest device_id={} name={:?}",
-            hex::encode(&identifier),
-            name
-        );
+        let csr = request.csr;
+        info!("RegistrationRequest name={:?}", name);
 
         let mut state = self.state.lock().await;
 
-        if state.add_device(&identifier, &name) {
-            Ok(Response::new(msg::Resp {
-                message: "OK".into(),
-            }))
+        if let Ok(certificate) = issue_certificate(&name, &csr) {
+            let device_id = cert_to_id(&certificate);
+            if state.add_device(&device_id, &name, &certificate) {
+                Ok(Response::new(msg::RegistrationResponse {
+                    device_id,
+                    certificate,
+                }))
+            } else {
+                Err(Status::failed_precondition(
+                    "Request failed: device was not added",
+                ))
+            }
         } else {
-            Err(Status::failed_precondition("Request failed"))
+            Err(Status::failed_precondition(
+                "Request failed: certificate was not created",
+            ))
         }
     }
 
     async fn sign(
         &self,
         request: Request<msg::SignRequest>,
-    ) -> Result<Response<crate::proto::Task>, Status> {
+    ) -> Result<Response<msg::Task>, Status> {
         let request = request.into_inner();
         let group_id = request.group_id;
         let name = request.name;
@@ -98,8 +110,8 @@ impl Mpc for MPCService {
         };
         debug!(
             "TaskRequest task_id={} device_id={}",
-            hex::encode(&task_id),
-            hex::encode(&device_id.unwrap_or(&[]))
+            hex::encode(task_id),
+            hex::encode(device_id.unwrap_or(&[]))
         );
 
         let state = self.state.lock().await;
@@ -109,7 +121,7 @@ impl Mpc for MPCService {
         let task = state.get_task(&task_id).unwrap();
         let request = Some(task.get_request());
 
-        let resp = format_task(&task_id, task, device_id, request);
+        let resp = format_task(&task_id, task, device_id.as_deref(), request);
         Ok(Response::new(resp))
     }
 
@@ -117,14 +129,21 @@ impl Mpc for MPCService {
         &self,
         request: Request<msg::TaskUpdate>,
     ) -> Result<Response<msg::Resp>, Status> {
+        if request.peer_certs().is_none() {
+            return Err(Status::unauthenticated("Authentication required"));
+        }
+        let device_id = request
+            .peer_certs()
+            .and_then(|certs| certs.get(0).map(cert_to_id))
+            .unwrap();
+
         let request = request.into_inner();
         let task_id = Uuid::from_slice(&request.task).unwrap();
-        let device_id = request.device_id;
         let data = request.data;
         let attempt = request.attempt;
         info!(
             "TaskUpdate task_id={} device_id={} attempt={}",
-            hex::encode(&task_id),
+            hex::encode(task_id),
             hex::encode(&device_id),
             attempt
         );
@@ -149,7 +168,7 @@ impl Mpc for MPCService {
         let device_id = request.device_id;
         let device_str = device_id
             .as_ref()
-            .map(|x| hex::encode(&x))
+            .map(hex::encode)
             .unwrap_or_else(|| "unknown".to_string());
         debug!("TasksRequest device_id={}", device_str);
 
@@ -180,7 +199,7 @@ impl Mpc for MPCService {
         let device_id = request.device_id;
         let device_str = device_id
             .as_ref()
-            .map(|x| hex::encode(&x))
+            .map(hex::encode)
             .unwrap_or_else(|| "unknown".to_string());
         debug!("GroupsRequest device_id={}", device_str);
 
@@ -252,13 +271,15 @@ impl Mpc for MPCService {
     }
 
     async fn log(&self, request: Request<msg::LogRequest>) -> Result<Response<msg::Resp>, Status> {
-        let request = request.into_inner();
-        let device_id = request.device_id;
+        let device_id = request
+            .peer_certs()
+            .and_then(|certs| certs.get(0).map(cert_to_id));
+
         let device_str = device_id
             .as_ref()
-            .map(|x| hex::encode(&x))
+            .map(hex::encode)
             .unwrap_or_else(|| "unknown".to_string());
-        let message = request.message;
+        let message = request.into_inner().message;
         info!("LogRequest device_id={} message={}", device_str, message);
 
         if device_id.is_some() {
@@ -277,14 +298,21 @@ impl Mpc for MPCService {
         &self,
         request: Request<msg::TaskDecision>,
     ) -> Result<Response<msg::Resp>, Status> {
+        if request.peer_certs().is_none() {
+            return Err(Status::unauthenticated("Authentication required"));
+        }
+        let device_id = request
+            .peer_certs()
+            .and_then(|certs| certs.get(0).map(cert_to_id))
+            .unwrap();
+
         let request = request.into_inner();
         let task_id = Uuid::from_slice(&request.task).unwrap();
-        let device_id = request.device;
         let accept = request.accept;
 
         info!(
             "TaskDecision task_id={} device_id={} accept={}",
-            hex::encode(&task_id),
+            hex::encode(task_id),
             hex::encode(&device_id),
             accept
         );
@@ -305,9 +333,15 @@ impl Mpc for MPCService {
         &self,
         request: Request<msg::TaskAcknowledgement>,
     ) -> Result<Response<msg::Resp>, Status> {
-        let request = request.into_inner();
-        let task_id = request.task_id;
-        let device_id = request.device_id;
+        if request.peer_certs().is_none() {
+            return Err(Status::unauthenticated("Authentication required"));
+        }
+        let device_id = request
+            .peer_certs()
+            .and_then(|certs| certs.get(0).map(cert_to_id))
+            .unwrap();
+
+        let task_id = request.into_inner().task_id;
 
         info!(
             "TaskAcknowledgement task_id={} device_id={}",
@@ -328,8 +362,13 @@ impl Mpc for MPCService {
         &self,
         request: Request<msg::SubscribeRequest>,
     ) -> Result<Response<Self::SubscribeUpdatesStream>, Status> {
-        let request = request.into_inner();
-        let device_id = request.device_id;
+        if request.peer_certs().is_none() {
+            return Err(Status::unauthenticated("Authentication required"));
+        }
+        let device_id = request
+            .peer_certs()
+            .and_then(|certs| certs.get(0).map(cert_to_id))
+            .unwrap();
 
         let (tx, rx) = mpsc::channel(8);
 
@@ -344,7 +383,7 @@ pub fn format_task(
     task: &dyn Task,
     device_id: Option<&[u8]>,
     request: Option<&[u8]>,
-) -> crate::proto::Task {
+) -> msg::Task {
     let task_status = task.get_status();
 
     let (task_status, round, data) = match task_status {
@@ -381,12 +420,102 @@ pub fn format_task(
     }
 }
 
+pub fn issue_certificate(device_name: &str, csr: &[u8]) -> Result<Vec<u8>, String> {
+    let csr = X509Req::from_der(csr).unwrap();
+    let public_key = csr.public_key().unwrap();
+    if !csr.verify(&public_key).unwrap() {
+        return Err(String::from("CSR does not contain a valid signature."));
+    }
+
+    let public_key = public_key.public_key_to_der().unwrap();
+
+    let mut cert_builder = X509Builder::new().unwrap();
+
+    cert_builder.set_version(2).unwrap();
+
+    let sn: [u8; 16] = rand::thread_rng().gen(); // TODO consider stateful approach
+    let sn = BigNum::from_slice(&sn).unwrap();
+    cert_builder
+        .set_serial_number(&Asn1Integer::from_bn(&sn).unwrap())
+        .unwrap();
+
+    cert_builder
+        .set_not_before(&Asn1Time::days_from_now(0).unwrap())
+        .unwrap();
+
+    cert_builder
+        .set_not_after(&Asn1Time::days_from_now(365 * 4 + 1).unwrap())
+        .unwrap();
+
+    cert_builder.set_issuer_name(CA_CERT.issuer_name()).unwrap();
+
+    cert_builder
+        .set_pubkey(&PKey::public_key_from_der(&public_key).unwrap())
+        .unwrap();
+
+    let mut subject = X509NameBuilder::new().unwrap();
+    subject.append_entry_by_text("CN", device_name).unwrap();
+    cert_builder.set_subject_name(&subject.build()).unwrap();
+
+    let context = cert_builder.x509v3_context(Some(&CA_CERT), None);
+
+    let basic_constraints = X509Extension::new(
+        None,
+        Some(&context),
+        "basicConstraints",
+        "critical, CA:FALSE",
+    )
+    .unwrap();
+
+    let subject_key_identifier =
+        X509Extension::new(None, Some(&context), "subjectKeyIdentifier", "hash").unwrap();
+
+    let authority_key_identifier = X509Extension::new(
+        None,
+        Some(&context),
+        "authorityKeyIdentifier",
+        "keyid,issuer",
+    )
+    .unwrap();
+    let key_usage = X509Extension::new(
+        None,
+        Some(&context),
+        "keyUsage",
+        "critical, nonRepudiation, digitalSignature, keyEncipherment, keyAgreement",
+    )
+    .unwrap();
+    let extended_key_usage =
+        X509Extension::new(None, Some(&context), "extendedKeyUsage", "clientAuth").unwrap();
+
+    cert_builder.append_extension(key_usage).unwrap();
+    cert_builder.append_extension(extended_key_usage).unwrap();
+    cert_builder.append_extension(basic_constraints).unwrap();
+    cert_builder
+        .append_extension(subject_key_identifier)
+        .unwrap();
+    cert_builder
+        .append_extension(authority_key_identifier)
+        .unwrap();
+
+    cert_builder.sign(&CA_KEY, MessageDigest::sha256()).unwrap();
+
+    Ok(cert_builder.build().to_der().unwrap())
+}
+
+pub fn cert_to_id(cert: impl AsRef<[u8]>) -> Vec<u8> {
+    use sha2::Digest;
+    sha2::Sha256::digest(cert).to_vec()
+}
+
 pub async fn run_grpc(state: Arc<Mutex<State>>, addr: &str, port: u16) -> Result<(), String> {
     let addr = format!("{}:{}", addr, port)
         .parse()
         .map_err(|_| String::from("Unable to parse server address"))?;
     let node = MPCService::new(state);
 
+    let ca_cert = CA_CERT
+        .to_pem()
+        .map_err(|_| "Unable to load CA certificate".to_string())?;
     let cert = tokio::fs::read("keys/meesign-server-cert.pem")
         .await
         .map_err(|_| "Unable to load server certificate".to_string())?;
@@ -395,7 +524,11 @@ pub async fn run_grpc(state: Arc<Mutex<State>>, addr: &str, port: u16) -> Result
         .map_err(|_| "Unable to load server key".to_string())?;
 
     Server::builder()
-        .tls_config(ServerTlsConfig::new().identity(Identity::from_pem(&cert, &key)))
+        .tls_config(
+            ServerTlsConfig::new()
+                .identity(Identity::from_pem(&cert, &key))
+                .client_auth(ClientTlsAuth::Optional(Certificate::from_pem(ca_cert))),
+        )
         .map_err(|_| "Unable to setup TLS for gRPC server")?
         .add_service(MpcServer::new(node))
         .serve(addr)
