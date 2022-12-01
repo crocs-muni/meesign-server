@@ -72,6 +72,7 @@ impl SignPDFTask {
             return;
         }
         self.pdfhelper = Some(pdfhelper);
+        self.sign_task.set_preprocessed(hash);
         self.sign_task.start_task();
     }
 
