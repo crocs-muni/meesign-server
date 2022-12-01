@@ -141,7 +141,7 @@ impl Communicator {
             .as_ref()
             .unwrap()
             .iter()
-            .zip((&self.input).iter())
+            .zip(self.input.iter())
             .filter(|(_a, b)| b.iter().all(Option::is_none))
             .count()
             == 0
@@ -221,7 +221,7 @@ impl Communicator {
     pub fn accept_count(&self) -> u32 {
         self.decisions
             .iter()
-            .map(|x| if x.1.unwrap_or(false) { 1 } else { 0 })
+            .map(|x| u32::from(x.1.unwrap_or(false)))
             .sum()
     }
 
@@ -229,7 +229,7 @@ impl Communicator {
     pub fn reject_count(&self) -> u32 {
         self.decisions
             .iter()
-            .map(|x| if x.1.unwrap_or(true) { 0 } else { 1 })
+            .map(|x| u32::from(!x.1.unwrap_or(true)))
             .sum()
     }
 
@@ -507,7 +507,13 @@ mod tests {
     fn prepare_devices(n: usize) -> Vec<Arc<Device>> {
         assert!(n < u8::MAX as usize);
         (0..n)
-            .map(|i| Arc::new(Device::new(vec![i as u8], format!("d{}", i))))
+            .map(|i| {
+                Arc::new(Device::new(
+                    vec![i as u8],
+                    format!("d{}", i),
+                    vec![0xf0 | i as u8],
+                ))
+            })
             .collect()
     }
 }

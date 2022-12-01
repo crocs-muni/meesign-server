@@ -18,7 +18,7 @@ O = MeeSign
 CN = MeeSign CA
 
 [v3_req]
-basicConstraints = critical, CA:TRUE
+basicConstraints = critical, CA:TRUE, pathlen: 0
 authorityKeyIdentifier = keyid, issuer
 subjectKeyIdentifier = hash
 keyUsage = critical, cRLSign, digitalSignature, keyCertSign
@@ -34,8 +34,8 @@ utf8 = yes
 [req_distinguished_name]
 C = CS
 O = MeeSign
+CN = MeeSign Server
 EOT
-echo "CN = ${HOSTNAME}" >> server-csr.conf
 
 # Standard server X509v3 extensions
 cat > server-ext.conf << EOT
@@ -45,6 +45,7 @@ subjectKeyIdentifier = hash
 keyUsage = critical, nonRepudiation, digitalSignature, keyEncipherment, keyAgreement
 extendedKeyUsage = critical, serverAuth
 EOT
+echo "subjectAltName = DNS: ${HOSTNAME}" >> server-ext.conf
 
 # Generate MeeSign CA private key
 openssl ecparam -name prime256v1 -genkey -noout -out "./${KEY_FOLDER}/meesign-ca-key.pem"

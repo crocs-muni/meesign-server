@@ -223,7 +223,7 @@ fn include_signature(process: &mut Child, signature: &[u8]) -> Vec<u8> {
     let process_stdout = process.stdout.as_mut().unwrap();
 
     let mut out_buffer = [0u8; 129];
-    out_buffer[..128].copy_from_slice(hex::encode(&signature).as_bytes());
+    out_buffer[..128].copy_from_slice(hex::encode(signature).as_bytes());
     out_buffer[128] = b'\n';
 
     process_stdin.write_all(&out_buffer).unwrap();
