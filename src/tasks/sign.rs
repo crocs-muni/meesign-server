@@ -15,6 +15,7 @@ pub struct SignTask {
     communicator: Communicator,
     result: Option<Result<Vec<u8>, String>>,
     pub(super) data: Vec<u8>,
+    preprocessed: Option<Vec<u8>>,
     pub(super) protocol: Box<dyn Protocol + Send + Sync>,
     request: Vec<u8>,
     pub(super) last_update: u64,
@@ -40,6 +41,7 @@ impl SignTask {
             communicator,
             result: None,
             data,
+            preprocessed: None,
             protocol: Box::new(GG18Sign::new()),
             request,
             last_update: get_timestamp(),
@@ -51,9 +53,17 @@ impl SignTask {
         &self.group
     }
 
+    /// Use this method to change data to be used for signing
+    pub(super) fn set_preprocessed(&mut self, preprocessed: Vec<u8>) {
+        self.preprocessed = Some(preprocessed);
+    }
+
     pub(super) fn start_task(&mut self) {
         assert!(self.communicator.accept_count() >= self.group.threshold());
-        self.protocol.initialize(&mut self.communicator, &self.data);
+        self.protocol.initialize(
+            &mut self.communicator,
+            self.preprocessed.as_ref().unwrap_or(&self.data),
+        );
     }
 
     pub(super) fn advance_task(&mut self) {
