@@ -27,6 +27,18 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
 
+  build-n-release-docker-main:
+    needs: build
+    name: Docker main
+    if: github.ref == 'refs/heads/main' && github.repository_owner == 'crocs-muni'
+    uses: ./.github/workflows/docker.yml
+    secrets: inherit
+    with:
+      dockerhub_username: crocsmuni
+      project_name: meesign
+      docker_tags: |
+        crocsmuni/meesign:main
+
   build-n-release-docker-stable:
     needs: build
     name: Docker stable
