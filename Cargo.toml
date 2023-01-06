@@ -6,7 +6,7 @@ edition = "2018"
 [dependencies]
 tonic = { git = "https://github.com/dufkan/tonic.git", features = ["transport", "tls"] }
 prost = "0.11.0"
-tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "time", "fs"] }
+tokio = { version = "1.23", features = ["macros", "rt-multi-thread", "time", "fs"] }
 tokio-stream = "0.1.10"
 uuid = { version = "1.0.0-alpha.1", features = ["v4", "fast-rng"] }
 log = "0.4.16"
