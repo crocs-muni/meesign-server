@@ -10,7 +10,7 @@ use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::Stream;
 use tonic::codegen::Arc;
-use tonic::transport::{Certificate, ClientTlsAuth, Identity, Server, ServerTlsConfig};
+use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
@@ -527,7 +527,8 @@ pub async fn run_grpc(state: Arc<Mutex<State>>, addr: &str, port: u16) -> Result
         .tls_config(
             ServerTlsConfig::new()
                 .identity(Identity::from_pem(&cert, &key))
-                .client_auth(ClientTlsAuth::Optional(Certificate::from_pem(ca_cert))),
+                .client_ca_root(Certificate::from_pem(ca_cert))
+                .client_auth_optional(true),
         )
         .map_err(|_| "Unable to setup TLS for gRPC server")?
         .add_service(MpcServer::new(node))
