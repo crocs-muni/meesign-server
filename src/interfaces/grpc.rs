@@ -96,6 +96,25 @@ impl Mpc for MPCService {
         }
     }
 
+    async fn decrypt(
+        &self,
+        request: Request<msg::DecryptRequest>,
+    ) -> Result<Response<msg::Task>, Status> {
+        let request = request.into_inner();
+        let group_id = request.group_id;
+        let name = request.name;
+        let data = request.data;
+        info!("DecryptRequest group_id={}", hex::encode(&group_id));
+
+        let mut state = self.state.lock().await;
+        if let Some(task_id) = state.add_decrypt_task(&group_id, &name, &data) {
+            let task = state.get_task(&task_id).unwrap();
+            Ok(Response::new(format_task(&task_id, task, None, None)))
+        } else {
+            Err(Status::failed_precondition("Request failed"))
+        }
+    }
+
     async fn get_task(
         &self,
         request: Request<msg::TaskRequest>,

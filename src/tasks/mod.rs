@@ -1,3 +1,4 @@
+pub(crate) mod decrypt;
 pub(crate) mod group;
 pub(crate) mod sign;
 pub(crate) mod sign_pdf;
@@ -20,6 +21,7 @@ pub enum TaskResult {
     GroupEstablished(Group),
     Signed(Vec<u8>),
     SignedPdf(Vec<u8>),
+    Decrypted(Vec<u8>),
 }
 
 impl TaskResult {
@@ -28,6 +30,7 @@ impl TaskResult {
             TaskResult::GroupEstablished(group) => group.identifier(),
             TaskResult::Signed(data) => data,
             TaskResult::SignedPdf(data) => data,
+            TaskResult::Decrypted(data) => data,
         }
     }
 }

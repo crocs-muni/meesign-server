@@ -4,7 +4,8 @@ use crate::communicator::Communicator;
 use crate::device::Device;
 use crate::get_timestamp;
 use crate::group::Group;
-use crate::proto::{KeyType, ProtocolType, TaskType};
+use crate::proto::{KeyType, ProtocolMessage, ProtocolType, TaskType};
+use crate::protocols::elgamal::ElgamalGroup;
 use crate::protocols::gg18::GG18Group;
 use crate::protocols::Protocol;
 use crate::tasks::{Task, TaskResult, TaskStatus};
@@ -34,11 +35,17 @@ impl GroupTask {
         key_type: KeyType,
     ) -> Result<Self, String> {
         let devices_len = devices.len() as u32;
+        let protocol: Box<dyn Protocol + Send + Sync> = match key_type {
+            KeyType::SignPdf => Box::new(GG18Group::new(devices_len, threshold)),
+            KeyType::SignChallenge => Box::new(GG18Group::new(devices_len, threshold)),
+            KeyType::Decrypt => Box::new(ElgamalGroup::new(devices_len, threshold)),
+        };
+
         if devices_len < 1 {
             warn!("Invalid number of devices {}", devices_len);
             return Err("Invalid input".to_string());
         }
-        if !ProtocolType::Gg18.check_threshold(threshold, devices_len) {
+        if !protocol.get_type().check_threshold(threshold, devices_len) {
             warn!("Invalid group threshold {}-of-{}", threshold, devices_len);
             return Err("Invalid input".to_string());
         }
@@ -46,13 +53,13 @@ impl GroupTask {
         let mut devices = devices.to_vec();
         devices.sort_by_key(|x| x.identifier().to_vec());
 
-        let communicator = Communicator::new(&devices, devices.len() as u32);
+        let communicator = Communicator::new(&devices, devices.len() as u32, protocol.get_type());
 
         let request = (crate::proto::GroupRequest {
             device_ids: devices.iter().map(|x| x.identifier().to_vec()).collect(),
             name: String::from(name),
             threshold,
-            protocol: ProtocolType::Gg18 as i32,
+            protocol: protocol.get_type() as i32,
             key_type: key_type as i32,
         })
         .encode_to_vec();
@@ -64,7 +71,7 @@ impl GroupTask {
             key_type,
             communicator,
             result: None,
-            protocol: Box::new(GG18Group::new(devices_len, threshold)),
+            protocol,
             request,
             last_update: get_timestamp(),
             attempts: 0,
@@ -86,7 +93,12 @@ impl GroupTask {
             return;
         }
         let identifier = identifier.unwrap();
-        let certificate = issue_certificate(&self.name, &identifier);
+        // TODO
+        let certificate = if self.protocol.get_type() == ProtocolType::Elgamal {
+            None
+        } else {
+            Some(issue_certificate(&self.name, &identifier))
+        };
 
         info!(
             "Group established group_id={} devices={:?}",
@@ -102,9 +114,9 @@ impl GroupTask {
             self.name.clone(),
             self.devices.iter().map(Arc::clone).collect(),
             self.threshold,
-            ProtocolType::Gg18,
+            self.protocol.get_type(),
             self.key_type,
-            Some(certificate),
+            certificate,
         )));
 
         self.communicator.clear_input();
@@ -172,8 +184,8 @@ impl Task for GroupTask {
             return Err("Wasn't waiting for a message from this ID.".to_string());
         }
 
-        let data: crate::proto::Gg18Message =
-            Message::decode(data).map_err(|_| String::from("Expected GG18Message."))?;
+        let data =
+            ProtocolMessage::decode(data).map_err(|_| String::from("Expected ProtocolMessage."))?;
         self.communicator.receive_messages(device_id, data.message);
         self.last_update = get_timestamp();
 

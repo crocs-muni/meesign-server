@@ -1,6 +1,6 @@
 use crate::device::Device;
 use crate::get_timestamp;
-use crate::proto::Gg18Message;
+use crate::proto::{ProtocolMessage, ProtocolType};
 use prost::Message;
 use rand::prelude::SliceRandom;
 use rand::thread_rng;
@@ -24,6 +24,8 @@ pub struct Communicator {
     input: Vec<Vec<Option<Vec<u8>>>>,
     /// Outgoing messages
     output: Vec<Vec<u8>>,
+    /// Relayed protocol type
+    protocol_type: ProtocolType,
 }
 
 impl Communicator {
@@ -32,7 +34,7 @@ impl Communicator {
     /// # Arguments
     /// * `devices` - Sorted list of devices; items of the list need to be unique
     /// * `threshold` - The minimal number of devices to successfully complete the task
-    pub fn new(devices: &[Arc<Device>], threshold: u32) -> Self {
+    pub fn new(devices: &[Arc<Device>], threshold: u32, protocol_type: ProtocolType) -> Self {
         assert!(devices.len() > 1);
         assert!(threshold <= devices.len() as u32);
         // TODO uncomment once is_sorted is stabilized
@@ -52,6 +54,7 @@ impl Communicator {
                 .collect(),
             input: Vec::new(),
             output: Vec::new(),
+            protocol_type,
         };
         communicator.clear_input();
         communicator
@@ -110,7 +113,10 @@ impl Communicator {
                     out.push(self.input[j as usize][i as usize].clone().unwrap());
                 }
             }
-            let message = Gg18Message { message: out };
+            let message = ProtocolMessage {
+                protocol_type: self.protocol_type as i32,
+                message: out,
+            };
             self.output.push(message.encode_to_vec());
         }
 
@@ -286,20 +292,20 @@ mod tests {
     #[test]
     #[should_panic]
     fn communicator_with_no_devices() {
-        Communicator::new(&[], 0);
+        Communicator::new(&[], 0, ProtocolType::Gg18);
     }
 
     #[test]
     #[should_panic]
     fn communicator_too_large_threshold() {
-        Communicator::new(&prepare_devices(2), 3);
+        Communicator::new(&prepare_devices(2), 3, ProtocolType::Gg18);
     }
 
     #[test]
     fn empty_communicator() {
         let devices = prepare_devices(5);
         let d0 = devices[0].identifier();
-        let communicator = Communicator::new(&devices, 3);
+        let communicator = Communicator::new(&devices, 3, ProtocolType::Gg18);
         assert_eq!(communicator.accept_count(), 0);
         assert_eq!(communicator.reject_count(), 0);
         assert_eq!(communicator.round_received(), false);
@@ -316,7 +322,7 @@ mod tests {
     #[test]
     fn valid_communicator() {
         let devices = prepare_devices(5);
-        let mut communicator = Communicator::new(&devices, 3);
+        let mut communicator = Communicator::new(&devices, 3, ProtocolType::Gg18);
         assert_eq!(communicator.device_decided(devices[0].identifier()), false);
         communicator.decide(devices[0].identifier(), true);
         assert_eq!(communicator.accept_count(), 1);
@@ -405,14 +411,14 @@ mod tests {
     #[test]
     fn unknown_device_decide() {
         let devices = prepare_devices(3);
-        let mut communicator = Communicator::new(&devices[..2], 2);
+        let mut communicator = Communicator::new(&devices[..2], 2, ProtocolType::Gg18);
         assert_eq!(communicator.decide(devices[2].identifier(), true), false);
     }
 
     #[test]
     fn repeated_device_decide() {
         let devices = prepare_devices(2);
-        let mut communicator = Communicator::new(&devices, 2);
+        let mut communicator = Communicator::new(&devices, 2, ProtocolType::Gg18);
         assert_eq!(communicator.decide(devices[0].identifier(), true), true);
         assert_eq!(communicator.decide(devices[0].identifier(), true), false);
     }
@@ -421,7 +427,7 @@ mod tests {
     #[should_panic]
     fn not_enough_messages() {
         let devices = prepare_devices(3);
-        let mut communicator = Communicator::new(&devices, 3);
+        let mut communicator = Communicator::new(&devices, 3, ProtocolType::Gg18);
         communicator.decide(devices[0].identifier(), true);
         communicator.decide(devices[1].identifier(), true);
         communicator.receive_messages(devices[0].identifier(), vec![vec![]; 1]);
@@ -431,7 +437,7 @@ mod tests {
     #[should_panic]
     fn too_many_messages() {
         let devices = prepare_devices(3);
-        let mut communicator = Communicator::new(&devices, 3);
+        let mut communicator = Communicator::new(&devices, 3, ProtocolType::Gg18);
         communicator.decide(devices[0].identifier(), true);
         communicator.decide(devices[1].identifier(), true);
         communicator.receive_messages(devices[0].identifier(), vec![vec![]; 3]);
@@ -441,7 +447,7 @@ mod tests {
     #[should_panic]
     fn not_enough_accepts() {
         let devices = prepare_devices(5);
-        let mut communicator = Communicator::new(&devices, 3);
+        let mut communicator = Communicator::new(&devices, 3, ProtocolType::Gg18);
         communicator.decide(devices[0].identifier(), true);
         communicator.decide(devices[2].identifier(), false);
         communicator.decide(devices[4].identifier(), true);
@@ -452,7 +458,7 @@ mod tests {
     fn more_than_threshold_accepts() {
         let threshold = 3;
         let devices = prepare_devices(5);
-        let mut communicator = Communicator::new(&devices, threshold);
+        let mut communicator = Communicator::new(&devices, threshold, ProtocolType::Gg18);
         for device in devices {
             communicator.decide(device.identifier(), true);
         }
@@ -466,7 +472,7 @@ mod tests {
     #[test]
     fn send_all() {
         let devices = prepare_devices(3);
-        let mut communicator = Communicator::new(&devices, 2);
+        let mut communicator = Communicator::new(&devices, 2, ProtocolType::Gg18);
         communicator.decide(devices[0].identifier(), true);
         communicator.decide(devices[2].identifier(), true);
         communicator.set_active_devices();
@@ -492,14 +498,14 @@ mod tests {
     #[test]
     fn unknown_device_acknowledgement() {
         let devices = prepare_devices(3);
-        let mut communicator = Communicator::new(&devices[..2], 2);
+        let mut communicator = Communicator::new(&devices[..2], 2, ProtocolType::Gg18);
         assert_eq!(communicator.acknowledge(devices[2].identifier()), false);
     }
 
     #[test]
     fn repeated_device_acknowledgement() {
         let devices = prepare_devices(2);
-        let mut communicator = Communicator::new(&devices, 2);
+        let mut communicator = Communicator::new(&devices, 2, ProtocolType::Gg18);
         assert_eq!(communicator.acknowledge(devices[0].identifier()), true);
         assert_eq!(communicator.acknowledge(devices[0].identifier()), false);
     }
