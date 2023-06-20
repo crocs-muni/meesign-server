@@ -3,7 +3,6 @@ name: Docker Base
 
 on:
   workflow_call:
-
     inputs:
       dockerhub_username:
         required: true
@@ -14,6 +13,11 @@ on:
       docker_tags:
         required: false
         type: string
+      source_branch:
+        description: "Specifies which branch should be used when building the image"
+        required: false
+        type: string
+        default: main
 
     secrets:
       DOCKERHUB_TOKEN:
@@ -25,6 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+        with:
+          ref: ${{ inputs.source_branch }}
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
       - name: Set up Docker Buildx
