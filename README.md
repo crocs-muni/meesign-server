@@ -16,9 +16,9 @@ Server-side implementation for MeeSign system.
 
 3. Generate private keys and certificates:
 
-    ```bash
-    bash generate_keys.sh
-    ```
+   ```bash
+   bash generate_keys.sh
+   ```
 
 4. [Prepare MeeSignHelper](https://github.com/dufkan/meesign-helper)
 
@@ -32,13 +32,13 @@ Server-side implementation for MeeSign system.
 
 1. Generate private keys and certificates:
 
-    ```bash
-    bash generate_keys.sh
-    ```
+   ```bash
+   bash generate_keys.sh
+   ```
 
 2. Run a nightly release
    ```bash
-   docker run --detach --publish 1337:1337 --volume `pwd`/key/:/meesign/key/ crocsmuni/meesign:nightly
+   docker run --detach --publish 1337:1337 --volume `pwd`/keys/:/meesign/keys/ crocsmuni/meesign:nightly
    ```
    There are 2 types of available releases:
    1. **latest** - this is the latest stable version, you can optionally specify a specific stable version
