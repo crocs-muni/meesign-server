@@ -2,11 +2,12 @@ use crate::communicator::Communicator;
 use crate::device::Device;
 use crate::get_timestamp;
 use crate::group::Group;
-use crate::proto::{DecryptRequest, ProtocolMessage, ProtocolType, TaskType};
+use crate::proto::{DecryptRequest, ProtocolType, TaskType};
 use crate::protocols::elgamal::ElgamalDecrypt;
 use crate::protocols::Protocol;
 use crate::tasks::{Task, TaskResult, TaskStatus};
 use log::info;
+use meesign_crypto::proto::ProtocolMessage;
 use prost::Message;
 use tonic::codegen::Arc;
 

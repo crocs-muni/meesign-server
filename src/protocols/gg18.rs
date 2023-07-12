@@ -1,6 +1,7 @@
 use crate::communicator::Communicator;
-use crate::proto::{ProtocolGroupInit, ProtocolInit, ProtocolType};
+use crate::proto::ProtocolType;
 use crate::protocols::Protocol;
+use meesign_crypto::proto::{ProtocolGroupInit, ProtocolInit};
 use prost::Message;
 
 pub struct GG18Group {
@@ -27,7 +28,7 @@ impl Protocol for GG18Group {
         communicator.send_all(|idx| {
             (ProtocolGroupInit {
                 protocol_type: ProtocolType::Gg18 as i32,
-                index: idx as u32,
+                index: idx,
                 parties,
                 threshold,
             })
@@ -81,7 +82,7 @@ impl Protocol for GG18Sign {
             (ProtocolInit {
                 protocol_type: ProtocolType::Gg18 as i32,
                 indices: participant_indices.clone(),
-                index: idx as u32,
+                index: idx,
                 data: Vec::from(data),
             })
             .encode_to_vec()

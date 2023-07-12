@@ -1,6 +1,7 @@
 use crate::device::Device;
 use crate::get_timestamp;
-use crate::proto::{ProtocolMessage, ProtocolType};
+use crate::proto::ProtocolType;
+use meesign_crypto::proto::ProtocolMessage;
 use prost::Message;
 use rand::prelude::SliceRandom;
 use rand::thread_rng;
@@ -114,10 +115,10 @@ impl Communicator {
                 }
             }
             let message = ProtocolMessage {
-                protocol_type: self.protocol_type as i32,
+                protocol_type: meesign_crypto::proto::ProtocolType::from(self.protocol_type) as i32,
                 message: out,
             };
-            self.output.push(message.encode_to_vec());
+            self.output.push(Message::encode_to_vec(&message));
         }
 
         self.clear_input();

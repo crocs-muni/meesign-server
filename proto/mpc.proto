@@ -159,22 +159,3 @@ message LogRequest {
 };
 
 message SubscribeRequest {};
-
-message ProtocolGroupInit {
-  ProtocolType protocol_type = 1;
-  uint32 index = 2;
-  uint32 parties = 3;
-  uint32 threshold = 4;
-}
-
-message ProtocolInit {
-  ProtocolType protocol_type = 1;
-  repeated uint32 indices = 2;
-  uint32 index = 3;
-  bytes data = 4;
-}
-
-message ProtocolMessage {
-  ProtocolType protocol_type = 1;
-  repeated bytes message = 2;
-}
