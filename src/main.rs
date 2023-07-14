@@ -26,7 +26,7 @@ mod proto {
             match proto {
                 meesign_crypto::proto::ProtocolType::Gg18 => ProtocolType::Gg18,
                 meesign_crypto::proto::ProtocolType::Elgamal => ProtocolType::Elgamal,
-                _ => unimplemented!(),
+                meesign_crypto::proto::ProtocolType::Frost => ProtocolType::Frost,
             }
         }
     }
@@ -36,7 +36,7 @@ mod proto {
             match proto {
                 ProtocolType::Gg18 => meesign_crypto::proto::ProtocolType::Gg18,
                 ProtocolType::Elgamal => meesign_crypto::proto::ProtocolType::Elgamal,
-                _ => unimplemented!(),
+                ProtocolType::Frost => meesign_crypto::proto::ProtocolType::Frost,
             }
         }
     }

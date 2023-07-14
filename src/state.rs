@@ -74,13 +74,6 @@ impl State {
             return None;
         }
 
-        if !protocol.check_key_type(key_type) {
-            warn!(
-                "Protocol {:?} does not support {:?} key type",
-                protocol, key_type
-            )
-        }
-
         let mut device_list = Vec::new();
         for device in devices {
             if !self.devices.contains_key(device.as_slice()) {
@@ -90,7 +83,7 @@ impl State {
             device_list.push(self.devices.get(device.as_slice()).unwrap().clone());
         }
 
-        let task = GroupTask::try_new(name, &device_list, threshold, key_type)
+        let task = GroupTask::try_new(name, &device_list, threshold, protocol, key_type)
             .ok()
             .map(|task| Box::new(task) as Box<dyn Task + Send + Sync>);
 
@@ -117,12 +110,11 @@ impl State {
                     .ok()
                     .map(|task| Box::new(task) as Box<dyn Task + Sync + Send>)
             }
-            KeyType::SignChallenge => Some(SignTask::new(
-                group.clone(),
-                name.to_string(),
-                data.to_vec(),
-            ))
-            .map(|task| Box::new(task) as Box<dyn Task + Sync + Send>),
+            KeyType::SignChallenge => {
+                SignTask::try_new(group.clone(), name.to_string(), data.to_vec())
+                    .ok()
+                    .map(|task| Box::new(task) as Box<dyn Task + Sync + Send>)
+            }
             KeyType::Decrypt => {
                 warn!(
                     "Signing request made for decryption group group_id={}",

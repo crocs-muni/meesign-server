@@ -3,10 +3,11 @@ use crate::device::Device;
 use crate::get_timestamp;
 use crate::group::Group;
 use crate::proto::{ProtocolType, SignRequest, TaskType};
+use crate::protocols::frost::FROSTSign;
 use crate::protocols::gg18::GG18Sign;
 use crate::protocols::Protocol;
 use crate::tasks::{Task, TaskResult, TaskStatus};
-use log::info;
+use log::{info, warn};
 use meesign_crypto::proto::ProtocolMessage;
 use prost::Message;
 use tonic::codegen::Arc;
@@ -24,11 +25,12 @@ pub struct SignTask {
 }
 
 impl SignTask {
-    pub fn new(group: Group, name: String, data: Vec<u8>) -> Self {
+    pub fn try_new(group: Group, name: String, data: Vec<u8>) -> Result<Self, String> {
         let mut devices: Vec<Arc<Device>> = group.devices().to_vec();
         devices.sort_by_key(|x| x.identifier().to_vec());
+        let protocol_type = group.protocol();
 
-        let communicator = Communicator::new(&devices, group.threshold(), ProtocolType::Gg18);
+        let communicator = Communicator::new(&devices, group.threshold(), protocol_type);
 
         let request = (SignRequest {
             group_id: group.identifier().to_vec(),
@@ -37,17 +39,24 @@ impl SignTask {
         })
         .encode_to_vec();
 
-        SignTask {
+        Ok(SignTask {
             group,
             communicator,
             result: None,
             data,
             preprocessed: None,
-            protocol: Box::new(GG18Sign::new()),
+            protocol: match protocol_type {
+                ProtocolType::Gg18 => Box::new(GG18Sign::new()),
+                ProtocolType::Frost => Box::new(FROSTSign::new()),
+                _ => {
+                    warn!("Protocol type {:?} does not support signing", protocol_type);
+                    return Err("Unsupported protocol type for signing".into());
+                }
+            },
             request,
             last_update: get_timestamp(),
             attempts: 0,
-        }
+        })
     }
 
     pub fn get_group(&self) -> &Group {

@@ -6,6 +6,7 @@ use crate::get_timestamp;
 use crate::group::Group;
 use crate::proto::{KeyType, ProtocolType, TaskType};
 use crate::protocols::elgamal::ElgamalGroup;
+use crate::protocols::frost::FROSTGroup;
 use crate::protocols::gg18::GG18Group;
 use crate::protocols::Protocol;
 use crate::tasks::{Task, TaskResult, TaskStatus};
@@ -33,22 +34,39 @@ impl GroupTask {
         name: &str,
         devices: &[Arc<Device>],
         threshold: u32,
+        protocol_type: ProtocolType,
         key_type: KeyType,
     ) -> Result<Self, String> {
         let devices_len = devices.len() as u32;
-        let protocol: Box<dyn Protocol + Send + Sync> = match key_type {
-            KeyType::SignPdf => Box::new(GG18Group::new(devices_len, threshold)),
-            KeyType::SignChallenge => Box::new(GG18Group::new(devices_len, threshold)),
-            KeyType::Decrypt => Box::new(ElgamalGroup::new(devices_len, threshold)),
+        let protocol: Box<dyn Protocol + Send + Sync> = match (protocol_type, key_type) {
+            (ProtocolType::Gg18, KeyType::SignPdf) => {
+                Box::new(GG18Group::new(devices_len, threshold))
+            }
+            (ProtocolType::Gg18, KeyType::SignChallenge) => {
+                Box::new(GG18Group::new(devices_len, threshold))
+            }
+            (ProtocolType::Frost, KeyType::SignChallenge) => {
+                Box::new(FROSTGroup::new(devices_len, threshold))
+            }
+            (ProtocolType::Elgamal, KeyType::Decrypt) => {
+                Box::new(ElgamalGroup::new(devices_len, threshold))
+            }
+            _ => {
+                warn!(
+                    "Protocol {:?} does not support {:?} key type",
+                    protocol_type, key_type
+                );
+                return Err("Unsupported protocol type and key type combination".into());
+            }
         };
 
         if devices_len < 1 {
             warn!("Invalid number of devices {}", devices_len);
-            return Err("Invalid input".to_string());
+            return Err("Invalid input".into());
         }
         if !protocol.get_type().check_threshold(threshold, devices_len) {
             warn!("Invalid group threshold {}-of-{}", threshold, devices_len);
-            return Err("Invalid input".to_string());
+            return Err("Invalid input".into());
         }
 
         let mut devices = devices.to_vec();
@@ -95,10 +113,10 @@ impl GroupTask {
         }
         let identifier = identifier.unwrap();
         // TODO
-        let certificate = if self.protocol.get_type() == ProtocolType::Elgamal {
-            None
-        } else {
+        let certificate = if self.protocol.get_type() == ProtocolType::Gg18 {
             Some(issue_certificate(&self.name, &identifier))
+        } else {
+            None
         };
 
         info!(

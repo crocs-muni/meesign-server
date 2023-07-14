@@ -27,6 +27,7 @@ message ServerInfo {
 enum ProtocolType {
   GG18 = 0;
   ELGAMAL = 1;
+  FROST = 2;
 }
 
 enum KeyType {

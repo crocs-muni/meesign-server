@@ -24,7 +24,7 @@ impl SignPDFTask {
             return Err("Invalid input".to_string());
         }
 
-        let sign_task = SignTask::new(group, name, data);
+        let sign_task = SignTask::try_new(group, name, data)?;
 
         Ok(SignPDFTask {
             sign_task,
