@@ -124,15 +124,16 @@ impl Communicator {
         self.clear_input();
     }
 
-    /// Sends a message to all active devices that can be parametrized by their `active_devices` index
+    /// Sends a message to all active devices that can be parametrized by their share index
     pub fn send_all<F>(&mut self, f: F)
     where
         F: Fn(u32) -> Vec<u8>,
     {
         self.output.clear();
+        let indices = self.get_protocol_indices();
 
-        for i in 0..self.threshold {
-            self.output.push(f(i));
+        for i in 0..self.threshold as usize {
+            self.output.push(f(indices[i]));
         }
 
         self.clear_input();
@@ -492,7 +493,7 @@ mod tests {
         assert_eq!(communicator.get_message(devices[1].identifier()), None);
         assert_eq!(
             communicator.get_message(devices[2].identifier()),
-            Some(vec![1])
+            Some(vec![2])
         );
     }
 
