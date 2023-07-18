@@ -34,7 +34,13 @@ impl State {
         }
     }
 
-    pub fn add_device(&mut self, identifier: &[u8], name: &str, certificate: &[u8]) -> bool {
+    pub fn add_device(
+        &mut self,
+        identifier: &[u8],
+        name: &str,
+        certificate: &[u8],
+        admin: bool,
+    ) -> bool {
         if name.chars().count() > 64
             || name
                 .chars()
@@ -44,7 +50,8 @@ impl State {
             return false;
         }
 
-        let device = Device::new(identifier.to_vec(), name.to_owned(), certificate.to_vec());
+        let mut device = Device::new(identifier.to_vec(), name.to_owned(), certificate.to_vec());
+        device.set_admin(admin);
         // TODO improve when feature map_try_insert gets stabilized
         if self.devices.contains_key(identifier) {
             warn!(

@@ -14,6 +14,7 @@ use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
+use crate::cert_to_id;
 use crate::proto::mee_sign_server::{MeeSign, MeeSignServer};
 use crate::proto::{KeyType, ProtocolType};
 use crate::state::State;
@@ -60,7 +61,7 @@ impl MeeSign for MeeSignService {
 
         if let Ok(certificate) = issue_certificate(&name, &csr) {
             let device_id = cert_to_id(&certificate);
-            if state.add_device(&device_id, &name, &certificate) {
+            if state.add_device(&device_id, &name, &certificate, false) {
                 Ok(Response::new(msg::RegistrationResponse {
                     device_id,
                     certificate,
@@ -519,11 +520,6 @@ pub fn issue_certificate(device_name: &str, csr: &[u8]) -> Result<Vec<u8>, Strin
     cert_builder.sign(&CA_KEY, MessageDigest::sha256()).unwrap();
 
     Ok(cert_builder.build().to_der().unwrap())
-}
-
-pub fn cert_to_id(cert: impl AsRef<[u8]>) -> Vec<u8> {
-    use sha2::Digest;
-    sha2::Sha256::digest(cert).to_vec()
 }
 
 pub async fn run_grpc(state: Arc<Mutex<State>>, addr: &str, port: u16) -> Result<(), String> {

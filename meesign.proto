@@ -82,7 +82,8 @@ message Device {
   bytes identifier = 1;
   string name = 2;
   bytes certificate = 3;
-  uint64 last_active = 4;
+  bool admin = 4;
+  uint64 last_active = 5;
 }
 
 message SignRequest {

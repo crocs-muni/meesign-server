@@ -7,6 +7,7 @@ pub struct Device {
     name: String,
     certificate: Vec<u8>,
     last_active: AtomicU64,
+    admin: bool,
 }
 
 impl Device {
@@ -23,6 +24,7 @@ impl Device {
                     .unwrap()
                     .as_secs(),
             ),
+            admin: false,
         }
     }
 
@@ -36,6 +38,14 @@ impl Device {
 
     pub fn certificate(&self) -> &[u8] {
         &self.certificate
+    }
+
+    pub fn admin(&self) -> bool {
+        self.admin
+    }
+
+    pub fn set_admin(&mut self, admin: bool) {
+        self.admin = admin;
     }
 
     pub fn last_active(&self) -> u64 {
@@ -60,6 +70,7 @@ impl From<&Device> for crate::proto::Device {
             identifier: device.identifier().to_vec(),
             name: device.name().to_string(),
             certificate: device.certificate().to_vec(),
+            admin: device.admin(),
             last_active: device.last_active(),
         }
     }
@@ -108,5 +119,16 @@ mod tests {
         let activated = device.activated();
         assert!(previous_active <= device.last_active());
         assert_eq!(device.last_active(), activated);
+    }
+
+    #[test]
+    fn sample_device_admin() {
+        let identifier = vec![0x01, 0x02, 0x03, 0x04];
+        let name = String::from("Sample Device");
+        let certificate = vec![0xab, 0xcd, 0xef, 0x00];
+        let mut device = Device::new(identifier.clone(), name.clone(), certificate.clone());
+        assert!(!device.admin());
+        device.set_admin(true);
+        assert!(device.admin());
     }
 }

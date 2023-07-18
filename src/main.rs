@@ -4,6 +4,7 @@ use clap::Parser;
 use lazy_static::lazy_static;
 use openssl::pkey::{PKey, Private};
 use openssl::x509::X509;
+use tonic::transport::Certificate;
 
 use crate::state::State;
 use tokio::{sync::Mutex, try_join};
@@ -71,12 +72,23 @@ pub fn get_timestamp() -> u64 {
         .as_secs()
 }
 
+pub fn cert_to_id(cert: impl AsRef<[u8]>) -> Vec<u8> {
+    use sha2::Digest;
+    sha2::Sha256::digest(cert).to_vec()
+}
+
 #[tokio::main]
 async fn main() -> Result<(), String> {
     env_logger::init();
     let args = Args::parse();
 
-    let state = Arc::new(Mutex::new(State::new()));
+    let admin_cert = Certificate::from_pem(std::fs::read("keys/meesign-admin-cert.pem").unwrap());
+    let admin_id = cert_to_id(&admin_cert);
+
+    let mut state = State::new();
+    state.add_device(&admin_id, "MeeSign Admin", admin_cert.as_ref(), true);
+
+    let state = Arc::new(Mutex::new(state));
 
     let grpc = interfaces::grpc::run_grpc(state.clone(), &args.addr, args.port);
     let timer = interfaces::timer::run_timer(state);
