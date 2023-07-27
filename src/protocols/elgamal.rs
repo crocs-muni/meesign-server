@@ -4,15 +4,15 @@ use crate::protocols::Protocol;
 use meesign_crypto::proto::{ProtocolGroupInit, ProtocolInit};
 use prost::Message;
 
-pub struct GG18Group {
+pub struct ElgamalGroup {
     parties: u32,
     threshold: u32,
     round: u16,
 }
 
-impl GG18Group {
+impl ElgamalGroup {
     pub fn new(parties: u32, threshold: u32) -> Self {
-        GG18Group {
+        ElgamalGroup {
             parties,
             threshold,
             round: 0,
@@ -20,14 +20,14 @@ impl GG18Group {
     }
 }
 
-impl Protocol for GG18Group {
+impl Protocol for ElgamalGroup {
     fn initialize(&mut self, communicator: &mut Communicator, _: &[u8]) {
         communicator.set_active_devices();
         let parties = self.parties;
         let threshold = self.threshold;
         communicator.send_all(|idx| {
             (ProtocolGroupInit {
-                protocol_type: ProtocolType::Gg18 as i32,
+                protocol_type: ProtocolType::Elgamal as i32,
                 index: idx,
                 parties,
                 threshold,
@@ -56,31 +56,31 @@ impl Protocol for GG18Group {
     }
 
     fn last_round(&self) -> u16 {
-        6
+        4
     }
 
     fn get_type(&self) -> ProtocolType {
-        ProtocolType::Gg18
+        ProtocolType::Elgamal
     }
 }
 
-pub struct GG18Sign {
+pub struct ElgamalDecrypt {
     round: u16,
 }
 
-impl GG18Sign {
+impl ElgamalDecrypt {
     pub fn new() -> Self {
         Self { round: 0 }
     }
 }
 
-impl Protocol for GG18Sign {
+impl Protocol for ElgamalDecrypt {
     fn initialize(&mut self, communicator: &mut Communicator, data: &[u8]) {
         communicator.set_active_devices();
         let participant_indices = communicator.get_protocol_indices();
         communicator.send_all(|idx| {
             (ProtocolInit {
-                protocol_type: ProtocolType::Gg18 as i32,
+                protocol_type: ProtocolType::Elgamal as i32,
                 indices: participant_indices.clone(),
                 index: idx,
                 data: Vec::from(data),
@@ -109,10 +109,10 @@ impl Protocol for GG18Sign {
     }
 
     fn last_round(&self) -> u16 {
-        10
+        2
     }
 
     fn get_type(&self) -> ProtocolType {
-        ProtocolType::Gg18
+        ProtocolType::Elgamal
     }
 }

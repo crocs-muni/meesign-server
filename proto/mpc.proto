@@ -6,6 +6,7 @@ service MPC {
   rpc Register(RegistrationRequest) returns (RegistrationResponse);
   rpc Sign(SignRequest) returns (Task);
   rpc Group(GroupRequest) returns (Task);
+  rpc Decrypt(DecryptRequest) returns (Task);
   rpc GetTask(TaskRequest) returns (Task);
   rpc UpdateTask(TaskUpdate) returns (Resp); // auth required
   rpc DecideTask(TaskDecision) returns (Resp); // auth required
@@ -25,17 +26,21 @@ message ServerInfo {
 
 enum ProtocolType {
   GG18 = 0;
+  ELGAMAL = 1;
+  FROST = 2;
 }
 
 enum KeyType {
   SignPDF = 0;
   SignChallenge = 1;
+  Decrypt = 2;
 }
 
 enum TaskType {
   GROUP = 0;
   SIGN_PDF = 1;
   SIGN_CHALLENGE = 2;
+  DECRYPT = 3;
 }
 
 message RegistrationRequest {
@@ -81,6 +86,12 @@ message Device {
 }
 
 message SignRequest {
+  string name = 1;
+  bytes group_id = 2;
+  bytes data = 3;
+}
+
+message DecryptRequest {
   string name = 1;
   bytes group_id = 2;
   bytes data = 3;
@@ -149,19 +160,3 @@ message LogRequest {
 };
 
 message SubscribeRequest {};
-
-message GG18KeyGenInit {
-  uint32 index = 1;
-  uint32 parties = 2;
-  uint32 threshold = 3;
-}
-
-message GG18SignInit {
-  repeated uint32 indices = 1;
-  uint32 index = 2;
-  bytes hash = 3;
-}
-
-message GG18Message {
-  repeated bytes message = 1;
-}

@@ -7,6 +7,7 @@ use crate::device::Device;
 use crate::group::Group;
 use crate::interfaces::grpc::format_task;
 use crate::proto::{KeyType, ProtocolType};
+use crate::tasks::decrypt::DecryptTask;
 use crate::tasks::group::GroupTask;
 use crate::tasks::sign::SignTask;
 use crate::tasks::sign_pdf::SignPDFTask;
@@ -73,13 +74,6 @@ impl State {
             return None;
         }
 
-        if !protocol.check_key_type(key_type) {
-            warn!(
-                "Protocol {:?} does not support {:?} key type",
-                protocol, key_type
-            )
-        }
-
         let mut device_list = Vec::new();
         for device in devices {
             if !self.devices.contains_key(device.as_slice()) {
@@ -89,7 +83,7 @@ impl State {
             device_list.push(self.devices.get(device.as_slice()).unwrap().clone());
         }
 
-        let task = GroupTask::try_new(name, &device_list, threshold, key_type)
+        let task = GroupTask::try_new(name, &device_list, threshold, protocol, key_type)
             .ok()
             .map(|task| Box::new(task) as Box<dyn Task + Send + Sync>);
 
@@ -116,12 +110,51 @@ impl State {
                     .ok()
                     .map(|task| Box::new(task) as Box<dyn Task + Sync + Send>)
             }
-            KeyType::SignChallenge => Some(SignTask::new(
+            KeyType::SignChallenge => {
+                SignTask::try_new(group.clone(), name.to_string(), data.to_vec())
+                    .ok()
+                    .map(|task| Box::new(task) as Box<dyn Task + Sync + Send>)
+            }
+            KeyType::Decrypt => {
+                warn!(
+                    "Signing request made for decryption group group_id={}",
+                    hex::encode(group_id)
+                );
+                return None;
+            }
+        };
+
+        let task_id = task.map(|task| self.add_task(task));
+        if let Some(task_id) = &task_id {
+            self.send_updates(task_id);
+        }
+        task_id
+    }
+
+    pub fn add_decrypt_task(&mut self, group_id: &[u8], name: &str, data: &[u8]) -> Option<Uuid> {
+        let group = self.groups.get(group_id);
+        if group.is_none() {
+            warn!(
+                "Decryption requested from an unknown group group_id={}",
+                hex::encode(group_id)
+            );
+            return None;
+        }
+        let group = group.unwrap();
+        let task = match group.key_type() {
+            KeyType::Decrypt => Some(DecryptTask::new(
                 group.clone(),
                 name.to_string(),
                 data.to_vec(),
             ))
             .map(|task| Box::new(task) as Box<dyn Task + Sync + Send>),
+            KeyType::SignPdf | KeyType::SignChallenge => {
+                warn!(
+                    "Decryption request made for a signing group group_id={}",
+                    hex::encode(group_id)
+                );
+                return None;
+            }
         };
 
         let task_id = task.map(|task| self.add_task(task));

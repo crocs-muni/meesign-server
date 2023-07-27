@@ -20,6 +20,26 @@ mod tasks;
 mod proto {
     #![allow(clippy::derive_partial_eq_without_eq)]
     tonic::include_proto!("meesign");
+
+    impl From<meesign_crypto::proto::ProtocolType> for ProtocolType {
+        fn from(proto: meesign_crypto::proto::ProtocolType) -> Self {
+            match proto {
+                meesign_crypto::proto::ProtocolType::Gg18 => ProtocolType::Gg18,
+                meesign_crypto::proto::ProtocolType::Elgamal => ProtocolType::Elgamal,
+                meesign_crypto::proto::ProtocolType::Frost => ProtocolType::Frost,
+            }
+        }
+    }
+
+    impl From<ProtocolType> for meesign_crypto::proto::ProtocolType {
+        fn from(proto: ProtocolType) -> Self {
+            match proto {
+                ProtocolType::Gg18 => meesign_crypto::proto::ProtocolType::Gg18,
+                ProtocolType::Elgamal => meesign_crypto::proto::ProtocolType::Elgamal,
+                ProtocolType::Frost => meesign_crypto::proto::ProtocolType::Frost,
+            }
+        }
+    }
 }
 
 lazy_static! {

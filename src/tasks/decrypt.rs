@@ -2,78 +2,55 @@ use crate::communicator::Communicator;
 use crate::device::Device;
 use crate::get_timestamp;
 use crate::group::Group;
-use crate::proto::{ProtocolType, SignRequest, TaskType};
-use crate::protocols::frost::FROSTSign;
-use crate::protocols::gg18::GG18Sign;
+use crate::proto::{DecryptRequest, ProtocolType, TaskType};
+use crate::protocols::elgamal::ElgamalDecrypt;
 use crate::protocols::Protocol;
 use crate::tasks::{Task, TaskResult, TaskStatus};
-use log::{info, warn};
+use log::info;
 use meesign_crypto::proto::ProtocolMessage;
 use prost::Message;
 use tonic::codegen::Arc;
 
-pub struct SignTask {
+pub struct DecryptTask {
     group: Group,
     communicator: Communicator,
     result: Option<Result<Vec<u8>, String>>,
     pub(super) data: Vec<u8>,
-    preprocessed: Option<Vec<u8>>,
     pub(super) protocol: Box<dyn Protocol + Send + Sync>,
     request: Vec<u8>,
     pub(super) last_update: u64,
     pub(super) attempts: u32,
 }
 
-impl SignTask {
-    pub fn try_new(group: Group, name: String, data: Vec<u8>) -> Result<Self, String> {
+impl DecryptTask {
+    pub fn new(group: Group, name: String, data: Vec<u8>) -> Self {
         let mut devices: Vec<Arc<Device>> = group.devices().to_vec();
         devices.sort_by_key(|x| x.identifier().to_vec());
-        let protocol_type = group.protocol();
 
-        let communicator = Communicator::new(&devices, group.threshold(), protocol_type);
+        let communicator = Communicator::new(&devices, group.threshold(), ProtocolType::Elgamal);
 
-        let request = (SignRequest {
+        let request = (DecryptRequest {
             group_id: group.identifier().to_vec(),
             name,
             data: data.clone(),
         })
         .encode_to_vec();
 
-        Ok(SignTask {
+        DecryptTask {
             group,
             communicator,
             result: None,
             data,
-            preprocessed: None,
-            protocol: match protocol_type {
-                ProtocolType::Gg18 => Box::new(GG18Sign::new()),
-                ProtocolType::Frost => Box::new(FROSTSign::new()),
-                _ => {
-                    warn!("Protocol type {:?} does not support signing", protocol_type);
-                    return Err("Unsupported protocol type for signing".into());
-                }
-            },
+            protocol: Box::new(ElgamalDecrypt::new()),
             request,
             last_update: get_timestamp(),
             attempts: 0,
-        })
-    }
-
-    pub fn get_group(&self) -> &Group {
-        &self.group
-    }
-
-    /// Use this method to change data to be used for signing
-    pub(super) fn set_preprocessed(&mut self, preprocessed: Vec<u8>) {
-        self.preprocessed = Some(preprocessed);
+        }
     }
 
     pub(super) fn start_task(&mut self) {
         assert!(self.communicator.accept_count() >= self.group.threshold());
-        self.protocol.initialize(
-            &mut self.communicator,
-            self.preprocessed.as_ref().unwrap_or(&self.data),
-        );
+        self.protocol.initialize(&mut self.communicator, &self.data);
     }
 
     pub(super) fn advance_task(&mut self) {
@@ -81,19 +58,19 @@ impl SignTask {
     }
 
     pub(super) fn finalize_task(&mut self) {
-        let signature = self.protocol.finalize(&mut self.communicator);
-        if signature.is_none() {
-            self.result = Some(Err("Task failed (signature not output)".to_string()));
+        let decrypted = self.protocol.finalize(&mut self.communicator);
+        if decrypted.is_none() {
+            self.result = Some(Err("Task failed (message not output)".to_string()));
             return;
         }
-        let signature = signature.unwrap();
+        let decrypted = decrypted.unwrap();
 
         info!(
-            "Signature created by group_id={}",
+            "Message decrypted by group_id={}",
             hex::encode(self.group.identifier())
         );
 
-        self.result = Some(Ok(signature));
+        self.result = Some(Ok(decrypted));
         self.communicator.clear_input();
     }
 
@@ -147,7 +124,7 @@ impl SignTask {
     }
 }
 
-impl Task for SignTask {
+impl Task for DecryptTask {
     fn get_status(&self) -> TaskStatus {
         match &self.result {
             Some(Err(e)) => TaskStatus::Failed(e.clone()),
@@ -163,7 +140,7 @@ impl Task for SignTask {
     }
 
     fn get_type(&self) -> TaskType {
-        TaskType::SignChallenge
+        TaskType::Decrypt
     }
 
     fn get_work(&self, device_id: Option<&[u8]>) -> Option<Vec<u8>> {
@@ -175,8 +152,8 @@ impl Task for SignTask {
     }
 
     fn get_result(&self) -> Option<TaskResult> {
-        if let Some(Ok(signature)) = &self.result {
-            Some(TaskResult::Signed(signature.clone()))
+        if let Some(Ok(decrypted)) = &self.result {
+            Some(TaskResult::Decrypted(decrypted.clone()))
         } else {
             None
         }
