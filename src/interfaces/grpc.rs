@@ -15,6 +15,7 @@ use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use crate::cert_to_id;
+use crate::device::Role;
 use crate::proto::mee_sign_server::{MeeSign, MeeSignServer};
 use crate::proto::{KeyType, ProtocolType};
 use crate::state::State;
@@ -61,7 +62,7 @@ impl MeeSign for MeeSignService {
 
         if let Ok(certificate) = issue_certificate(&name, &csr) {
             let device_id = cert_to_id(&certificate);
-            if state.add_device(&device_id, &name, &certificate, false) {
+            if state.add_device(&device_id, &name, &certificate, Role::User) {
                 Ok(Response::new(msg::RegistrationResponse {
                     device_id,
                     certificate,

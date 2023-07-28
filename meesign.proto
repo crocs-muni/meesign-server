@@ -82,7 +82,7 @@ message Device {
   bytes identifier = 1;
   string name = 2;
   bytes certificate = 3;
-  bool admin = 4;
+  uint32 role = 4;
   uint64 last_active = 5;
 }
 

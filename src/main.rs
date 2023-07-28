@@ -1,6 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
+use device::Role;
 use lazy_static::lazy_static;
 use openssl::pkey::{PKey, Private};
 use openssl::x509::X509;
@@ -86,7 +87,7 @@ async fn main() -> Result<(), String> {
     let admin_id = cert_to_id(&admin_cert);
 
     let mut state = State::new();
-    state.add_device(&admin_id, "MeeSign Admin", admin_cert.as_ref(), true);
+    state.add_device(&admin_id, "MeeSign Admin", admin_cert.as_ref(), Role::Admin);
 
     let state = Arc::new(Mutex::new(state));
 

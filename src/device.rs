@@ -7,11 +7,19 @@ pub struct Device {
     name: String,
     certificate: Vec<u8>,
     last_active: AtomicU64,
-    admin: bool,
+    role: Role,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Role {
+    None = 0,
+    User = 1,
+    Operator = 2,
+    Admin = 3,
 }
 
 impl Device {
-    pub fn new(identifier: Vec<u8>, name: String, certificate: Vec<u8>) -> Self {
+    pub fn new(identifier: Vec<u8>, name: String, certificate: Vec<u8>, role: Role) -> Self {
         assert!(!identifier.is_empty());
         assert!(!certificate.is_empty());
         Device {
@@ -24,7 +32,7 @@ impl Device {
                     .unwrap()
                     .as_secs(),
             ),
-            admin: false,
+            role: role,
         }
     }
 
@@ -40,12 +48,12 @@ impl Device {
         &self.certificate
     }
 
-    pub fn admin(&self) -> bool {
-        self.admin
+    pub fn role(&self) -> Role {
+        self.role
     }
 
-    pub fn set_admin(&mut self, admin: bool) {
-        self.admin = admin;
+    pub fn set_role(&mut self, role: Role) {
+        self.role = role;
     }
 
     pub fn last_active(&self) -> u64 {
@@ -70,7 +78,7 @@ impl From<&Device> for crate::proto::Device {
             identifier: device.identifier().to_vec(),
             name: device.name().to_string(),
             certificate: device.certificate().to_vec(),
-            admin: device.admin(),
+            role: device.role() as u32,
             last_active: device.last_active(),
         }
     }
@@ -83,13 +91,23 @@ mod tests {
     #[test]
     #[should_panic]
     fn empty_identifier() {
-        Device::new(vec![], String::from("Sample Device"), vec![0xff]);
+        Device::new(
+            vec![],
+            String::from("Sample Device"),
+            vec![0xff],
+            Role::User,
+        );
     }
 
     #[test]
     #[should_panic]
     fn empty_certificate() {
-        Device::new(vec![0xff], String::from("Sample Device"), vec![]);
+        Device::new(
+            vec![0xff],
+            String::from("Sample Device"),
+            vec![],
+            Role::User,
+        );
     }
 
     #[test]
@@ -98,12 +116,14 @@ mod tests {
             vec![0x01, 0x02, 0x03, 0x04],
             String::from("Sample Device"),
             vec![0xab, 0xcd, 0xef, 0x00],
+            Role::User,
         );
         let protobuf = crate::proto::Device::from(&device);
         assert_eq!(protobuf.identifier, device.identifier());
         assert_eq!(protobuf.name, device.name());
         assert_eq!(protobuf.certificate, device.certificate());
         assert_eq!(protobuf.last_active, device.last_active());
+        assert_eq!(protobuf.role, device.role() as u32);
     }
 
     #[test]
@@ -111,7 +131,8 @@ mod tests {
         let identifier = vec![0x01, 0x02, 0x03, 0x04];
         let name = String::from("Sample Device");
         let certificate = vec![0xab, 0xcd, 0xef, 0x00];
-        let device = Device::new(identifier.clone(), name.clone(), certificate.clone());
+        let role = Role::User;
+        let device = Device::new(identifier.clone(), name.clone(), certificate.clone(), role);
         assert_eq!(device.identifier(), &identifier);
         assert_eq!(device.name(), &name);
         assert_eq!(device.certificate(), &certificate);
@@ -119,6 +140,7 @@ mod tests {
         let activated = device.activated();
         assert!(previous_active <= device.last_active());
         assert_eq!(device.last_active(), activated);
+        assert_eq!(device.role(), role);
     }
 
     #[test]
@@ -126,9 +148,14 @@ mod tests {
         let identifier = vec![0x01, 0x02, 0x03, 0x04];
         let name = String::from("Sample Device");
         let certificate = vec![0xab, 0xcd, 0xef, 0x00];
-        let mut device = Device::new(identifier.clone(), name.clone(), certificate.clone());
-        assert!(!device.admin());
-        device.set_admin(true);
-        assert!(device.admin());
+        let mut device = Device::new(
+            identifier.clone(),
+            name.clone(),
+            certificate.clone(),
+            Role::User,
+        );
+        assert!(device.role() == Role::User);
+        device.set_role(Role::Admin);
+        assert!(device.role() == Role::Admin);
     }
 }

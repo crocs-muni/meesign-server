@@ -96,6 +96,8 @@ impl From<&Group> for crate::proto::Group {
 
 #[cfg(test)]
 mod tests {
+    use crate::device::Role;
+
     use super::*;
 
     #[test]
@@ -182,6 +184,7 @@ mod tests {
                     vec![i as u8],
                     format!("d{}", i),
                     vec![0xf0 | i as u8],
+                    Role::User,
                 ))
             })
             .collect()

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use log::{error, warn};
 use uuid::Uuid;
 
-use crate::device::Device;
+use crate::device::{Device, Role};
 use crate::group::Group;
 use crate::interfaces::grpc::format_task;
 use crate::proto::{KeyType, ProtocolType};
@@ -39,7 +39,7 @@ impl State {
         identifier: &[u8],
         name: &str,
         certificate: &[u8],
-        admin: bool,
+        role: Role,
     ) -> bool {
         if name.chars().count() > 64
             || name
@@ -50,8 +50,12 @@ impl State {
             return false;
         }
 
-        let mut device = Device::new(identifier.to_vec(), name.to_owned(), certificate.to_vec());
-        device.set_admin(admin);
+        let device = Device::new(
+            identifier.to_vec(),
+            name.to_owned(),
+            certificate.to_vec(),
+            role,
+        );
         // TODO improve when feature map_try_insert gets stabilized
         if self.devices.contains_key(identifier) {
             warn!(
