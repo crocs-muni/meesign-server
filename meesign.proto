@@ -16,6 +16,7 @@ service MeeSign {
   rpc GetDevices(DevicesRequest) returns (Devices);
   rpc Log(LogRequest) returns (Resp); // auth optional
   rpc SubscribeUpdates(SubscribeRequest) returns (stream Task); // auth required
+  rpc UpdateDevice(Device) returns (Resp);
 }
 
 message ServerInfoRequest {}

@@ -68,6 +68,47 @@ impl State {
         true
     }
 
+    pub fn update_device(
+        &mut self,
+        identifier: &[u8],
+        name: Option<&str>,
+        role: Option<Role>,
+    ) -> bool {
+        if let Some(device) = self.devices.remove(identifier) {
+            let (device, result) = match Arc::<Device>::try_unwrap(device) {
+                Ok(mut device) => {
+                    if let Some(name) = name {
+                        if name.chars().count() > 64
+                            || name
+                                .chars()
+                                .any(|x| x.is_ascii_punctuation() || x.is_control())
+                        {
+                            warn!("Invalid Device name {}", name);
+                            return false;
+                        }
+                        device.set_name(name.to_owned());
+                    }
+                    if let Some(role) = role {
+                        device.set_role(role);
+                    }
+                    (Arc::new(device), true)
+                }
+                Err(device) => {
+                    error!("Device is still referenced");
+                    (device, false)
+                }
+            };
+            self.devices.insert(identifier.to_vec(), device);
+            result
+        } else {
+            warn!(
+                "Updated device identifier does not exist {}",
+                hex::encode(identifier)
+            );
+            false
+        }
+    }
+
     pub fn add_group_task(
         &mut self,
         name: &str,
@@ -216,6 +257,10 @@ impl State {
 
     pub fn get_task(&self, task: &Uuid) -> Option<&dyn Task> {
         self.tasks.get(task).map(|task| task.as_ref() as &dyn Task)
+    }
+
+    pub fn get_role(&self, device: &[u8]) -> Option<Role> {
+        self.devices.get(device).map(|device| device.role())
     }
 
     pub fn update_task(

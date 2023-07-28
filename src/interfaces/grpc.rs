@@ -397,6 +397,47 @@ impl MeeSign for MeeSignService {
 
         Ok(Response::new(Box::pin(ReceiverStream::new(rx))))
     }
+
+    async fn update_device(
+        &self,
+        request: Request<msg::Device>,
+    ) -> Result<Response<msg::Resp>, Status> {
+        if request.peer_certs().is_none() {
+            return Err(Status::unauthenticated("Authentication required"));
+        }
+        let device_id = request
+            .peer_certs()
+            .and_then(|certs| certs.get(0).map(cert_to_id))
+            .unwrap();
+        if self.state.lock().await.get_role(&device_id) < Some(Role::Admin) {
+            return Err(Status::permission_denied("Permission denied"));
+        }
+
+        let request = request.into_inner();
+        let identifier = request.identifier;
+        let name = request.name;
+        let role = Role::from_u32(request.role);
+
+        info!(
+            "DeviceUpdate device_id={} name={:?} role={:?}",
+            hex::encode(&device_id),
+            name,
+            role
+        );
+
+        Ok(Response::new(msg::Resp {
+            message: if self
+                .state
+                .lock()
+                .await
+                .update_device(&identifier, Some(&name), Some(role))
+            {
+                "OK".to_string()
+            } else {
+                "NOK".to_string()
+            },
+        }))
+    }
 }
 
 pub fn format_task(

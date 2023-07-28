@@ -18,6 +18,18 @@ pub enum Role {
     Admin = 3,
 }
 
+impl Role {
+    pub fn from_u32(role: u32) -> Self {
+        match role {
+            0 => Role::None,
+            1 => Role::User,
+            2 => Role::Operator,
+            3 => Role::Admin,
+            _ => panic!("Invalid role {}", role),
+        }
+    }
+}
+
 impl Device {
     pub fn new(identifier: Vec<u8>, name: String, certificate: Vec<u8>, role: Role) -> Self {
         assert!(!identifier.is_empty());
@@ -42,6 +54,10 @@ impl Device {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn set_name(&mut self, name: String) {
+        self.name = name
     }
 
     pub fn certificate(&self) -> &[u8] {
