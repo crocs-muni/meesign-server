@@ -47,13 +47,13 @@ jobs:
         id: vars
         shell: bash
         run: |
-          echo "::set-output name=commit_hash::$(git rev-parse HEAD)"
-          echo "::set-output name=curr_date::$(date --rfc-3339=seconds)"
+          echo "commit_hash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+          echo "curr_date=$(date --rfc-3339=seconds)" >> $GITHUB_OUTPUT
       - name: Set the version tag
         # If the workflow contains a tag, set a version docker tag in format "user/project:tag"
         id: version_tag
         if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
-        run: echo "::set-output name=version_tag::${{ inputs.dockerhub_username }}/${{ inputs.project_name}}:${{ steps.tagName.outputs.tag }}"
+        run: echo "version_tag=${{ inputs.dockerhub_username }}/${{ inputs.project_name}}:${{ steps.tagName.outputs.tag }}" >> $GITHUB_OUTPUT
       - name: Build and Push
         uses: docker/build-push-action@v2
         with:

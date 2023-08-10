@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 KEY_FOLDER="keys"
 HOSTNAME=${1:-"meesign.local"}
 mkdir --parent "./${KEY_FOLDER}"
