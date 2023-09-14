@@ -13,6 +13,7 @@ mod communicator;
 mod device;
 mod group;
 mod interfaces;
+mod persistence;
 mod protocols;
 mod state;
 mod tasks;
