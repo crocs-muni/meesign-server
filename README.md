@@ -22,7 +22,19 @@ Server-side implementation for MeeSign system.
 
 4. [Prepare MeeSignHelper](https://github.com/dufkan/meesign-helper)
 
-5. Build and run the server:
+5. Set up PostgreSQL server
+
+   ```bash
+   docker run --restart always --name meesign-postgres --user postgres -e POSTGRES_PASSWORD=mysecretpassword -d -p 5432:5432 postgres
+   ```
+
+6. Store the connection string
+
+   ```bash
+   echo DATABASE_URL=postgres://postgres:mysecretpassword@localhost/meesign >> .env
+   ```
+
+7. Build and run the server:
 
    ```bash
    cargo run
