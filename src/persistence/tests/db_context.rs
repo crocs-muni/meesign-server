@@ -30,6 +30,7 @@ pub struct TestDbContext {
 }
 
 // TODO: consider writing a macro that would create a test context for us
+// TODO: async
 impl TestDbContext {
     pub fn new() -> Result<Self, TestContextError> {
         dotenv().ok();
