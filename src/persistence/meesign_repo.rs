@@ -5,7 +5,7 @@ use super::{
 };
 
 #[tonic::async_trait]
-pub trait MeesignRepo {
+pub trait MeesignRepo: Send + Sync {
     /* Devices */
     async fn add_device(
         &self,

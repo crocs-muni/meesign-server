@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::device::Device;
 use crate::group::Group;
 use crate::interfaces::grpc::format_task;
+use crate::persistence::meesign_repo::MeesignRepo;
 use crate::proto::{DeviceKind, KeyType, ProtocolType};
 use crate::tasks::decrypt::DecryptTask;
 use crate::tasks::group::GroupTask;
@@ -22,15 +23,17 @@ pub struct State {
     groups: HashMap<Vec<u8>, Group>,
     tasks: HashMap<Uuid, Box<dyn Task + Send + Sync>>,
     subscribers: HashMap<Vec<u8>, Sender<Result<crate::proto::Task, Status>>>,
+    repo: Arc<dyn MeesignRepo>,
 }
 
 impl State {
-    pub fn new() -> Self {
+    pub fn new(repo: Arc<dyn MeesignRepo>) -> Self {
         State {
             devices: HashMap::new(),
             groups: HashMap::new(),
             tasks: HashMap::new(),
             subscribers: HashMap::new(),
+            repo,
         }
     }
 

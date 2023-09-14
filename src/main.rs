@@ -1,9 +1,12 @@
+use std::env;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
+use dotenvy::dotenv;
 use lazy_static::lazy_static;
 use openssl::pkey::{PKey, Private};
 use openssl::x509::X509;
+use persistence::postgres_meesign_repo::PostgresMeesignRepo;
 
 use crate::state::State;
 use tokio::{sync::Mutex, try_join};
@@ -98,8 +101,14 @@ async fn main() -> Result<(), String> {
     if args.command.is_some() {
         return cli::handle_command(args).await;
     }
-
-    let state = Arc::new(Mutex::new(State::new()));
+    let _ = dotenv();
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let repo = PostgresMeesignRepo::from_url(&database_url)
+        .await
+        .expect("Coudln't init postgres repo");
+    repo.apply_migrations().expect("Couldn't apply migrations");
+    // TODO: remove mutex when DB done
+    let state = Arc::new(Mutex::new(State::new(Arc::new(repo))));
 
     let grpc = interfaces::grpc::run_grpc(state.clone(), &args.addr, args.port);
     let timer = interfaces::timer::run_timer(state);
