@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use chrono::Utc;
 use diesel::{ExpressionMethods, QueryDsl, SelectableHelper};
 use diesel_async::AsyncPgConnection;
@@ -81,30 +79,21 @@ pub async fn device_ids_to_identifiers(
 #[cfg(test)]
 mod test {
 
-    use std::env;
-
-    use diesel_async::{AsyncConnection, AsyncPgConnection};
-    use dotenvy::dotenv;
+    use diesel_async::AsyncPgConnection;
 
     use crate::persistence::{
         persistance_error::PersistenceError,
         postgres_meesign_repo::device::{add_device, get_devices},
+        tests::persistency_unit_test_context::PersistencyUnitTestContext,
     };
-
-    async fn get_test_connection() -> Result<AsyncPgConnection, PersistenceError> {
-        let _ = dotenv();
-        let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-        let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
-        connection.begin_test_transaction().await?;
-        Ok(connection)
-    }
 
     #[tokio::test]
     async fn test_insert_device() -> Result<(), PersistenceError> {
+        let ctx = PersistencyUnitTestContext::new();
         let identifier = vec![1];
         let name = "Test User 123";
         let certificate = vec![2];
-        let mut connection: AsyncPgConnection = get_test_connection().await?;
+        let mut connection: AsyncPgConnection = ctx.get_test_connection().await?;
 
         add_device(&mut connection, &identifier, name, &certificate).await?;
 
@@ -119,9 +108,11 @@ mod test {
 
     #[tokio::test]
     async fn test_identifier_unique_constraint() -> Result<(), PersistenceError> {
+        let ctx = PersistencyUnitTestContext::new();
+
         let identifier = vec![1];
         let first_device_name = "user1";
-        let mut connection = get_test_connection().await?;
+        let mut connection = ctx.get_test_connection().await?;
 
         add_device(
             &mut connection,
