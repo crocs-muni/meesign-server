@@ -43,9 +43,22 @@ pub async fn add_device(
         || name
             .chars()
             .any(|x| x.is_ascii_punctuation() || x.is_control())
+        || name.is_empty()
     {
         return Err(PersistenceError::InvalidArgumentError(format!(
             "Invalid device name: {name}"
+        )));
+    }
+
+    if identifier.is_empty() {
+        return Err(PersistenceError::InvalidArgumentError(format!(
+            "Empty identifier"
+        )));
+    }
+
+    if certificate.is_empty() {
+        return Err(PersistenceError::InvalidArgumentError(format!(
+            "Empty certificate"
         )));
     }
 
@@ -124,6 +137,28 @@ mod test {
         let Err(_) = add_device(& mut connection, &identifier, "user2", &vec![3, 2, 1]).await else {
             panic!("DB shoudln't have allowed to insert 2 devices with the same identifier");
         };
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_invalid_device() -> Result<(), PersistenceError> {
+        let ctx = PersistencyUnitTestContext::new();
+        let empty = vec![];
+        let nonempty: Vec<u8> = vec![1];
+        let mut connection: AsyncPgConnection = ctx.get_test_connection().await?;
+
+        assert!(add_device(&mut connection, &empty, "Non-empty", &nonempty)
+            .await
+            .is_err());
+
+        assert!(add_device(&mut connection, &nonempty, "", &nonempty)
+            .await
+            .is_err());
+
+        assert!(add_device(&mut connection, &nonempty, "Non-empty", &empty)
+            .await
+            .is_err());
 
         Ok(())
     }
