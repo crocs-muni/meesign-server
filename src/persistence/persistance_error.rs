@@ -1,4 +1,4 @@
-use std::{env::VarError, fmt::Display};
+use std::{env::VarError, fmt::Display, num::TryFromIntError};
 
 use diesel_async::pooled_connection::deadpool::BuildError;
 
@@ -9,6 +9,7 @@ pub enum PersistenceError {
     InvalidArgumentError(String),
     GeneralError(String),
     ExecutionError(diesel::result::Error),
+    TryFromIntError(TryFromIntError),
 }
 
 impl Display for PersistenceError {
@@ -32,5 +33,11 @@ impl From<BuildError> for PersistenceError {
 impl From<diesel::result::Error> for PersistenceError {
     fn from(value: diesel::result::Error) -> Self {
         Self::ExecutionError(value)
+    }
+}
+
+impl From<TryFromIntError> for PersistenceError {
+    fn from(value: TryFromIntError) -> Self {
+        Self::TryFromIntError(value)
     }
 }

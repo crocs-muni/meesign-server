@@ -1,6 +1,7 @@
 use self::device::{activate_device, add_device, get_devices};
-use self::group::get_groups;
+use self::group::{add_group, get_groups};
 
+use super::enums::ProtocolType;
 use super::meesign_repo::MeesignRepo;
 use super::models::{Device, Group};
 use super::persistance_error::PersistenceError;
@@ -70,7 +71,7 @@ impl MeesignRepo for PostgresMeesignRepo {
         identifier: &[u8],
         name: &str,
         certificate: &[u8],
-    ) -> Result<(), PersistenceError> {
+    ) -> Result<Device, PersistenceError> {
         add_device(
             &mut self.get_async_connection().await?,
             identifier,
@@ -80,7 +81,10 @@ impl MeesignRepo for PostgresMeesignRepo {
         .await
     }
 
-    async fn activate_device(&self, target_identifier: &Vec<u8>) -> Result<(), PersistenceError> {
+    async fn activate_device(
+        &self,
+        target_identifier: &Vec<u8>,
+    ) -> Result<Option<Device>, PersistenceError> {
         activate_device(&mut self.get_async_connection().await?, target_identifier).await
     }
 
@@ -90,5 +94,26 @@ impl MeesignRepo for PostgresMeesignRepo {
 
     async fn get_groups(&self) -> Result<Vec<Group>, PersistenceError> {
         get_groups(&mut self.get_async_connection().await?).await
+    }
+
+    async fn add_group<'a>(
+        &self,
+        identifier: &[u8],
+        name: &str,
+        devices: &[&[u8]],
+        threshold: u32,
+        protocol: ProtocolType,
+        certificate: Option<&[u8]>,
+    ) -> Result<Group, PersistenceError> {
+        add_group(
+            &mut self.get_async_connection().await?,
+            identifier,
+            name,
+            devices,
+            threshold,
+            protocol,
+            certificate,
+        )
+        .await
     }
 }

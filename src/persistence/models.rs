@@ -1,5 +1,5 @@
 use chrono::NaiveDateTime;
-use diesel::{Insertable, Queryable};
+use diesel::{Insertable, Queryable, Selectable};
 
 use crate::persistence::enums::ProtocolType;
 use crate::persistence::schema::*;
@@ -14,13 +14,13 @@ pub struct NewDevice<'a> {
     pub device_certificate: &'a Vec<u8>,
 }
 
-#[derive(Queryable)]
+#[derive(Queryable, Selectable)]
 #[diesel(table_name = device)]
 pub struct Device {
     pub id: i32,
     pub identifier: Vec<u8>,
     pub device_name: String,
-    pub certificate: Vec<u8>,
+    pub device_certificate: Vec<u8>,
     pub last_active: NaiveDateTime,
 }
 
@@ -29,13 +29,14 @@ impl From<&Device> for crate::proto::Device {
         crate::proto::Device {
             identifier: device.identifier.to_vec(),
             name: device.device_name.to_string(),
-            certificate: device.certificate.to_vec(),
+            certificate: device.device_certificate.to_vec(),
             last_active: device.last_active.timestamp_millis() as u64,
         }
     }
 }
 
-#[derive(Queryable, Clone, Eq, PartialEq)]
+#[derive(Queryable, Clone, Eq, PartialEq, Selectable)]
+#[diesel(table_name=signinggroup)]
 pub struct Group {
     pub id: i32,
     pub identifier: Vec<u8>,
@@ -47,13 +48,20 @@ pub struct Group {
     pub group_certificate: Option<Vec<u8>>,
 }
 
-// #[derive(Insertable)]
-// #[table_name = "signinggroup"]
-// pub struct NewSigningGroup<'a> {
-//     pub identifier: &'a Vec<u8>,
-//     pub group_name: &'a str,
-//     pub threshold: i32,
-//     pub protocol: ProtocolType,
-//     pub round: i32,
-//     pub group_certificate: Option<Vec<u8>>,
-// }
+#[derive(Insertable)]
+#[table_name = "signinggroup"]
+pub struct NewGroup<'a> {
+    pub identifier: &'a [u8],
+    pub group_name: &'a str,
+    pub threshold: i32,
+    pub protocol: ProtocolType,
+    pub round: i32,
+    pub group_certificate: Option<&'a [u8]>,
+}
+
+#[derive(Insertable)]
+#[table_name = "groupparticipant"]
+pub struct NewGroupParticipant {
+    pub device_id: i32,
+    pub group_id: i32,
+}

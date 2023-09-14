@@ -1,5 +1,7 @@
+use std::collections::HashSet;
+
 use chrono::Utc;
-use diesel::ExpressionMethods;
+use diesel::{ExpressionMethods, QueryDsl, SelectableHelper};
 use diesel_async::AsyncPgConnection;
 
 use crate::persistence::{
@@ -19,19 +21,16 @@ pub async fn get_devices(
 pub async fn activate_device(
     connection: &mut AsyncPgConnection,
     target_identifier: &Vec<u8>,
-) -> Result<(), PersistenceError> {
+) -> Result<Option<Device>, PersistenceError> {
     use crate::persistence::schema::device::dsl::*;
-    let rows_affected = diesel::update(device)
+    let activated_device = diesel::update(device)
         .filter(identifier.eq(target_identifier))
         .set(last_active.eq(Utc::now().naive_local()))
-        .execute(connection)
+        .returning(Device::as_returning())
+        .get_result(connection)
         .await?;
 
-    let expected_affected_rows_count = 1;
-    if rows_affected != expected_affected_rows_count {
-        return Err(PersistenceError::GeneralError(format!("Invalid number of affected rows: Expected {expected_affected_rows_count}, but got {rows_affected}.")));
-    }
-    Ok(())
+    Ok(Some(activated_device))
 }
 
 pub async fn add_device(
@@ -39,7 +38,7 @@ pub async fn add_device(
     identifier: &[u8],
     name: &str,
     certificate: &[u8],
-) -> Result<(), PersistenceError> {
+) -> Result<Device, PersistenceError> {
     const MAX_NAME_LEN: usize = 64;
 
     if name.chars().count() > MAX_NAME_LEN
@@ -59,11 +58,24 @@ pub async fn add_device(
     };
     use crate::persistence::schema::device;
 
-    diesel::insert_into(device::table)
+    let device: Device = diesel::insert_into(device::table)
         .values(new_device)
-        .execute(connection)
+        .returning(Device::as_returning())
+        .get_result(connection)
         .await?;
-    Ok(())
+    Ok(device)
+}
+
+pub async fn device_ids_to_identifiers(
+    connection: &mut AsyncPgConnection,
+    identifiers: Vec<Vec<u8>>,
+) -> Result<Vec<i32>, PersistenceError> {
+    use crate::persistence::schema::device::dsl::*;
+    Ok(device
+        .filter(identifier.eq_any(identifiers))
+        .select(id)
+        .load(connection)
+        .await?)
 }
 
 #[cfg(test)]
@@ -101,7 +113,7 @@ mod test {
         let fetched_device = devices.first().unwrap();
         assert_eq!(fetched_device.identifier, identifier);
         assert_eq!(fetched_device.device_name, name);
-        assert_eq!(fetched_device.certificate, certificate);
+        assert_eq!(fetched_device.device_certificate, certificate);
         Ok(())
     }
 
