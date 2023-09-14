@@ -1,17 +1,20 @@
+use self::device::{activate_device, add_device, get_devices};
+use self::group::get_groups;
+
 use super::meesign_repo::MeesignRepo;
 use super::models::{Device, Group};
 use super::persistance_error::PersistenceError;
-use crate::persistence::models::NewDevice;
 
-use chrono::Utc;
-use diesel::prelude::*;
 use diesel::{Connection, PgConnection};
 use diesel_async::pooled_connection::deadpool::Pool;
 use diesel_async::pooled_connection::AsyncDieselConnectionManager;
-use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
+use diesel_async::{AsyncConnection, AsyncPgConnection};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use std::env;
 use std::sync::Arc;
+
+mod device;
+mod group;
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 
@@ -68,58 +71,24 @@ impl MeesignRepo for PostgresMeesignRepo {
         name: &str,
         certificate: &[u8],
     ) -> Result<(), PersistenceError> {
-        const MAX_NAME_LEN: usize = 64;
-
-        if name.chars().count() > MAX_NAME_LEN
-            || name
-                .chars()
-                .any(|x| x.is_ascii_punctuation() || x.is_control())
-        {
-            return Err(PersistenceError::InvalidArgumentError(format!(
-                "Invalid device name: {name}"
-            )));
-        }
-
-        let new_device = NewDevice {
-            identifier: &identifier.to_vec(),
-            device_name: name,
-            device_certificate: &certificate.to_vec(),
-        };
-        use crate::persistence::schema::device;
-
-        diesel::insert_into(device::table)
-            .values(new_device)
-            .execute(&mut self.get_async_connection().await?)
-            .await?;
-        Ok(())
+        add_device(
+            &mut self.get_async_connection().await?,
+            identifier,
+            name,
+            certificate,
+        )
+        .await
     }
 
     async fn activate_device(&self, target_identifier: &Vec<u8>) -> Result<(), PersistenceError> {
-        use crate::persistence::schema::device::dsl::*;
-        let rows_affected = diesel::update(device)
-            .filter(identifier.eq(target_identifier))
-            .set(last_active.eq(Utc::now().naive_utc()))
-            .execute(&mut self.get_async_connection().await?)
-            .await?;
-
-        let expected_affected_rows_count = 1;
-        if rows_affected != expected_affected_rows_count {
-            return Err(PersistenceError::GeneralError(format!("Invalid number of affected rows: Expected {expected_affected_rows_count}, but got {rows_affected}.")));
-        }
-        Ok(())
+        activate_device(&mut self.get_async_connection().await?, target_identifier).await
     }
 
     async fn get_devices(&self) -> Result<Vec<Device>, PersistenceError> {
-        use crate::persistence::schema::device;
-        Ok(device::table
-            .load(&mut self.get_async_connection().await?)
-            .await?)
+        get_devices(&mut self.get_async_connection().await?).await
     }
 
     async fn get_groups(&self) -> Result<Vec<Group>, PersistenceError> {
-        use crate::persistence::schema::signinggroup;
-        Ok(signinggroup::table
-            .load(&mut self.get_async_connection().await?)
-            .await?)
+        get_groups(&mut self.get_async_connection().await?).await
     }
 }
