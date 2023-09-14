@@ -49,7 +49,7 @@ pub struct Group {
 }
 
 #[derive(Insertable)]
-#[table_name = "signinggroup"]
+#[diesel(table_name=signinggroup)]
 pub struct NewGroup<'a> {
     pub identifier: &'a [u8],
     pub group_name: &'a str,
@@ -60,7 +60,7 @@ pub struct NewGroup<'a> {
 }
 
 #[derive(Insertable)]
-#[table_name = "groupparticipant"]
+#[diesel(table_name=groupparticipant)]
 pub struct NewGroupParticipant {
     pub device_id: i32,
     pub group_id: i32,
