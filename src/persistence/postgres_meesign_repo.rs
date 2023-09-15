@@ -83,7 +83,7 @@ impl MeesignRepo for PostgresMeesignRepo {
 
     async fn activate_device(
         &self,
-        target_identifier: &Vec<u8>,
+        target_identifier: &[u8],
     ) -> Result<Option<Device>, PersistenceError> {
         activate_device(&mut self.get_async_connection().await?, target_identifier).await
     }

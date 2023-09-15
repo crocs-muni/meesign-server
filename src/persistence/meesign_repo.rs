@@ -14,10 +14,7 @@ pub trait MeesignRepo: Send + Sync {
         certificate: &[u8],
     ) -> Result<Device, PersistenceError>;
     async fn get_devices(&self) -> Result<Vec<Device>, PersistenceError>;
-    async fn activate_device(
-        &self,
-        identifier: &Vec<u8>,
-    ) -> Result<Option<Device>, PersistenceError>;
+    async fn activate_device(&self, identifier: &[u8]) -> Result<Option<Device>, PersistenceError>;
 
     // async fn get_device(&self, identifier: &Vec<u8>) -> Option<Device>;
 

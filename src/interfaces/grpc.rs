@@ -82,16 +82,19 @@ impl MeeSign for MeeSignService {
         let mut state = self.state.lock().await;
 
         if let Ok(certificate) = issue_certificate(&name, &csr) {
-            let device_id = cert_to_id(&certificate);
-            if state.add_device(&device_id, &name, kind, &certificate) {
-                Ok(Response::new(msg::RegistrationResponse {
-                    device_id,
+            let identifier = cert_to_id(&certificate);
+            match state
+                .get_repo()
+                .add_device(&identifier, &name, &certificate)
+                .await
+            {
+                Ok(_) => Ok(Response::new(msg::RegistrationResponse {
+                    device_id: identifier,
                     certificate,
-                }))
-            } else {
-                Err(Status::failed_precondition(
+                })),
+                Err(_) => Err(Status::failed_precondition(
                     "Request failed: device was not added",
-                ))
+                )),
             }
         } else {
             Err(Status::failed_precondition(
@@ -164,6 +167,9 @@ impl MeeSign for MeeSignService {
         );
 
         let state = self.state.lock().await;
+        if device_id.is_some() {
+            state.get_repo().activate_device(device_id.unwrap());
+        }
         let task = state.get_task(&task_id).unwrap();
         let request = Some(task.get_request());
 
@@ -203,6 +209,7 @@ impl MeeSign for MeeSignService {
         );
 
         let mut state = self.state.lock().await;
+        state.get_repo().activate_device(&device_id);
         let result = state.update_task(&task_id, &device_id, &data, attempt);
 
         match result {
@@ -229,6 +236,7 @@ impl MeeSign for MeeSignService {
 
         let state = self.state.lock().await;
         let tasks = if let Some(device_id) = device_id {
+            state.get_repo().activate_device(&device_id);
             state
                 .get_device_tasks(&device_id)
                 .iter()
@@ -261,6 +269,7 @@ impl MeeSign for MeeSignService {
 
         let state = self.state.lock().await;
         let groups = if let Some(device_id) = device_id {
+            state.get_repo().activate_device(&device_id);
             state
                 .get_device_groups(&device_id)
                 .iter()
@@ -325,9 +334,11 @@ impl MeeSign for MeeSignService {
                 .state
                 .lock()
                 .await
+                .get_repo()
                 .get_devices()
-                .values()
-                .map(|device| device.as_ref().into())
+                .await?
+                .into_iter()
+                .map(|device| device.into())
                 .collect(),
         };
         Ok(Response::new(resp))
@@ -346,6 +357,14 @@ impl MeeSign for MeeSignService {
             .unwrap_or_else(|| "unknown".to_string());
         let message = request.into_inner().message.replace('\n', "\\n");
         debug!("LogRequest device_id={} message={}", device_str, message);
+
+        if device_id.is_some() {
+            self.state
+                .lock()
+                .await
+                .get_repo()
+                .activate_device(device_id.as_ref().unwrap());
+        }
 
         Ok(Response::new(msg::Resp {
             message: "OK".into(),
@@ -377,6 +396,7 @@ impl MeeSign for MeeSignService {
         let state = self.state.clone();
         tokio::task::spawn(async move {
             let mut state = state.lock().await;
+            state.get_repo().activate_device(&device_id);
             state.decide_task(&task_id, &device_id, accept);
         });
 
@@ -405,6 +425,7 @@ impl MeeSign for MeeSignService {
         );
 
         let mut state = self.state.lock().await;
+        state.get_repo().activate_device(&device_id);
         state.acknowledge_task(&Uuid::from_slice(&task_id).unwrap(), &device_id);
 
         Ok(Response::new(msg::Resp {

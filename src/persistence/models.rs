@@ -24,12 +24,12 @@ pub struct Device {
     pub last_active: NaiveDateTime,
 }
 
-impl From<&Device> for crate::proto::Device {
-    fn from(device: &Device) -> Self {
+impl From<Device> for crate::proto::Device {
+    fn from(device: Device) -> Self {
         crate::proto::Device {
-            identifier: device.identifier.to_vec(),
-            name: device.device_name.to_string(),
-            certificate: device.device_certificate.to_vec(),
+            identifier: device.identifier,
+            name: device.device_name,
+            certificate: device.device_certificate,
             last_active: device.last_active.timestamp_millis() as u64,
         }
     }

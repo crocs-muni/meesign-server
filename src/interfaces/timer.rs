@@ -2,7 +2,8 @@ use crate::state::State;
 use crate::tasks::TaskStatus;
 use crate::{get_timestamp, utils};
 
-use log::debug;
+use log::{debug, error};
+use hex::ToHex;
 use tokio::sync::MutexGuard;
 use tokio::{sync::Mutex, time};
 use tonic::codegen::Arc;
@@ -13,7 +14,7 @@ pub async fn run_timer(state: Arc<Mutex<State>>) -> Result<(), String> {
         interval.tick().await;
         let mut state = state.lock().await;
         check_tasks(&mut state);
-        check_subscribers(&mut state);
+        check_subscribers(&mut state).await;
     }
 }
 
@@ -34,7 +35,7 @@ fn check_tasks(state: &mut MutexGuard<State>) {
     }
 }
 
-fn check_subscribers(state: &mut MutexGuard<State>) {
+async fn check_subscribers(state: &mut MutexGuard<'_, State>) {
     let mut remove = Vec::new();
     for (device_id, tx) in state.get_subscribers() {
         if tx.is_closed() {
@@ -44,7 +45,13 @@ fn check_subscribers(state: &mut MutexGuard<State>) {
             );
             remove.push(device_id.clone());
         } else {
-            state.device_activated(device_id);
+            if let Err(err) = state.get_repo().activate_device(&device_id).await {
+                error!(
+                    "Couldn't activate device {}: {}",
+                    device_id.encode_hex::<String>(),
+                    err
+                )
+            }
         }
     }
     for device_id in remove {

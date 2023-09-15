@@ -18,7 +18,7 @@ pub async fn get_devices(
 
 pub async fn activate_device(
     connection: &mut AsyncPgConnection,
-    target_identifier: &Vec<u8>,
+    target_identifier: &[u8],
 ) -> Result<Option<Device>, PersistenceError> {
     use crate::persistence::schema::device::dsl::*;
     let activated_device = diesel::update(device)

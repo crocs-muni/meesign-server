@@ -41,3 +41,9 @@ impl From<TryFromIntError> for PersistenceError {
         Self::TryFromIntError(value)
     }
 }
+
+impl From<PersistenceError> for tonic::Status {
+    fn from(value: PersistenceError) -> Self {
+        tonic::Status::internal("Internal error occurred")
+    }
+}
