@@ -1,6 +1,6 @@
 use super::{
-    enums::ProtocolType,
-    models::{Device, Group},
+    enums::{KeyType, ProtocolType},
+    models::{Device, Group, Task},
     persistance_error::PersistenceError,
 };
 
@@ -30,4 +30,13 @@ pub trait MeesignRepo: Send + Sync {
     ) -> Result<Group, PersistenceError>;
     // async fn get_group(&self, group_identifier: &Vec<u8>) -> Option<Group>;
     async fn get_groups(&self) -> Result<Vec<Group>, PersistenceError>;
+
+    async fn create_group_task<'a>(
+        &self,
+        name: &str,
+        devices: &[Vec<u8>],
+        threshold: u32,
+        protocol: ProtocolType,
+        key_type: KeyType,
+    ) -> Result<Task, PersistenceError>;
 }

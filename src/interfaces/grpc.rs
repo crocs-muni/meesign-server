@@ -311,9 +311,20 @@ impl MeeSign for MeeSignService {
         );
 
         let mut state = self.state.lock().await;
-        if let Some(task_id) =
-            state.add_group_task(&name, &device_ids, threshold, protocol, key_type, &note)
+        if let Ok(group_task) = state
+            .get_repo()
+            .create_group_task(
+                &name,
+                &device_ids,
+                threshold,
+                protocol.into(),
+                key_type.into(),
+            )
+            .await
         {
+            let task_id = group_task.id;
+            state.send_updates(&task_id);
+            // TODO: use group task
             let task = state.get_task(&task_id).unwrap();
             Ok(Response::new(format_task(&task_id, task, None, None)))
         } else {

@@ -5,6 +5,7 @@ use diesel_async::AsyncPgConnection;
 use crate::persistence::{
     models::{Device, NewDevice},
     persistance_error::PersistenceError,
+    postgres_meesign_repo::utils::NameValidator,
 };
 
 use diesel_async::RunQueryDsl;
@@ -37,14 +38,7 @@ pub async fn add_device(
     name: &str,
     certificate: &[u8],
 ) -> Result<Device, PersistenceError> {
-    const MAX_NAME_LEN: usize = 64;
-
-    if name.chars().count() > MAX_NAME_LEN
-        || name
-            .chars()
-            .any(|x| x.is_ascii_punctuation() || x.is_control())
-        || name.is_empty()
-    {
+    if !name.is_name_valid() {
         return Err(PersistenceError::InvalidArgumentError(format!(
             "Invalid device name: {name}"
         )));

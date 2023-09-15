@@ -6,9 +6,8 @@ use uuid::Uuid;
 use crate::group::Group;
 use crate::interfaces::grpc::format_task;
 use crate::persistence::meesign_repo::MeesignRepo;
-use crate::proto::{KeyType, ProtocolType};
+use crate::proto::KeyType;
 use crate::tasks::decrypt::DecryptTask;
-use crate::tasks::group::GroupTask;
 use crate::tasks::sign::SignTask;
 use crate::tasks::sign_pdf::SignPDFTask;
 use crate::tasks::{Task, TaskResult, TaskStatus};
@@ -33,44 +32,6 @@ impl State {
             subscribers: HashMap::new(),
             repo,
         }
-    }
-
-    pub fn add_group_task(
-        &mut self,
-        name: &str,
-        devices: &[Vec<u8>],
-        threshold: u32,
-        protocol: ProtocolType,
-        key_type: KeyType,
-        note: &Option<String>,
-    ) -> Option<Uuid> {
-        if name.chars().count() > 64
-            || name
-                .chars()
-                .any(|x| x.is_ascii_punctuation() || x.is_control())
-        {
-            warn!("Invalid Group name {}", name);
-            return None;
-        }
-
-        let mut device_list = Vec::new();
-        for device in devices {
-            if !self.devices.contains_key(device.as_slice()) {
-                warn!("Unknown Device ID {}", utils::hextrunc(device));
-                return None;
-            }
-            device_list.push(self.devices.get(device.as_slice()).unwrap().clone());
-        }
-
-        let task = GroupTask::try_new(name, &device_list, threshold, protocol, key_type, note)
-            .ok()
-            .map(|task| Box::new(task) as Box<dyn Task + Send + Sync>);
-
-        let task_id = task.map(|task| self.add_task(task));
-        if let Some(task_id) = &task_id {
-            self.send_updates(task_id);
-        }
-        task_id
     }
 
     pub fn add_sign_task(&mut self, group_id: &[u8], name: &str, data: &[u8]) -> Option<Uuid> {
@@ -285,7 +246,7 @@ impl State {
         &self.subscribers
     }
 
-    fn send_updates(&mut self, task_id: &Uuid) {
+    pub fn send_updates(&mut self, task_id: &Uuid) {
         let task = self.get_task(task_id).unwrap();
         let mut remove = Vec::new();
 

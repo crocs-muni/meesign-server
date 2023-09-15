@@ -1,9 +1,10 @@
 use self::device::{activate_device, add_device, get_devices};
 use self::group::{add_group, get_groups};
+use self::task::create_task;
 
-use super::enums::ProtocolType;
+use super::enums::{KeyType, ProtocolType, TaskType};
 use super::meesign_repo::MeesignRepo;
-use super::models::{Device, Group};
+use super::models::{Device, Group, Task};
 use super::persistance_error::PersistenceError;
 
 use diesel::{Connection, PgConnection};
@@ -16,6 +17,8 @@ use std::sync::Arc;
 
 mod device;
 mod group;
+mod task;
+mod utils;
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 
@@ -113,6 +116,26 @@ impl MeesignRepo for PostgresMeesignRepo {
             threshold,
             protocol,
             certificate,
+        )
+        .await
+    }
+
+    async fn create_group_task<'a>(
+        &self,
+        name: &str,
+        devices: &[Vec<u8>],
+        threshold: u32,
+        protocol_type: ProtocolType,
+        key_type: KeyType,
+    ) -> Result<Task, PersistenceError> {
+        create_task(
+            &mut self.get_async_connection().await?,
+            TaskType::Group,
+            name,
+            devices,
+            threshold,
+            Some(key_type),
+            Some(protocol_type),
         )
         .await
     }

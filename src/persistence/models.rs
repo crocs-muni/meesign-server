@@ -1,10 +1,10 @@
-use chrono::NaiveDateTime;
+use chrono::{DateTime, Local, NaiveDateTime};
 use diesel::{Insertable, Queryable, Selectable};
+use uuid::Uuid;
 
-use crate::persistence::enums::ProtocolType;
 use crate::persistence::schema::*;
 
-use super::enums::KeyType;
+use super::enums::{KeyType, ProtocolType, TaskState, TaskType};
 
 #[derive(Insertable)]
 #[diesel(table_name = device)]
@@ -21,7 +21,7 @@ pub struct Device {
     pub identifier: Vec<u8>,
     pub device_name: String,
     pub device_certificate: Vec<u8>,
-    pub last_active: NaiveDateTime,
+    pub last_active: NaiveDateTime, // TODO: local date time
 }
 
 impl From<Device> for crate::proto::Device {
@@ -64,4 +64,39 @@ pub struct NewGroup<'a> {
 pub struct NewGroupParticipant {
     pub device_id: i32,
     pub group_id: i32,
+}
+
+#[derive(Queryable, Clone, Eq, PartialEq, Selectable)]
+#[diesel(table_name=task)]
+pub struct Task {
+    pub id: Uuid,
+    pub protocol_round: i32,
+    pub attempt_count: i32,
+    pub error_message: Option<String>,
+    pub threshold: i32,
+    pub last_update: DateTime<Local>,
+    pub task_data: Option<Vec<u8>>,
+    pub preprocessed: Option<Vec<u8>>,
+    pub request: Option<Vec<u8>>,
+    pub task_type: TaskType,
+    pub task_state: TaskState,
+    pub key_type: Option<KeyType>,
+    pub protocol_type: Option<ProtocolType>,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name=task)]
+pub struct NewTask<'a> {
+    pub protocol_round: i32,
+    pub attempt_count: i32,
+    pub error_message: Option<&'a str>,
+    pub threshold: i32,
+    pub last_update: Option<DateTime<Local>>,
+    pub task_data: Option<&'a [u8]>,
+    pub preprocessed: Option<&'a [u8]>,
+    pub request: Option<&'a [u8]>,
+    pub task_type: TaskType,
+    pub task_state: TaskState,
+    pub key_type: Option<KeyType>,
+    pub protocol_type: Option<ProtocolType>,
 }

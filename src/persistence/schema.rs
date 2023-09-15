@@ -61,14 +61,24 @@ diesel::table! {
     use diesel::sql_types::*;
     use super::sql_types::Tasktype;
     use super::sql_types::Taskstate;
+    use super::sql_types::Keytype;
+    use super::sql_types::Protocoltype;
 
     task (id) {
-        id -> Int4,
+        id -> Uuid,
         protocol_round -> Int4,
+        attempt_count -> Int4,
         error_message -> Nullable<Varchar>,
+        threshold -> Int4,
+        last_update -> Timestamptz,
+        task_data -> Nullable<Bytea>,
+        preprocessed -> Nullable<Bytea>,
+        request -> Nullable<Bytea>,
         group_id -> Nullable<Int4>,
         task_type -> Tasktype,
         task_state -> Taskstate,
+        key_type -> Nullable<Keytype>,
+        protocol_type -> Nullable<Protocoltype>,
     }
 }
 

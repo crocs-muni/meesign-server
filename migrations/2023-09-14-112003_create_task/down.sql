@@ -1,0 +1,2 @@
+DROP TABLE Task;
+DROP EXTENSION IF EXISTS "uuid-ossp";
