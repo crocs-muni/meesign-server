@@ -3,7 +3,10 @@ use openssl::asn1::{Asn1Integer, Asn1Time};
 use openssl::bn::BigNum;
 use openssl::hash::MessageDigest;
 use openssl::pkey::PKey;
-use openssl::x509::{X509Builder, X509Extension, X509NameBuilder, X509Req};
+use openssl::x509::extension::{
+    AuthorityKeyIdentifier, BasicConstraints, ExtendedKeyUsage, KeyUsage, SubjectKeyIdentifier,
+};
+use openssl::x509::{X509Builder, X509NameBuilder, X509Req};
 use rand::Rng;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
@@ -478,33 +481,26 @@ pub fn issue_certificate(device_name: &str, csr: &[u8]) -> Result<Vec<u8>, Strin
 
     let context = cert_builder.x509v3_context(Some(&CA_CERT), None);
 
-    let basic_constraints = X509Extension::new(
-        None,
-        Some(&context),
-        "basicConstraints",
-        "critical, CA:FALSE",
-    )
-    .unwrap();
+    let basic_constraints = BasicConstraints::new().critical().build().unwrap();
 
-    let subject_key_identifier =
-        X509Extension::new(None, Some(&context), "subjectKeyIdentifier", "hash").unwrap();
+    let subject_key_identifier = SubjectKeyIdentifier::new().build(&context).unwrap();
 
-    let authority_key_identifier = X509Extension::new(
-        None,
-        Some(&context),
-        "authorityKeyIdentifier",
-        "keyid,issuer",
-    )
-    .unwrap();
-    let key_usage = X509Extension::new(
-        None,
-        Some(&context),
-        "keyUsage",
-        "critical, nonRepudiation, digitalSignature, keyEncipherment, keyAgreement",
-    )
-    .unwrap();
-    let extended_key_usage =
-        X509Extension::new(None, Some(&context), "extendedKeyUsage", "clientAuth").unwrap();
+    let authority_key_identifier = AuthorityKeyIdentifier::new()
+        .keyid(false)
+        .issuer(false)
+        .build(&context)
+        .unwrap();
+
+    let key_usage = KeyUsage::new()
+        .critical()
+        .non_repudiation()
+        .digital_signature()
+        .key_encipherment()
+        .key_agreement()
+        .build()
+        .unwrap();
+
+    let extended_key_usage = ExtendedKeyUsage::new().client_auth().build().unwrap();
 
     cert_builder.append_extension(key_usage).unwrap();
     cert_builder.append_extension(extended_key_usage).unwrap();
