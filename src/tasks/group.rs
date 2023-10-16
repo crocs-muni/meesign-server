@@ -1,5 +1,3 @@
-use prost::Message;
-
 use crate::communicator::Communicator;
 use crate::device::Device;
 use crate::get_timestamp;
@@ -11,7 +9,8 @@ use crate::protocols::gg18::GG18Group;
 use crate::protocols::Protocol;
 use crate::tasks::{Task, TaskResult, TaskStatus};
 use log::{info, warn};
-use meesign_crypto::proto::ProtocolMessage;
+use meesign_crypto::proto::{Message as _, ProtocolMessage};
+use prost::Message as _;
 use std::io::Read;
 use std::process::{Command, Stdio};
 use tonic::codegen::Arc;

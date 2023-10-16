@@ -1,8 +1,7 @@
 use crate::communicator::Communicator;
 use crate::proto::ProtocolType;
 use crate::protocols::Protocol;
-use meesign_crypto::proto::{ProtocolGroupInit, ProtocolInit};
-use prost::Message;
+use meesign_crypto::proto::{Message, ProtocolGroupInit, ProtocolInit};
 
 pub struct GG18Group {
     parties: u32,

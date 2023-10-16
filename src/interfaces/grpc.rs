@@ -249,8 +249,8 @@ impl Mpc for MPCService {
         let name = request.name;
         let device_ids = request.device_ids;
         let threshold = request.threshold;
-        let protocol = ProtocolType::from_i32(request.protocol).unwrap();
-        let key_type = KeyType::from_i32(request.key_type).unwrap();
+        let protocol = ProtocolType::try_from(request.protocol).unwrap();
+        let key_type = KeyType::try_from(request.key_type).unwrap();
 
         info!(
             "GroupRequest name={:?} device_ids={:?} threshold={}",

@@ -8,8 +8,8 @@ use crate::protocols::gg18::GG18Sign;
 use crate::protocols::Protocol;
 use crate::tasks::{Task, TaskResult, TaskStatus};
 use log::{info, warn};
-use meesign_crypto::proto::ProtocolMessage;
-use prost::Message;
+use meesign_crypto::proto::{Message as _, ProtocolMessage};
+use prost::Message as _;
 use tonic::codegen::Arc;
 
 pub struct SignTask {

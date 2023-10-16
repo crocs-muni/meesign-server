@@ -1,8 +1,7 @@
 use crate::device::Device;
 use crate::get_timestamp;
 use crate::proto::ProtocolType;
-use meesign_crypto::proto::ProtocolMessage;
-use prost::Message;
+use meesign_crypto::proto::{Message, ProtocolMessage};
 use rand::prelude::SliceRandom;
 use rand::thread_rng;
 use std::collections::HashMap;
