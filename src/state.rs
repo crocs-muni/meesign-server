@@ -131,7 +131,13 @@ impl State {
         task_id
     }
 
-    pub fn add_decrypt_task(&mut self, group_id: &[u8], name: &str, data: &[u8]) -> Option<Uuid> {
+    pub fn add_decrypt_task(
+        &mut self,
+        group_id: &[u8],
+        name: &str,
+        data: &[u8],
+        data_type: &str,
+    ) -> Option<Uuid> {
         let group = self.groups.get(group_id);
         if group.is_none() {
             warn!(
@@ -146,6 +152,7 @@ impl State {
                 group.clone(),
                 name.to_string(),
                 data.to_vec(),
+                data_type.to_string(),
             ))
             .map(|task| Box::new(task) as Box<dyn Task + Sync + Send>),
             KeyType::SignPdf | KeyType::SignChallenge => {

@@ -107,10 +107,11 @@ impl Mpc for MPCService {
         let group_id = request.group_id;
         let name = request.name;
         let data = request.data;
+        let data_type = request.data_type;
         info!("DecryptRequest group_id={}", hex::encode(&group_id));
 
         let mut state = self.state.lock().await;
-        if let Some(task_id) = state.add_decrypt_task(&group_id, &name, &data) {
+        if let Some(task_id) = state.add_decrypt_task(&group_id, &name, &data, &data_type) {
             let task = state.get_task(&task_id).unwrap();
             Ok(Response::new(format_task(&task_id, task, None, None)))
         } else {
