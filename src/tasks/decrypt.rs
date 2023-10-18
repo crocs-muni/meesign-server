@@ -23,7 +23,7 @@ pub struct DecryptTask {
 }
 
 impl DecryptTask {
-    pub fn new(group: Group, name: String, data: Vec<u8>) -> Self {
+    pub fn new(group: Group, name: String, data: Vec<u8>, data_type: String) -> Self {
         let mut devices: Vec<Arc<Device>> = group.devices().to_vec();
         devices.sort_by_key(|x| x.identifier().to_vec());
 
@@ -33,6 +33,7 @@ impl DecryptTask {
             group_id: group.identifier().to_vec(),
             name,
             data: data.clone(),
+            data_type,
         })
         .encode_to_vec();
 
@@ -60,13 +61,13 @@ impl DecryptTask {
     pub(super) fn finalize_task(&mut self) {
         let decrypted = self.protocol.finalize(&mut self.communicator);
         if decrypted.is_none() {
-            self.result = Some(Err("Task failed (message not output)".to_string()));
+            self.result = Some(Err("Task failed (data not output)".to_string()));
             return;
         }
         let decrypted = decrypted.unwrap();
 
         info!(
-            "Message decrypted by group_id={}",
+            "Data decrypted by group_id={}",
             hex::encode(self.group.identifier())
         );
 
