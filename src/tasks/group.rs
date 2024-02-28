@@ -1,6 +1,5 @@
 use crate::communicator::Communicator;
 use crate::device::Device;
-use crate::get_timestamp;
 use crate::group::Group;
 use crate::proto::{KeyType, ProtocolType, TaskType};
 use crate::protocols::elgamal::ElgamalGroup;
@@ -8,6 +7,7 @@ use crate::protocols::frost::FROSTGroup;
 use crate::protocols::gg18::GG18Group;
 use crate::protocols::Protocol;
 use crate::tasks::{Task, TaskResult, TaskStatus};
+use crate::{get_timestamp, utils};
 use log::{info, warn};
 use meesign_crypto::proto::{Message as _, ProtocolMessage};
 use prost::Message as _;
@@ -120,10 +120,10 @@ impl GroupTask {
 
         info!(
             "Group established group_id={} devices={:?}",
-            hex::encode(&identifier),
+            utils::hextrunc(&identifier),
             self.devices
                 .iter()
-                .map(|device| hex::encode(device.identifier()))
+                .map(|device| utils::hextrunc(device.identifier()))
                 .collect::<Vec<_>>()
         );
 

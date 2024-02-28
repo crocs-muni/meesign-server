@@ -21,7 +21,7 @@ use crate::proto::mpc_server::{Mpc, MpcServer};
 use crate::proto::{KeyType, ProtocolType};
 use crate::state::State;
 use crate::tasks::{Task, TaskStatus};
-use crate::{proto as msg, CA_CERT, CA_KEY};
+use crate::{proto as msg, utils, CA_CERT, CA_KEY};
 
 use std::pin::Pin;
 
@@ -88,7 +88,7 @@ impl Mpc for MPCService {
         let group_id = request.group_id;
         let name = request.name;
         let data = request.data;
-        info!("SignRequest group_id={}", hex::encode(&group_id));
+        info!("SignRequest group_id={}", utils::hextrunc(&group_id));
 
         let mut state = self.state.lock().await;
         if let Some(task_id) = state.add_sign_task(&group_id, &name, &data) {
@@ -108,7 +108,7 @@ impl Mpc for MPCService {
         let name = request.name;
         let data = request.data;
         let data_type = request.data_type;
-        info!("DecryptRequest group_id={}", hex::encode(&group_id));
+        info!("DecryptRequest group_id={}", utils::hextrunc(&group_id));
 
         let mut state = self.state.lock().await;
         if let Some(task_id) = state.add_decrypt_task(&group_id, &name, &data, &data_type) {
@@ -133,8 +133,8 @@ impl Mpc for MPCService {
         };
         debug!(
             "TaskRequest task_id={} device_id={}",
-            hex::encode(task_id),
-            hex::encode(device_id.unwrap_or(&[]))
+            utils::hextrunc(task_id.as_bytes()),
+            utils::hextrunc(device_id.unwrap_or(&[]))
         );
 
         let state = self.state.lock().await;
@@ -166,8 +166,8 @@ impl Mpc for MPCService {
         let attempt = request.attempt;
         debug!(
             "TaskUpdate task_id={} device_id={} attempt={}",
-            hex::encode(task_id),
-            hex::encode(&device_id),
+            utils::hextrunc(task_id.as_bytes()),
+            utils::hextrunc(&device_id),
             attempt
         );
 
@@ -191,7 +191,7 @@ impl Mpc for MPCService {
         let device_id = request.device_id;
         let device_str = device_id
             .as_ref()
-            .map(hex::encode)
+            .map(utils::hextrunc)
             .unwrap_or_else(|| "unknown".to_string());
         debug!("TasksRequest device_id={}", device_str);
 
@@ -222,7 +222,7 @@ impl Mpc for MPCService {
         let device_id = request.device_id;
         let device_str = device_id
             .as_ref()
-            .map(hex::encode)
+            .map(utils::hextrunc)
             .unwrap_or_else(|| "unknown".to_string());
         debug!("GroupsRequest device_id={}", device_str);
 
@@ -259,7 +259,10 @@ impl Mpc for MPCService {
         info!(
             "GroupRequest name={:?} device_ids={:?} threshold={}",
             &name,
-            device_ids.iter().map(hex::encode).collect::<Vec<String>>(),
+            device_ids
+                .iter()
+                .map(utils::hextrunc)
+                .collect::<Vec<String>>(),
             threshold
         );
 
@@ -300,7 +303,7 @@ impl Mpc for MPCService {
 
         let device_str = device_id
             .as_ref()
-            .map(hex::encode)
+            .map(utils::hextrunc)
             .unwrap_or_else(|| "unknown".to_string());
         let message = request.into_inner().message;
         debug!("LogRequest device_id={} message={}", device_str, message);
@@ -335,8 +338,8 @@ impl Mpc for MPCService {
 
         info!(
             "TaskDecision task_id={} device_id={} accept={}",
-            hex::encode(task_id),
-            hex::encode(&device_id),
+            utils::hextrunc(task_id.as_bytes()),
+            utils::hextrunc(&device_id),
             accept
         );
 
@@ -368,8 +371,8 @@ impl Mpc for MPCService {
 
         debug!(
             "TaskAcknowledgement task_id={} device_id={}",
-            hex::encode(&task_id),
-            hex::encode(&device_id)
+            utils::hextrunc(&task_id),
+            utils::hextrunc(&device_id)
         );
 
         let mut state = self.state.lock().await;
