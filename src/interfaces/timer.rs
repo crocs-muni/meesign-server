@@ -2,7 +2,7 @@ use crate::get_timestamp;
 use crate::state::State;
 use crate::tasks::TaskStatus;
 
-use log::info;
+use log::debug;
 use tokio::sync::MutexGuard;
 use tokio::{sync::Mutex, time};
 use tonic::codegen::Arc;
@@ -25,7 +25,7 @@ fn check_tasks(state: &mut MutexGuard<State>) {
             && task.is_approved()
             && timestamp - task.last_update() > 30
         {
-            info!("Stale task detected task_id={:?}", hex::encode(task_id));
+            debug!("Stale task detected task_id={:?}", hex::encode(task_id));
             restarts.push(*task_id);
         }
     }
@@ -38,7 +38,7 @@ fn check_subscribers(state: &mut MutexGuard<State>) {
     let mut remove = Vec::new();
     for (device_id, tx) in state.get_subscribers() {
         if tx.is_closed() {
-            info!(
+            debug!(
                 "Closed channel detected device_id={:?}",
                 hex::encode(device_id)
             );

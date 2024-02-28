@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use log::{error, warn};
+use log::{error, warn, debug};
 use uuid::Uuid;
 
 use crate::device::Device;
@@ -12,7 +12,6 @@ use crate::tasks::group::GroupTask;
 use crate::tasks::sign::SignTask;
 use crate::tasks::sign_pdf::SignPDFTask;
 use crate::tasks::{Task, TaskResult, TaskStatus};
-use log::info;
 use tokio::sync::mpsc::Sender;
 use tonic::codegen::Arc;
 use tonic::Status;
@@ -251,8 +250,14 @@ impl State {
         let change = task.decide(device, decision);
         if change.is_some() {
             self.send_updates(task_id);
+            if change.unwrap() {
+                log::info!("Task approved task_id={}", hex::encode(task_id));
+            } else {
+                log::info!("Task declined task_id={}", hex::encode(task_id));
+            }
+            return true
         }
-        change.is_some()
+        false
     }
 
     pub fn acknowledge_task(&mut self, task: &Uuid, device: &[u8]) {
@@ -296,7 +301,7 @@ impl State {
 
     pub fn remove_subscriber(&mut self, device_id: &Vec<u8>) {
         self.subscribers.remove(device_id);
-        info!("Removing subscriber device_id={:?}", hex::encode(device_id));
+        debug!("Removing subscriber device_id={:?}", hex::encode(device_id));
     }
 
     pub fn get_subscribers(&self) -> &HashMap<Vec<u8>, Sender<Result<crate::proto::Task, Status>>> {
@@ -312,7 +317,7 @@ impl State {
                 let result = tx.try_send(Ok(format_task(task_id, task, Some(device_id), None)));
 
                 if result.is_err() {
-                    info!(
+                    debug!(
                         "Closed channel detected device_id={}",
                         hex::encode(device_id)
                     );
