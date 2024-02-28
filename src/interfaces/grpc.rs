@@ -164,7 +164,7 @@ impl Mpc for MPCService {
         let task_id = Uuid::from_slice(&request.task).unwrap();
         let data = request.data;
         let attempt = request.attempt;
-        info!(
+        debug!(
             "TaskUpdate task_id={} device_id={} attempt={}",
             hex::encode(task_id),
             hex::encode(&device_id),
@@ -303,7 +303,7 @@ impl Mpc for MPCService {
             .map(hex::encode)
             .unwrap_or_else(|| "unknown".to_string());
         let message = request.into_inner().message;
-        info!("LogRequest device_id={} message={}", device_str, message);
+        debug!("LogRequest device_id={} message={}", device_str, message);
 
         if device_id.is_some() {
             self.state
@@ -366,7 +366,7 @@ impl Mpc for MPCService {
 
         let task_id = request.into_inner().task_id;
 
-        info!(
+        debug!(
             "TaskAcknowledgement task_id={} device_id={}",
             hex::encode(&task_id),
             hex::encode(&device_id)
