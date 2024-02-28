@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use log::{error, warn, debug};
+use log::{debug, error, warn};
 use uuid::Uuid;
 
 use crate::device::Device;
@@ -12,6 +12,7 @@ use crate::tasks::group::GroupTask;
 use crate::tasks::sign::SignTask;
 use crate::tasks::sign_pdf::SignPDFTask;
 use crate::tasks::{Task, TaskResult, TaskStatus};
+use crate::utils;
 use tokio::sync::mpsc::Sender;
 use tonic::codegen::Arc;
 use tonic::Status;
@@ -48,7 +49,7 @@ impl State {
         if self.devices.contains_key(identifier) {
             warn!(
                 "Device identifier already registered {}",
-                hex::encode(identifier)
+                utils::hextrunc(identifier)
             );
             return false;
         }
@@ -76,7 +77,7 @@ impl State {
         let mut device_list = Vec::new();
         for device in devices {
             if !self.devices.contains_key(device.as_slice()) {
-                warn!("Unknown Device ID {}", hex::encode(device));
+                warn!("Unknown Device ID {}", utils::hextrunc(device));
                 return None;
             }
             device_list.push(self.devices.get(device.as_slice()).unwrap().clone());
@@ -98,7 +99,7 @@ impl State {
         if group.is_none() {
             warn!(
                 "Signing requested from an unknown group group_id={}",
-                hex::encode(group_id)
+                utils::hextrunc(group_id)
             );
             return None;
         }
@@ -117,7 +118,7 @@ impl State {
             KeyType::Decrypt => {
                 warn!(
                     "Signing request made for decryption group group_id={}",
-                    hex::encode(group_id)
+                    utils::hextrunc(group_id)
                 );
                 return None;
             }
@@ -141,7 +142,7 @@ impl State {
         if group.is_none() {
             warn!(
                 "Decryption requested from an unknown group group_id={}",
-                hex::encode(group_id)
+                utils::hextrunc(group_id)
             );
             return None;
         }
@@ -157,7 +158,7 @@ impl State {
             KeyType::SignPdf | KeyType::SignChallenge => {
                 warn!(
                     "Decryption request made for a signing group group_id={}",
-                    hex::encode(group_id)
+                    utils::hextrunc(group_id)
                 );
                 return None;
             }
@@ -224,8 +225,8 @@ impl State {
         if attempt != task.get_attempts() {
             warn!(
                 "Stale update discarded task_id={} device_id={} attempt={}",
-                hex::encode(task_id),
-                hex::encode(device),
+                utils::hextrunc(task_id.as_bytes()),
+                utils::hextrunc(device),
                 attempt
             );
             return Err("Stale update".to_string());
@@ -251,11 +252,17 @@ impl State {
         if change.is_some() {
             self.send_updates(task_id);
             if change.unwrap() {
-                log::info!("Task approved task_id={}", hex::encode(task_id));
+                log::info!(
+                    "Task approved task_id={}",
+                    utils::hextrunc(task_id.as_bytes())
+                );
             } else {
-                log::info!("Task declined task_id={}", hex::encode(task_id));
+                log::info!(
+                    "Task declined task_id={}",
+                    utils::hextrunc(task_id.as_bytes())
+                );
             }
-            return true
+            return true;
         }
         false
     }
@@ -273,7 +280,7 @@ impl State {
         if let Some(device) = self.devices.get(device_id) {
             device.activated();
         } else {
-            error!("Unknown Device ID {}", hex::encode(device_id));
+            error!("Unknown Device ID {}", utils::hextrunc(device_id));
         }
     }
 
@@ -301,7 +308,10 @@ impl State {
 
     pub fn remove_subscriber(&mut self, device_id: &Vec<u8>) {
         self.subscribers.remove(device_id);
-        debug!("Removing subscriber device_id={:?}", hex::encode(device_id));
+        debug!(
+            "Removing subscriber device_id={}",
+            utils::hextrunc(device_id)
+        );
     }
 
     pub fn get_subscribers(&self) -> &HashMap<Vec<u8>, Sender<Result<crate::proto::Task, Status>>> {
@@ -318,8 +328,8 @@ impl State {
 
                 if result.is_err() {
                     debug!(
-                        "Closed channel detected device_id={}",
-                        hex::encode(device_id)
+                        "Closed channel detected device_id={}…",
+                        utils::hextrunc(&device_id[..4])
                     );
                     remove.push(device_id.to_vec());
                 }

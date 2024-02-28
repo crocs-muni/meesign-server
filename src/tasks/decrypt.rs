@@ -1,11 +1,11 @@
 use crate::communicator::Communicator;
 use crate::device::Device;
-use crate::get_timestamp;
 use crate::group::Group;
 use crate::proto::{DecryptRequest, ProtocolType, TaskType};
 use crate::protocols::elgamal::ElgamalDecrypt;
 use crate::protocols::Protocol;
 use crate::tasks::{Task, TaskResult, TaskStatus};
+use crate::{get_timestamp, utils};
 use log::info;
 use meesign_crypto::proto::{Message as _, ProtocolMessage};
 use prost::Message as _;
@@ -68,7 +68,7 @@ impl DecryptTask {
 
         info!(
             "Data decrypted by group_id={}",
-            hex::encode(self.group.identifier())
+            utils::hextrunc(self.group.identifier())
         );
 
         self.result = Some(Ok(decrypted));
