@@ -53,7 +53,7 @@ const VERSION: Option<&str> = option_env!("CARGO_PKG_VERSION");
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
-pub(self) struct Args {
+struct Args {
     #[clap(short, long, default_value_t = 1337)]
     port: u16,
 

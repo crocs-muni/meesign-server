@@ -131,8 +131,8 @@ impl Communicator {
         self.output.clear();
         let indices = self.get_protocol_indices();
 
-        for i in 0..self.threshold as usize {
-            self.output.push(f(indices[i]));
+        for idx in indices {
+            self.output.push(f(idx));
         }
 
         self.clear_input();
