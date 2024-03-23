@@ -96,6 +96,8 @@ impl From<&Group> for crate::proto::Group {
 
 #[cfg(test)]
 mod tests {
+    use crate::proto::DeviceKind;
+
     use super::*;
 
     #[test]
@@ -181,6 +183,7 @@ mod tests {
                 Arc::new(Device::new(
                     vec![i as u8],
                     format!("d{}", i),
+                    DeviceKind::User,
                     vec![0xf0 | i as u8],
                 ))
             })

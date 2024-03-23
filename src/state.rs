@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::device::Device;
 use crate::group::Group;
 use crate::interfaces::grpc::format_task;
-use crate::proto::{KeyType, ProtocolType};
+use crate::proto::{DeviceKind, KeyType, ProtocolType};
 use crate::tasks::decrypt::DecryptTask;
 use crate::tasks::group::GroupTask;
 use crate::tasks::sign::SignTask;
@@ -34,7 +34,13 @@ impl State {
         }
     }
 
-    pub fn add_device(&mut self, identifier: &[u8], name: &str, certificate: &[u8]) -> bool {
+    pub fn add_device(
+        &mut self,
+        identifier: &[u8],
+        name: &str,
+        kind: DeviceKind,
+        certificate: &[u8],
+    ) -> bool {
         if name.chars().count() > 64
             || name
                 .chars()
@@ -44,7 +50,12 @@ impl State {
             return false;
         }
 
-        let device = Device::new(identifier.to_vec(), name.to_owned(), certificate.to_vec());
+        let device = Device::new(
+            identifier.to_vec(),
+            name.to_owned(),
+            kind,
+            certificate.to_vec(),
+        );
         // TODO improve when feature map_try_insert gets stabilized
         if self.devices.contains_key(identifier) {
             warn!(

@@ -43,9 +43,15 @@ enum TaskType {
   DECRYPT = 3;
 }
 
+enum DeviceKind {
+  USER = 0;
+  BOT = 1;
+}
+
 message RegistrationRequest {
   string name = 1;
-  bytes csr = 2; // CSR in DER format
+  DeviceKind kind = 2;
+  bytes csr = 3; // CSR in DER format
 }
 
 message RegistrationResponse {
@@ -81,8 +87,9 @@ message Devices {
 message Device {
   bytes identifier = 1;
   string name = 2;
-  bytes certificate = 3;
-  uint64 last_active = 4;
+  DeviceKind kind = 3;
+  bytes certificate = 4;
+  uint64 last_active = 5;
 }
 
 message SignRequest {

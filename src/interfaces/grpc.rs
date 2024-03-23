@@ -17,8 +17,7 @@ use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use crate::proto::{KeyType, ProtocolType};
-use crate::proto::{MeeSign, MeeSignServer};
+use crate::proto::{DeviceKind, KeyType, MeeSign, MeeSignServer, ProtocolType};
 use crate::state::State;
 use crate::tasks::{Task, TaskStatus};
 use crate::{proto as msg, utils, CA_CERT, CA_KEY};
@@ -56,14 +55,15 @@ impl MeeSign for MeeSignService {
     ) -> Result<Response<msg::RegistrationResponse>, Status> {
         let request = request.into_inner();
         let name = request.name;
+        let kind = DeviceKind::try_from(request.kind).unwrap();
         let csr = request.csr;
-        info!("RegistrationRequest name={:?}", name);
+        info!("RegistrationRequest name={:?} kind={:?}", name, kind);
 
         let mut state = self.state.lock().await;
 
         if let Ok(certificate) = issue_certificate(&name, &csr) {
             let device_id = cert_to_id(&certificate);
-            if state.add_device(&device_id, &name, &certificate) {
+            if state.add_device(&device_id, &name, kind, &certificate) {
                 Ok(Response::new(msg::RegistrationResponse {
                     device_id,
                     certificate,
