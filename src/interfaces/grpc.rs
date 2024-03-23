@@ -17,26 +17,26 @@ use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use crate::proto::mpc_server::{Mpc, MpcServer};
 use crate::proto::{KeyType, ProtocolType};
+use crate::proto::{MeeSign, MeeSignServer};
 use crate::state::State;
 use crate::tasks::{Task, TaskStatus};
 use crate::{proto as msg, utils, CA_CERT, CA_KEY};
 
 use std::pin::Pin;
 
-pub struct MPCService {
+pub struct MeeSignService {
     state: Arc<Mutex<State>>,
 }
 
-impl MPCService {
+impl MeeSignService {
     pub fn new(state: Arc<Mutex<State>>) -> Self {
-        MPCService { state }
+        MeeSignService { state }
     }
 }
 
 #[tonic::async_trait]
-impl Mpc for MPCService {
+impl MeeSign for MeeSignService {
     type SubscribeUpdatesStream =
         Pin<Box<dyn Stream<Item = Result<msg::Task, Status>> + Send + 'static>>;
 
@@ -530,7 +530,7 @@ pub async fn run_grpc(state: Arc<Mutex<State>>, addr: &str, port: u16) -> Result
     let addr = format!("{}:{}", addr, port)
         .parse()
         .map_err(|_| String::from("Unable to parse server address"))?;
-    let node = MPCService::new(state);
+    let node = MeeSignService::new(state);
 
     let ca_cert = CA_CERT
         .to_pem()
@@ -550,7 +550,7 @@ pub async fn run_grpc(state: Arc<Mutex<State>>, addr: &str, port: u16) -> Result
                 .client_auth_optional(true),
         )
         .map_err(|_| "Unable to setup TLS for gRPC server")?
-        .add_service(MpcServer::new(node))
+        .add_service(MeeSignServer::new(node))
         .serve(addr)
         .await
         .map_err(|_| String::from("Unable to run gRPC server"))?;

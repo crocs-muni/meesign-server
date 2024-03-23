@@ -21,6 +21,9 @@ mod utils;
 mod proto {
     #![allow(clippy::derive_partial_eq_without_eq)]
     tonic::include_proto!("meesign");
+    pub(crate) use mee_sign_client::MeeSignClient;
+    pub(crate) use mee_sign_server::MeeSign;
+    pub(crate) use mee_sign_server::MeeSignServer;
 
     impl From<meesign_crypto::proto::ProtocolType> for ProtocolType {
         fn from(proto: meesign_crypto::proto::ProtocolType) -> Self {
@@ -96,8 +99,8 @@ async fn main() -> Result<(), String> {
 
 #[cfg(feature = "cli")]
 mod cli {
-    use crate::proto::mpc_client::MpcClient;
     use crate::proto::KeyType;
+    use crate::proto::MeeSignClient;
     use crate::{Args, CA_CERT};
     use clap::Subcommand;
     use std::str::FromStr;
@@ -152,9 +155,9 @@ mod cli {
             .await
             .map_err(|_| "Unable to connect to the server".to_string())?;
 
-            let mut client = MpcClient::new(channel);
+            let mut client = MeeSignClient::new(channel);
 
-            // TODO Refactor once MpcClient (GrpcClient) can be passed to functions more ergonomically
+            // TODO Refactor once MeeSignClient (GrpcClient) can be passed to functions more ergonomically
             // More info here https://github.com/hyperium/tonic/issues/110
             match command {
                 Commands::GetDevices => {
