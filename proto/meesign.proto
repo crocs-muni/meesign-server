@@ -1,7 +1,7 @@
 syntax = "proto3";
 package meesign;
 
-service MPC {
+service MeeSign {
   rpc GetServerInfo(ServerInfoRequest) returns (ServerInfo);
   rpc Register(RegistrationRequest) returns (RegistrationResponse);
   rpc Sign(SignRequest) returns (Task);
