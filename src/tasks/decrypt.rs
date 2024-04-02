@@ -88,7 +88,7 @@ impl DecryptTask {
     pub(super) fn update_internal(
         &mut self,
         device_id: &[u8],
-        data: &[u8],
+        data: &Vec<Vec<u8>>,
     ) -> Result<bool, String> {
         if self.communicator.accept_count() < self.group.threshold() {
             return Err("Not enough agreements to proceed with the protocol.".to_string());
@@ -98,9 +98,20 @@ impl DecryptTask {
             return Err("Wasn't waiting for a message from this ID.".to_string());
         }
 
-        let data =
-            ProtocolMessage::decode(data).map_err(|_| String::from("Expected ProtocolMessage."))?;
-        self.communicator.receive_messages(device_id, data.message);
+        let messages: Vec<_> = data
+            .iter()
+            .map(|d| {
+                ProtocolMessage::decode(d.as_slice())
+                    .map_err(|_| String::from("Expected ProtocolMessage."))
+                    .map(|m| m.message)
+            })
+            .collect();
+        if messages.iter().any(|m| m.is_err()) {
+            return Err("Failed to decode messages".to_string());
+        }
+        let messages = messages.into_iter().map(|m| m.unwrap()).collect();
+
+        self.communicator.receive_messages(device_id, messages);
         self.last_update = get_timestamp();
 
         if self.communicator.round_received() && self.protocol.round() <= self.protocol.last_round()
@@ -144,12 +155,12 @@ impl Task for DecryptTask {
         TaskType::Decrypt
     }
 
-    fn get_work(&self, device_id: Option<&[u8]>) -> Option<Vec<u8>> {
+    fn get_work(&self, device_id: Option<&[u8]>) -> Vec<Vec<u8>> {
         if device_id.is_none() || !self.waiting_for(device_id.unwrap()) {
-            return None;
+            return Vec::new();
         }
 
-        self.communicator.get_message(device_id.unwrap())
+        self.communicator.get_messages(device_id.unwrap())
     }
 
     fn get_result(&self) -> Option<TaskResult> {
@@ -167,7 +178,7 @@ impl Task for DecryptTask {
         )
     }
 
-    fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<bool, String> {
+    fn update(&mut self, device_id: &[u8], data: &Vec<Vec<u8>>) -> Result<bool, String> {
         let result = self.update_internal(device_id, data);
         if let Ok(true) = result {
             self.next_round();

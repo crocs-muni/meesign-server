@@ -1,4 +1,4 @@
-use log::{debug, info};
+use log::{debug, info, warn};
 use openssl::asn1::{Asn1Integer, Asn1Time};
 use openssl::bn::BigNum;
 use openssl::hash::MessageDigest;
@@ -164,6 +164,15 @@ impl MeeSign for MeeSignService {
         let task_id = Uuid::from_slice(&request.task).unwrap();
         let data = request.data;
         let attempt = request.attempt;
+        if data.is_empty() {
+            warn!(
+                "TaskUpdate task_id={} device_id={} attempt={} data empty",
+                utils::hextrunc(task_id.as_bytes()),
+                utils::hextrunc(&device_id),
+                attempt
+            );
+            return Err(Status::invalid_argument("Data must not be empty"));
+        }
         debug!(
             "TaskUpdate task_id={} device_id={} attempt={}",
             utils::hextrunc(task_id.as_bytes()),
@@ -422,12 +431,12 @@ pub fn format_task(
         TaskStatus::Finished => (
             msg::task::TaskState::Finished,
             u16::MAX,
-            Some(task.get_result().unwrap().as_bytes().to_vec()),
+            vec![task.get_result().unwrap().as_bytes().to_vec()],
         ),
         TaskStatus::Failed(data) => (
             msg::task::TaskState::Failed,
             u16::MAX,
-            Some(data.as_bytes().to_vec()),
+            vec![data.as_bytes().to_vec()],
         ),
     };
 

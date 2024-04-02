@@ -38,14 +38,14 @@ impl TaskResult {
 pub trait Task {
     fn get_status(&self) -> TaskStatus;
     fn get_type(&self) -> crate::proto::TaskType;
-    fn get_work(&self, device_id: Option<&[u8]>) -> Option<Vec<u8>>;
+    fn get_work(&self, device_id: Option<&[u8]>) -> Vec<Vec<u8>>;
     fn get_result(&self) -> Option<TaskResult>;
     fn get_decisions(&self) -> (u32, u32);
     /// Update protocol state with `data` from `device_id`
     ///
     /// # Returns
     /// `Ok(true)` if this update caused the next round to start; `Ok(false)` otherwise.
-    fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<bool, String>;
+    fn update(&mut self, device_id: &[u8], data: &Vec<Vec<u8>>) -> Result<bool, String>;
 
     /// Attempt to restart protocol in task
     ///
