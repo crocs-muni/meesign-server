@@ -124,13 +124,13 @@ message Task {
   uint32 attempt = 5;
   uint32 accept = 6; // Number of task accepts
   uint32 reject = 7; // Number of task rejects
-  optional bytes data = 8; // If present, the task is waiting for recipient's action
+  repeated bytes data = 8; // If present, the task is waiting for recipient's action; in case a given device controls multiple shares, multiple inputs are sent, ordered by share indices
   optional bytes request = 9; // Serialized SignRequest or TaskRequest; present only when queried directly
 }
 
 message TaskUpdate {
   bytes task = 1;
-  bytes data = 2;
+  repeated bytes data = 2; // In case a given device controls multiple shares, send responses ordered by share indices
   uint32 attempt = 3;
 }
 

@@ -229,7 +229,7 @@ impl State {
         &mut self,
         task_id: &Uuid,
         device: &[u8],
-        data: &[u8],
+        data: &Vec<Vec<u8>>,
         attempt: u32,
     ) -> Result<bool, String> {
         let task = self.tasks.get_mut(task_id).unwrap();

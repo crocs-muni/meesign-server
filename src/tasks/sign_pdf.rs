@@ -116,7 +116,7 @@ impl Task for SignPDFTask {
         TaskType::SignPdf
     }
 
-    fn get_work(&self, device_id: Option<&[u8]>) -> Option<Vec<u8>> {
+    fn get_work(&self, device_id: Option<&[u8]>) -> Vec<Vec<u8>> {
         self.sign_task.get_work(device_id)
     }
 
@@ -132,7 +132,7 @@ impl Task for SignPDFTask {
         self.sign_task.get_decisions()
     }
 
-    fn update(&mut self, device_id: &[u8], data: &[u8]) -> Result<bool, String> {
+    fn update(&mut self, device_id: &[u8], data: &Vec<Vec<u8>>) -> Result<bool, String> {
         let result = self.sign_task.update_internal(device_id, data);
         if let Ok(true) = result {
             self.next_round();

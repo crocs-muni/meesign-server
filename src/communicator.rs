@@ -74,32 +74,42 @@ impl Communicator {
     ///
     /// * `from_identifier` - identifier of device from which is this broadcast received
     /// * `message` - vector of length (threshold - 1) containing messages for other parties, sending party is excluded
-    pub fn receive_messages(&mut self, from_identifier: &[u8], message: Vec<Vec<u8>>) -> bool {
-        assert_eq!(message.len(), (self.threshold - 1) as usize);
-
-        let from_index = self.identifier_to_index(from_identifier);
-        if from_index.is_none() {
+    pub fn receive_messages(
+        &mut self,
+        from_identifier: &[u8],
+        messages: Vec<Vec<Vec<u8>>>,
+    ) -> bool {
+        let from_indices = self.identifier_to_indices(from_identifier);
+        if messages.is_empty() || from_indices.len() != messages.len() {
             return false;
         }
-        let from_index = from_index.unwrap();
 
-        self.input[from_index] = message.into_iter().map(Some).collect();
-        self.input[from_index].insert(from_index, None);
+        for (from_index, message) in from_indices.into_iter().zip(messages) {
+            assert_eq!(message.len(), (self.threshold - 1) as usize);
+
+            self.input[from_index] = message.into_iter().map(Some).collect();
+            self.input[from_index].insert(from_index, None);
+        }
         true
     }
 
-    /// Is waiting for a message from the given device identifier
-    pub fn waiting_for(&self, device_identifier: &[u8]) -> bool {
-        let device_index = self.identifier_to_index(device_identifier);
-        if device_index.is_none() {
+    /// Is waiting for a message from the given device id
+    pub fn waiting_for(&self, device_id: &[u8]) -> bool {
+        let device_indices = self.identifier_to_indices(device_id);
+        if device_indices.is_empty() {
             return false;
         }
-        let device_index = device_index.unwrap();
-
-        self.input
-            .get(device_index)
-            .map(|messages| !messages.iter().any(Option::is_some))
-            .unwrap_or(true)
+        for device_index in device_indices.into_iter() {
+            if self
+                .input
+                .get(device_index)
+                .map(|messages| !messages.iter().any(Option::is_some))
+                .unwrap_or(true)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// Moves messages from incoming buffers to outgoing buffers
@@ -154,11 +164,12 @@ impl Communicator {
             == 0
     }
 
-    /// Get message for given device identifier
-    pub fn get_message(&self, device_identifier: &[u8]) -> Option<Vec<u8>> {
-        self.identifier_to_index(device_identifier)
-            .and_then(|device_identifier| self.output.get(device_identifier))
-            .map(Vec::clone)
+    /// Get message for given device id
+    pub fn get_messages(&self, device_id: &[u8]) -> Vec<Vec<u8>> {
+        self.identifier_to_indices(device_id)
+            .into_iter()
+            .map(|idx| self.output.get(idx).map(Vec::clone).unwrap_or_default())
+            .collect()
     }
 
     /// Get final message
@@ -278,11 +289,19 @@ impl Communicator {
         indices
     }
 
-    /// Translate device identifier to `active_devices` index
-    fn identifier_to_index(&self, device_id: &[u8]) -> Option<usize> {
-        self.active_devices
-            .as_ref()
-            .and_then(|list| list.iter().position(|id| id == device_id))
+    /// Translate device identifier to `active_devices` indices
+    fn identifier_to_indices(&self, device_id: &[u8]) -> Vec<usize> {
+        if self.active_devices.is_none() {
+            return Vec::new();
+        }
+
+        let mut indices = Vec::new();
+        for (idx, device) in self.active_devices.as_ref().unwrap().iter().enumerate() {
+            if device == device_id {
+                indices.push(idx);
+            }
+        }
+        indices
     }
 }
 
@@ -312,8 +331,11 @@ mod tests {
         assert_eq!(communicator.accept_count(), 0);
         assert_eq!(communicator.reject_count(), 0);
         assert_eq!(communicator.round_received(), false);
-        assert_eq!(communicator.get_message(d0), None);
-        assert_eq!(communicator.get_message(&[0x00, 0x00]), None);
+        assert_eq!(communicator.get_messages(d0), Vec::<Vec<u8>>::new());
+        assert_eq!(
+            communicator.get_messages(&[0x00, 0x00]),
+            Vec::<Vec<u8>>::new()
+        );
         assert_eq!(communicator.device_decided(d0), false);
         assert_eq!(communicator.device_decided(&[0x00, 0x00]), false);
         assert_eq!(communicator.waiting_for(d0), false);
@@ -380,7 +402,7 @@ mod tests {
             assert_eq!(
                 communicator.receive_messages(
                     devices[idx].identifier(),
-                    vec![vec![]; active_indices.len() - 1]
+                    vec![vec![vec![]; active_indices.len() - 1]]
                 ),
                 active_indices.contains(&idx)
             );
@@ -392,14 +414,21 @@ mod tests {
         assert_eq!(communicator.round_received(), true);
 
         for idx in 0..devices.len() {
-            assert_eq!(communicator.get_message(devices[idx].identifier()), None);
+            assert_eq!(
+                communicator.get_messages(devices[idx].identifier()),
+                if active_indices.contains(&idx) {
+                    vec![vec![]]
+                } else {
+                    vec![]
+                }
+            );
         }
         communicator.relay();
         for idx in 0..devices.len() {
             assert_eq!(
-                communicator
-                    .get_message(devices[idx].identifier())
-                    .is_some(),
+                !communicator
+                    .get_messages(devices[idx].identifier())
+                    .is_empty(),
                 active_indices.contains(&idx)
             );
         }
@@ -433,7 +462,9 @@ mod tests {
         let mut communicator = Communicator::new(&devices, 3, ProtocolType::Gg18);
         communicator.decide(devices[0].identifier(), true);
         communicator.decide(devices[1].identifier(), true);
-        communicator.receive_messages(devices[0].identifier(), vec![vec![]; 1]);
+        communicator.decide(devices[2].identifier(), true);
+        communicator.set_active_devices();
+        communicator.receive_messages(devices[0].identifier(), vec![vec![vec![]; 1]]);
     }
 
     #[test]
@@ -443,7 +474,9 @@ mod tests {
         let mut communicator = Communicator::new(&devices, 3, ProtocolType::Gg18);
         communicator.decide(devices[0].identifier(), true);
         communicator.decide(devices[1].identifier(), true);
-        communicator.receive_messages(devices[0].identifier(), vec![vec![]; 3]);
+        communicator.decide(devices[2].identifier(), true);
+        communicator.set_active_devices();
+        communicator.receive_messages(devices[0].identifier(), vec![vec![vec![]; 3]]);
     }
 
     #[test]
@@ -488,13 +521,16 @@ mod tests {
         );
         communicator.send_all(|idx| vec![idx as u8]);
         assert_eq!(
-            communicator.get_message(devices[0].identifier()),
-            Some(vec![0])
+            communicator.get_messages(devices[0].identifier()),
+            vec![vec![0]]
         );
-        assert_eq!(communicator.get_message(devices[1].identifier()), None);
         assert_eq!(
-            communicator.get_message(devices[2].identifier()),
-            Some(vec![2])
+            communicator.get_messages(devices[1].identifier()),
+            Vec::<Vec<u8>>::new()
+        );
+        assert_eq!(
+            communicator.get_messages(devices[2].identifier()),
+            vec![vec![2]]
         );
     }
 
