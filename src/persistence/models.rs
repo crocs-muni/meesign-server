@@ -1,4 +1,4 @@
-use chrono::{DateTime, Local, NaiveDateTime};
+use chrono::{DateTime, Local};
 use diesel::{Insertable, Queryable, Selectable};
 use uuid::Uuid;
 
@@ -21,7 +21,7 @@ pub struct Device {
     pub identifier: Vec<u8>,
     pub device_name: String,
     pub device_certificate: Vec<u8>,
-    pub last_active: NaiveDateTime, // TODO: local date time
+    pub last_active: DateTime<Local>,
 }
 
 impl From<Device> for crate::proto::Device {

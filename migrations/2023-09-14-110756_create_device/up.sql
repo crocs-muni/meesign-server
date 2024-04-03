@@ -3,5 +3,5 @@ CREATE TABLE Device (
     identifier bytea UNIQUE NOT NULL,
     device_name varchar UNIQUE NOT NULL,
     device_certificate bytea NOT NULL,
-    last_active timestamp NOT NULL DEFAULT NOW()
+    last_active timestamptz NOT NULL DEFAULT NOW()
 );

@@ -28,7 +28,7 @@ diesel::table! {
         identifier -> Bytea,
         device_name -> Varchar,
         device_certificate -> Bytea,
-        last_active -> Timestamp,
+        last_active -> Timestamptz,
     }
 }
 

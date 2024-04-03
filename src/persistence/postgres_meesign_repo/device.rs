@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::Local;
 use diesel::{ExpressionMethods, QueryDsl, SelectableHelper};
 use diesel_async::AsyncPgConnection;
 
@@ -24,7 +24,7 @@ pub async fn activate_device(
     use crate::persistence::schema::device::dsl::*;
     let activated_device = diesel::update(device)
         .filter(identifier.eq(target_identifier))
-        .set(last_active.eq(Utc::now().naive_local()))
+        .set(last_active.eq(Local::now()))
         .returning(Device::as_returning())
         .get_result(connection)
         .await?;
@@ -128,7 +128,7 @@ mod test {
             &vec![1, 2, 3],
         )
         .await?;
-        let Err(_) = add_device(& mut connection, &identifier, "user2", &vec![3, 2, 1]).await else {
+        let Err(_) = add_device(&mut connection, &identifier, "user2", &vec![3, 2, 1]).await else {
             panic!("DB shoudln't have allowed to insert 2 devices with the same identifier");
         };
 
