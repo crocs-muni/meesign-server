@@ -46,9 +46,8 @@ impl PostgresMeesignRepo {
     }
 
     fn init_pool(database_url: &str) -> Result<PgPool, PersistenceError> {
-        let config = AsyncDieselConnectionManager::<diesel_async::AsyncPgConnection>::new(
-            std::env::var(database_url)?,
-        );
+        let config =
+            AsyncDieselConnectionManager::<diesel_async::AsyncPgConnection>::new(database_url);
         Ok(Pool::builder(config).build()?)
     }
 
