@@ -25,13 +25,13 @@ Server-side implementation for MeeSign system.
 5. Set up PostgreSQL server
 
    ```bash
-   docker run --restart always --name meesign-postgres --user postgres -e POSTGRES_PASSWORD=mysecretpassword -d -p 5432:5432 postgres
+   docker run --restart always --name meesign-postgres --user postgres -e POSTGRES_USER=meesign -e POSTGRES_PASSWORD=mysecretpassword -e POSTGRES_DB=meesign --detach --publish 5432:5432 postgres
    ```
 
 6. Store the connection string
 
    ```bash
-   echo DATABASE_URL=postgres://postgres:mysecretpassword@localhost/meesign >> .env
+   echo DATABASE_URL=postgres://meesign:mysecretpassword@localhost/meesign >> .env
    ```
 
 7. Build and run the server:
@@ -48,9 +48,28 @@ Server-side implementation for MeeSign system.
    bash generate_keys.sh
    ```
 
-2. Run a nightly release
+2. Run the production docker-compose:
+
    ```bash
-   docker run --detach --publish 1337:1337 --volume `pwd`/keys/:/meesign/keys/ crocsmuni/meesign:nightly
+   docker-compose up --detach
+   ```
+
+   **NOTE:** There are 2 types of available releases:
+      1. **latest** - this is the latest stable version, you can optionally specify a specific stable version
+      2. **nightly** - a bleeding-edge unstable version that is released every midnight
+
+## Development
+
+1. Run a postgres instance using the development docker-compose:
+
+   ```bash
+   docker-compose --file ./docker-compose.dev.yaml up --detach
+   ```
+
+2. Create a development env file with a connection URL:
+
+   ```bash
+   echo DATABASE_URL=postgres://meesign:mysecretpassword@localhost/meesign >> .env
    ```
    There are 2 types of available releases:
    1. **latest** - this is the latest stable version, you can optionally specify a specific stable version
