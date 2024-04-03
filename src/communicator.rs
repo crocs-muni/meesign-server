@@ -16,8 +16,8 @@ pub struct Communicator {
     device_list: Vec<Arc<Device>>,
     /// Ordered list of active devices (participating in the protocol)
     active_devices: Option<Vec<Vec<u8>>>,
-    /// A mapping of device identifiers to their Task decision
-    decisions: HashMap<Vec<u8>, Option<bool>>,
+    /// A mapping of device identifiers to their Task decision weight (0 - no decision, positive - accept, negative - reject)
+    decisions: HashMap<Vec<u8>, i8>,
     /// A mapping of device identifiers to their Task acknowledgement
     acknowledgements: HashMap<Vec<u8>, bool>,
     /// Incoming messages
@@ -46,7 +46,7 @@ impl Communicator {
             active_devices: None,
             decisions: devices
                 .iter()
-                .map(|x| (x.identifier().to_vec(), None))
+                .map(|x| (x.identifier().to_vec(), 0))
                 .collect(),
             acknowledgements: devices
                 .iter()
@@ -183,7 +183,7 @@ impl Communicator {
         let agreeing_devices = self
             .device_list
             .iter()
-            .filter(|device| self.decisions.get(device.identifier()) == Some(&Some(true)))
+            .filter(|device| self.decisions.get(device.identifier()) > Some(&0))
             .collect::<Vec<_>>();
 
         let timestamp = get_timestamp();
@@ -226,12 +226,18 @@ impl Communicator {
         self.active_devices.clone()
     }
 
-    /// Save decision by the given device; return true if successful
-    pub fn decide(&mut self, device: &[u8], decision: bool) -> bool {
-        if !self.decisions.contains_key(device) || self.decisions[device].is_some() {
+    /// Save decision by the given device_id; return true if successful
+    pub fn decide(&mut self, device_id: &[u8], decision: bool) -> bool {
+        if !self.decisions.contains_key(device_id) || self.decisions[device_id] != 0 {
             return false;
         }
-        self.decisions.insert(device.to_vec(), Some(decision));
+        let votes = self
+            .device_list
+            .iter()
+            .filter(|x| x.identifier() == device_id)
+            .count() as i8;
+        self.decisions
+            .insert(device_id.to_vec(), if decision { votes } else { -votes });
         true
     }
 
@@ -239,21 +245,29 @@ impl Communicator {
     pub fn accept_count(&self) -> u32 {
         self.decisions
             .iter()
-            .map(|x| u32::from(x.1.unwrap_or(false)))
-            .sum()
+            .filter(|x| *x.1 > 0)
+            .map(|x| *x.1 as i32)
+            .sum::<i32>()
+            .abs() as u32
     }
 
     /// Get the number of Task rejects
     pub fn reject_count(&self) -> u32 {
         self.decisions
             .iter()
-            .map(|x| u32::from(!x.1.unwrap_or(true)))
-            .sum()
+            .filter(|x| *x.1 < 0)
+            .map(|x| *x.1 as i32)
+            .sum::<i32>()
+            .abs() as u32
     }
 
     /// Check whether a device submitted its decision
-    pub fn device_decided(&self, device: &[u8]) -> bool {
-        matches!(self.decisions.get(device), Some(Some(_)))
+    pub fn device_decided(&self, device_id: &[u8]) -> bool {
+        if let Some(d) = self.decisions.get(device_id) {
+            *d != 0
+        } else {
+            false
+        }
     }
 
     /// Save acknowledgement by the given device; return true if successful
