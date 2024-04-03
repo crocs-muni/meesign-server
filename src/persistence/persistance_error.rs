@@ -1,49 +1,26 @@
-use std::{env::VarError, fmt::Display, num::TryFromIntError};
+use std::{env::VarError, num::TryFromIntError};
 
 use diesel_async::pooled_connection::deadpool::BuildError;
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum PersistenceError {
-    VarError(VarError),
-    PoolBuildError(BuildError),
+    #[error("VarError: {0}")]
+    VarError(#[from] VarError),
+    #[error("PoolBuildError: {0}")]
+    PoolBuildError(#[from] BuildError),
+    #[error("InvalidArgumentError: {0}")]
     InvalidArgumentError(String),
+    #[error("GeneralError: {0}")]
     GeneralError(String),
-    ExecutionError(diesel::result::Error),
-    TryFromIntError(TryFromIntError),
-}
-
-impl Display for PersistenceError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "todo error")
-    }
-}
-
-impl From<VarError> for PersistenceError {
-    fn from(value: VarError) -> Self {
-        Self::VarError(value)
-    }
-}
-
-impl From<BuildError> for PersistenceError {
-    fn from(value: BuildError) -> Self {
-        Self::PoolBuildError(value)
-    }
-}
-
-impl From<diesel::result::Error> for PersistenceError {
-    fn from(value: diesel::result::Error) -> Self {
-        Self::ExecutionError(value)
-    }
-}
-
-impl From<TryFromIntError> for PersistenceError {
-    fn from(value: TryFromIntError) -> Self {
-        Self::TryFromIntError(value)
-    }
+    #[error("ExecutionError: {0}")]
+    ExecutionError(#[from] diesel::result::Error),
+    #[error("TryFromIntError: {0}")]
+    TryFromIntError(#[from] TryFromIntError),
 }
 
 impl From<PersistenceError> for tonic::Status {
-    fn from(value: PersistenceError) -> Self {
+    fn from(_value: PersistenceError) -> Self {
         tonic::Status::internal("Internal error occurred")
     }
 }
