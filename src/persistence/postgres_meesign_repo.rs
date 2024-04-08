@@ -80,13 +80,6 @@ impl MeesignRepo for PostgresMeesignRepo {
         .await
     }
 
-    async fn activate_device(
-        &self,
-        target_identifier: &[u8],
-    ) -> Result<Option<Device>, PersistenceError> {
-        activate_device(&mut self.get_async_connection().await?, target_identifier).await
-    }
-
     async fn get_devices(&self) -> Result<Vec<Device>, PersistenceError> {
         get_devices(&mut self.get_async_connection().await?).await
     }
@@ -95,26 +88,14 @@ impl MeesignRepo for PostgresMeesignRepo {
         todo!()
     }
 
+    async fn activate_device(
+        &self,
+        target_identifier: &[u8],
+    ) -> Result<Option<Device>, PersistenceError> {
+        activate_device(&mut self.get_async_connection().await?, target_identifier).await
+    }
+
     /* Groups */
-    async fn get_groups(&self) -> Result<Vec<Group>, PersistenceError> {
-        get_groups(&mut self.get_async_connection().await?).await
-    }
-
-    async fn get_group(
-        &self,
-        group_identifier: &Vec<u8>,
-    ) -> Result<Option<Group>, PersistenceError> {
-        todo!()
-    }
-
-    async fn does_group_contain_device(
-        &self,
-        group_id: &[u8],
-        device_id: &[u8],
-    ) -> Result<bool, PersistenceError> {
-        todo!()
-    }
-
     async fn add_group<'a>(
         &self,
         identifier: &[u8],
@@ -136,7 +117,26 @@ impl MeesignRepo for PostgresMeesignRepo {
         .await
     }
 
+    async fn get_group(
+        &self,
+        group_identifier: &Vec<u8>,
+    ) -> Result<Option<Group>, PersistenceError> {
+        todo!()
+    }
+
+    async fn get_groups(&self) -> Result<Vec<Group>, PersistenceError> {
+        get_groups(&mut self.get_async_connection().await?).await
+    }
+
     async fn get_device_groups(&self, identifier: &[u8]) -> Result<Vec<Group>, PersistenceError> {
+        todo!()
+    }
+
+    async fn does_group_contain_device(
+        &self,
+        group_id: &[u8],
+        device_id: &[u8],
+    ) -> Result<bool, PersistenceError> {
         todo!()
     }
 

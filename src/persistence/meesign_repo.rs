@@ -15,10 +15,12 @@ pub trait MeesignRepo: Send + Sync {
         name: &str,
         certificate: &[u8],
     ) -> Result<Device, PersistenceError>;
+
     async fn get_devices(&self) -> Result<Vec<Device>, PersistenceError>;
-    async fn activate_device(&self, identifier: &[u8]) -> Result<Option<Device>, PersistenceError>;
+
     async fn get_task_devices(&self, task_id: &Uuid) -> Result<Vec<Device>, PersistenceError>;
-    // async fn get_device(&self, identifier: &Vec<u8>) -> Option<Device>;
+
+    async fn activate_device(&self, identifier: &[u8]) -> Result<Option<Device>, PersistenceError>;
 
     /* Groups */
     async fn add_group<'a>(
@@ -30,21 +32,21 @@ pub trait MeesignRepo: Send + Sync {
         protocol: ProtocolType,
         certificate: Option<&[u8]>,
     ) -> Result<Group, PersistenceError>;
-    // async fn get_group(&self, group_identifier: &Vec<u8>) -> Option<Group>;
-    async fn get_groups(&self) -> Result<Vec<Group>, PersistenceError>;
 
     async fn get_group(
         &self,
         group_identifier: &Vec<u8>,
     ) -> Result<Option<Group>, PersistenceError>;
 
+    async fn get_groups(&self) -> Result<Vec<Group>, PersistenceError>;
+
+    async fn get_device_groups(&self, identifier: &[u8]) -> Result<Vec<Group>, PersistenceError>;
+
     async fn does_group_contain_device(
         &self,
         group_id: &[u8],
         device_id: &[u8],
     ) -> Result<bool, PersistenceError>;
-
-    async fn get_device_groups(&self, identifier: &[u8]) -> Result<Vec<Group>, PersistenceError>;
 
     /* Tasks */
     async fn create_group_task<'a>(
