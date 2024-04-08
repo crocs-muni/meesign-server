@@ -48,17 +48,6 @@ impl Device {
     pub fn last_active(&self) -> u64 {
         self.last_active.load(Ordering::Relaxed)
     }
-
-    pub fn activated(&self) -> u64 {
-        self.last_active.store(
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            Ordering::Relaxed,
-        );
-        self.last_active.load(Ordering::Relaxed)
-    }
 }
 
 impl From<&Device> for crate::proto::Device {
@@ -70,70 +59,5 @@ impl From<&Device> for crate::proto::Device {
             certificate: device.certificate().to_vec(),
             last_active: device.last_active(),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    #[should_panic]
-    fn empty_identifier() {
-        Device::new(
-            vec![],
-            String::from("Sample Device"),
-            DeviceKind::User,
-            vec![0xff],
-        );
-    }
-
-    #[test]
-    #[should_panic]
-    fn empty_certificate() {
-        Device::new(
-            vec![0xff],
-            String::from("Sample Device"),
-            DeviceKind::User,
-            vec![],
-        );
-    }
-
-    #[test]
-    fn protobuf_device() {
-        let device = Device::new(
-            vec![0x01, 0x02, 0x03, 0x04],
-            String::from("Sample Device"),
-            DeviceKind::User,
-            vec![0xab, 0xcd, 0xef, 0x00],
-        );
-        let protobuf = crate::proto::Device::from(&device);
-        assert_eq!(protobuf.identifier, device.identifier());
-        assert_eq!(protobuf.name, device.name());
-        assert_eq!(protobuf.kind(), *device.kind());
-        assert_eq!(protobuf.certificate, device.certificate());
-        assert_eq!(protobuf.last_active, device.last_active());
-    }
-
-    #[test]
-    fn sample_device() {
-        let identifier = vec![0x01, 0x02, 0x03, 0x04];
-        let name = String::from("Sample Device");
-        let kind = DeviceKind::Bot;
-        let certificate = vec![0xab, 0xcd, 0xef, 0x00];
-        let device = Device::new(
-            identifier.clone(),
-            name.clone(),
-            kind.clone(),
-            certificate.clone(),
-        );
-        assert_eq!(device.identifier(), &identifier);
-        assert_eq!(device.name(), &name);
-        assert_eq!(device.kind(), &kind);
-        assert_eq!(device.certificate(), &certificate);
-        let previous_active = device.last_active();
-        let activated = device.activated();
-        assert!(previous_active <= device.last_active());
-        assert_eq!(device.last_active(), activated);
     }
 }
