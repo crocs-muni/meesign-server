@@ -40,6 +40,12 @@ where
         )));
     }
 
+    if identifier.is_empty() {
+        return Err(PersistenceError::InvalidArgumentError(format!(
+            "Empty identifier"
+        )));
+    }
+
     let new_group = NewGroup {
         identifier,
         threshold: threshold as i32,
