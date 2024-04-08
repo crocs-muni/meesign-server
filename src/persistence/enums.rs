@@ -24,7 +24,9 @@ impl From<proto::ProtocolType> for ProtocolType {
 
 pub enum TaskType {
     Group,
-    Sign,
+    SignPdf,
+    SignChallenge,
+    Decrypt,
 }
 
 #[derive(Debug, DbEnum)]
@@ -33,6 +35,8 @@ pub enum TaskType {
 pub enum TaskResultType {
     GroupEstablished,
     Signed,
+    SignedPdf,
+    Decrypted,
 }
 
 #[derive(Debug, DbEnum, Clone, PartialEq, Eq)]
