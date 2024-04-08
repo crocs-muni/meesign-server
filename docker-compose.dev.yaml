@@ -1,6 +1,7 @@
 version: '3.1'
  
 services:     
+  # db is intended for manual user testing
   db:
     image: postgres
     restart: unless-stopped
@@ -26,6 +27,23 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  # test-db should remain empty for tests. 
+  # Tests use test transactions that are never committed.
+  test-db:
+    image: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: meesign
+      POSTGRES_PASSWORD: mysecretpassword # WARNING: hardcoded secret, don't use in prod
+      POSTGRES_DB: meesign
+    ports:
+      - 5433:5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 1s
+      timeout: 5s
+      retries: 10
  
 volumes:
   db-data:
