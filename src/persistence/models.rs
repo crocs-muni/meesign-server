@@ -100,3 +100,18 @@ pub struct NewTask<'a> {
     pub key_type: Option<KeyType>,
     pub protocol_type: Option<ProtocolType>,
 }
+
+impl From<Group> for crate::proto::Group {
+    fn from(value: Group) -> Self {
+        let protocol: crate::proto::ProtocolType = value.protocol.into();
+        let key_type: crate::proto::KeyType = value.key_type.into();
+        Self {
+            identifier: value.identifier,
+            name: value.group_name,
+            threshold: value.threshold as u32,
+            protocol: protocol.into(),
+            key_type: key_type.into(),
+            device_ids: vec![], // TODO
+        }
+    }
+}

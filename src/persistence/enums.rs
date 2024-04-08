@@ -67,3 +67,23 @@ impl From<proto::KeyType> for KeyType {
         }
     }
 }
+
+impl From<ProtocolType> for proto::ProtocolType {
+    fn from(value: ProtocolType) -> Self {
+        match value {
+            ProtocolType::Gg18 => Self::Gg18,
+            ProtocolType::ElGamal => Self::Elgamal,
+            ProtocolType::Frost => Self::Frost,
+        }
+    }
+}
+
+impl From<KeyType> for proto::KeyType {
+    fn from(value: KeyType) -> Self {
+        match value {
+            KeyType::SignPDF => proto::KeyType::SignPdf,
+            KeyType::SignChallenge => proto::KeyType::SignChallenge,
+            KeyType::Decrypt => proto::KeyType::Decrypt,
+        }
+    }
+}
