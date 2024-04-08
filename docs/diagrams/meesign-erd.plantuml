@@ -1,0 +1,116 @@
+@startuml meesign-erd
+
+entity "Device" as device {
+    * id: integer <<generated>>
+    --
+    identifier: bytea
+    device_name: varchar
+    certificate bytea
+    last_active: timestamptz
+}
+
+entity "Subscriber" as subscriber {
+    * id: integer <<generated>>
+    --
+    device_id: bigint
+}
+entity "Group Participant" as group_participant {
+    * id: integer <<generated>>
+    --
+    device_id: bytea
+    group_id: bytea
+}
+
+entity "SigningGroup" as group {
+    * id: integer<<generated>>
+    --
+    identifier: bytea
+    group_name: varchar
+    threshold: integer
+    round: integer
+
+}
+
+enum "ProtocolType" as protocol_type {
+    GG18
+    ElGamal
+    Frost
+}
+
+enum "KeyType" as key_type {
+    SignPDF
+    SignChallenge
+    Decrypt
+}
+
+
+
+entity "Task" as task {
+    * id: integer <<generated>>
+    --
+    round: integer
+    attempts: integer
+    error_message: varchar
+    threshold: integer
+    last_update: bigint
+    data: bytea
+    preprocessed: bytea
+    request: bytea
+}
+
+entity "TaskParticipant" as task_participant{
+    * id: integer <<generated>>
+    --
+    is_active: boolean
+    decision: boolean
+    acknowledgement: boolean
+    outgoing_message: bytea
+}
+
+entity "IncomingMessage" as incoming_message {
+    * id: integer <<generated>>
+    --
+    content: bytea
+}
+
+enum "TaskType" as task_type {
+    Group
+    SignPdf
+    SignChallenge
+    Decrypt
+}
+
+enum "TaskState" as stask_state {
+    Created
+    Running
+    Finished
+    Failed
+}
+
+entity "TaskResult" as task_result {
+    * id: integer <<generated>>
+    --
+    data: bytea
+}
+
+enum "TaskResultType" as task_result_type {
+    GroupEstablished
+    Signed
+    SignedPdf
+    Decrypted
+}
+
+group ||..o{ group_participant: < participates in
+group }o..|| key_type: is using >
+group_participant }o..|| device: < is a participant
+group }o..|| protocol_type: > is of type
+task }o..|| task_type: > is of type
+group ||..o{ task: > contains
+task }o..|| stask_state: > is in state
+' task_result }o..o| group : > group established
+task_result }o..|| task_result_type: > is of type
+task ||..|{ task_participant
+group_participant ||..o{ task_participant
+task_participant ||..o{ incoming_message: > from
+incoming_message }o..|| task_participant : > to
+@enduml
