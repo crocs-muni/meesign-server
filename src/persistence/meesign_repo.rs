@@ -1,3 +1,5 @@
+use uuid::Uuid;
+
 use super::{
     enums::{KeyType, ProtocolType},
     models::{Device, Group, Task},
@@ -56,4 +58,12 @@ pub trait MeesignRepo: Send + Sync {
         name: &str,
         data: &Vec<u8>,
     ) -> Result<Task, PersistenceError>;
+
+    async fn get_task(&self, task_id: &Uuid) -> Result<Option<Task>, PersistenceError>;
+
+    async fn get_tasks(&self) -> Result<Vec<Task>, PersistenceError>;
+
+    async fn get_tasks_for_restart(&self) -> Result<Vec<Task>, PersistenceError>;
+
+    async fn get_device_tasks(&self, identifier: &[u8]) -> Result<Vec<Task>, PersistenceError>;
 }

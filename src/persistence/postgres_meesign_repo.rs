@@ -14,6 +14,7 @@ use diesel_async::AsyncPgConnection;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use std::env;
 use std::sync::Arc;
+use uuid::Uuid;
 
 mod device;
 mod group;
@@ -178,5 +179,21 @@ impl MeesignRepo for PostgresMeesignRepo {
             None,
         )
         .await
+    }
+
+    async fn get_task(&self, task_id: &Uuid) -> Result<Option<Task>, PersistenceError> {
+        todo!()
+    }
+
+    async fn get_tasks(&self) -> Result<Vec<Task>, PersistenceError> {
+        todo!()
+    }
+
+    async fn get_tasks_for_restart(&self) -> Result<Vec<Task>, PersistenceError> {
+        todo!()
+    }
+
+    async fn get_device_tasks(&self, identifier: &[u8]) -> Result<Vec<Task>, PersistenceError> {
+        todo!()
     }
 }
