@@ -8,8 +8,6 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
     services:
       postgres:
         env:
@@ -40,6 +38,8 @@ jobs:
       - name: Build
         run: cargo build --verbose
       - name: Run tests
+        env:
+          TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
         run: cargo test --verbose
 
   build-n-release-docker-main:
