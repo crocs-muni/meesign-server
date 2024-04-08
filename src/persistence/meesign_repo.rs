@@ -17,7 +17,7 @@ pub trait MeesignRepo: Send + Sync {
     ) -> Result<Device, PersistenceError>;
     async fn get_devices(&self) -> Result<Vec<Device>, PersistenceError>;
     async fn activate_device(&self, identifier: &[u8]) -> Result<Option<Device>, PersistenceError>;
-
+    async fn get_task_devices(&self, task_id: &Uuid) -> Result<Vec<Device>, PersistenceError>;
     // async fn get_device(&self, identifier: &Vec<u8>) -> Option<Device>;
 
     /* Groups */

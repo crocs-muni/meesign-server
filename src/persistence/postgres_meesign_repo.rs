@@ -91,6 +91,10 @@ impl MeesignRepo for PostgresMeesignRepo {
         get_devices(&mut self.get_async_connection().await?).await
     }
 
+    async fn get_task_devices(&self, task_id: &Uuid) -> Result<Vec<Device>, PersistenceError> {
+        todo!()
+    }
+
     /* Groups */
     async fn get_groups(&self) -> Result<Vec<Group>, PersistenceError> {
         get_groups(&mut self.get_async_connection().await?).await
