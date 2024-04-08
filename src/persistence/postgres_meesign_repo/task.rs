@@ -1,6 +1,7 @@
 use std::convert::TryInto;
 
-use diesel_async::AsyncPgConnection;
+use diesel::pg::Pg;
+use diesel_async::AsyncConnection;
 
 use super::utils::NameValidator;
 use crate::persistence::{
@@ -9,15 +10,18 @@ use crate::persistence::{
     persistance_error::PersistenceError,
 };
 
-pub async fn create_task(
-    connection: &mut AsyncPgConnection,
+pub async fn create_task<Conn>(
+    connection: &mut Conn,
     task_type: TaskType,
     name: &str,
     devices: &[Vec<u8>],
     threshold: u32,
     key_type: Option<KeyType>,
     protocol_type: Option<ProtocolType>,
-) -> Result<Task, PersistenceError> {
+) -> Result<Task, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
     if !name.is_name_valid() {
         return Err(PersistenceError::InvalidArgumentError(format!(
             "Invalid group name {name}"

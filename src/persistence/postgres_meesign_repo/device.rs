@@ -1,6 +1,7 @@
 use chrono::Local;
-use diesel::{ExpressionMethods, QueryDsl, SelectableHelper};
-use diesel_async::AsyncPgConnection;
+use diesel::{pg::Pg, ExpressionMethods, QueryDsl, SelectableHelper};
+use diesel_async::AsyncConnection;
+use diesel_async::RunQueryDsl;
 
 use crate::persistence::{
     models::{Device, NewDevice},
@@ -8,19 +9,21 @@ use crate::persistence::{
     postgres_meesign_repo::utils::NameValidator,
 };
 
-use diesel_async::RunQueryDsl;
-
-pub async fn get_devices(
-    connection: &mut AsyncPgConnection,
-) -> Result<Vec<Device>, PersistenceError> {
+pub async fn get_devices<Conn>(connection: &mut Conn) -> Result<Vec<Device>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
     use crate::persistence::schema::device;
     Ok(device::table.load(connection).await?)
 }
 
-pub async fn activate_device(
-    connection: &mut AsyncPgConnection,
+pub async fn activate_device<Conn>(
+    connection: &mut Conn,
     target_identifier: &[u8],
-) -> Result<Option<Device>, PersistenceError> {
+) -> Result<Option<Device>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
     use crate::persistence::schema::device::dsl::*;
     let activated_device = diesel::update(device)
         .filter(identifier.eq(target_identifier))
@@ -32,12 +35,15 @@ pub async fn activate_device(
     Ok(Some(activated_device))
 }
 
-pub async fn add_device(
-    connection: &mut AsyncPgConnection,
+pub async fn add_device<Conn>(
+    connection: &mut Conn,
     identifier: &[u8],
     name: &str,
     certificate: &[u8],
-) -> Result<Device, PersistenceError> {
+) -> Result<Device, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
     if !name.is_name_valid() {
         return Err(PersistenceError::InvalidArgumentError(format!(
             "Invalid device name: {name}"
@@ -71,10 +77,13 @@ pub async fn add_device(
     Ok(device)
 }
 
-pub async fn device_ids_to_identifiers(
-    connection: &mut AsyncPgConnection,
+pub async fn device_ids_to_identifiers<Conn>(
+    connection: &mut Conn,
     identifiers: Vec<Vec<u8>>,
-) -> Result<Vec<i32>, PersistenceError> {
+) -> Result<Vec<i32>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
     use crate::persistence::schema::device::dsl::*;
     Ok(device
         .filter(identifier.eq_any(identifiers))

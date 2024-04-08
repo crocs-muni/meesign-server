@@ -1,7 +1,7 @@
 use std::convert::TryInto;
 
-use diesel::{result::Error::NotFound, ExpressionMethods, QueryDsl, SelectableHelper};
-use diesel_async::{AsyncPgConnection, RunQueryDsl};
+use diesel::{pg::Pg, result::Error::NotFound, ExpressionMethods, QueryDsl, SelectableHelper};
+use diesel_async::{AsyncConnection, RunQueryDsl};
 
 use crate::persistence::{
     enums::ProtocolType,
@@ -10,22 +10,26 @@ use crate::persistence::{
     postgres_meesign_repo::device::device_ids_to_identifiers,
 };
 
-pub async fn get_groups(
-    connection: &mut AsyncPgConnection,
-) -> Result<Vec<Group>, PersistenceError> {
+pub async fn get_groups<Conn>(connection: &mut Conn) -> Result<Vec<Group>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
     use crate::persistence::schema::signinggroup;
     Ok(signinggroup::table.load(connection).await?)
 }
 
-pub async fn add_group<'a>(
-    connection: &mut AsyncPgConnection,
+pub async fn add_group<'a, Conn>(
+    connection: &mut Conn,
     identifier: &[u8],
     name: &str,
     devices: &[&[u8]],
     threshold: u32,
     protocol: ProtocolType,
     certificate: Option<&[u8]>,
-) -> Result<Group, PersistenceError> {
+) -> Result<Group, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
     use crate::persistence::schema::groupparticipant;
     use crate::persistence::schema::signinggroup;
 
@@ -65,10 +69,13 @@ pub async fn add_group<'a>(
     Ok(group)
 }
 
-pub async fn get_group(
-    connection: &mut AsyncPgConnection,
+pub async fn get_group<Conn>(
+    connection: &mut Conn,
     group_identifier: &[u8],
-) -> Result<Option<Group>, PersistenceError> {
+) -> Result<Option<Group>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
     use crate::persistence::schema::signinggroup::dsl::*;
 
     let group: Option<Group> = match signinggroup

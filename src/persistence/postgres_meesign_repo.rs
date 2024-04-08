@@ -8,9 +8,9 @@ use super::models::{Device, Group, Task};
 use super::persistance_error::PersistenceError;
 
 use diesel::{Connection, PgConnection};
-use diesel_async::pooled_connection::deadpool::Pool;
+use diesel_async::pooled_connection::deadpool::{Object, Pool};
 use diesel_async::pooled_connection::AsyncDieselConnectionManager;
-use diesel_async::{AsyncConnection, AsyncPgConnection};
+use diesel_async::AsyncPgConnection;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use std::env;
 use std::sync::Arc;
@@ -27,6 +27,7 @@ pub struct PostgresMeesignRepo {
 }
 
 type PgPool = Pool<AsyncPgConnection>;
+type DeadpoolPgConnection = Object<AsyncPgConnection>;
 
 impl PostgresMeesignRepo {
     pub async fn from_url(database_url: &str) -> Result<Self, PersistenceError> {
@@ -46,18 +47,12 @@ impl PostgresMeesignRepo {
     }
 
     fn init_pool(database_url: &str) -> Result<PgPool, PersistenceError> {
-        let config =
-            AsyncDieselConnectionManager::<diesel_async::AsyncPgConnection>::new(database_url);
+        let config = AsyncDieselConnectionManager::<AsyncPgConnection>::new(database_url);
         Ok(Pool::builder(config).build()?)
     }
 
-    async fn get_async_connection(&self) -> Result<AsyncPgConnection, PersistenceError> {
-        // Ok(self.pg_pool.get().await.unwrap()) // TODO
-        Ok(
-            AsyncPgConnection::establish(&std::env::var("DATABASE_URL")?)
-                .await
-                .unwrap(),
-        )
+    async fn get_async_connection(&self) -> Result<DeadpoolPgConnection, PersistenceError> {
+        Ok(self.pg_pool.get().await.unwrap())
     }
 
     fn get_connection(&self) -> Result<PgConnection, PersistenceError> {
