@@ -55,22 +55,30 @@ Server-side implementation for MeeSign system.
    ```
 
    **NOTE:** There are 2 types of available releases:
-      1. **latest** - this is the latest stable version, you can optionally specify a specific stable version
-      2. **nightly** - a bleeding-edge unstable version that is released every midnight
+
+   1. **latest** - this is the latest stable version, you can optionally specify a specific stable version
+   2. **nightly** - a bleeding-edge unstable version that is released every midnight
 
 ## Development
 
-1. Run a postgres instance using the development docker-compose:
+1. Run the development docker-compose:
 
    ```bash
    docker-compose --file ./docker-compose.dev.yaml up --detach
    ```
 
-2. Create a development env file with a connection URL:
+2. Create a development env file with a connection URL. This URL should point to the development/user testing instance:
 
    ```bash
    echo DATABASE_URL=postgres://meesign:mysecretpassword@localhost/meesign >> .env
    ```
+
+3. Tests expect an empty database, though they don't commit any changes. Variable _TEST_DATABASE_URL_ is used in such cases.
+
+   ```bash
+   echo TEST_DATABASE_URL=postgres://meesign:mysecretpassword@localhost:5433/meesign >> .env
+   ```
+
    There are 2 types of available releases:
    1. **latest** - this is the latest stable version, you can optionally specify a specific stable version
    2. **nightly** - a bleeding-edge unstable version that is released every midnight
