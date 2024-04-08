@@ -34,6 +34,12 @@ where
     use crate::persistence::schema::signinggroup;
 
     let threshold: i32 = threshold.try_into()?;
+    if !(1..=devices.len() as i32).contains(&threshold) {
+        return Err(PersistenceError::InvalidArgumentError(format!(
+            "Invalid threshold {threshold}"
+        )));
+    }
+
     let new_group = NewGroup {
         identifier,
         threshold: threshold as i32,
