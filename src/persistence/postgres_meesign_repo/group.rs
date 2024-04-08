@@ -65,7 +65,8 @@ where
 
     diesel::insert_into(groupparticipant::table)
         .values(group_participants)
-        .execute(connection);
+        .execute(connection)
+        .await?;
     Ok(group)
 }
 

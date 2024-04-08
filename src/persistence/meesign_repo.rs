@@ -18,7 +18,7 @@ pub trait MeesignRepo: Send + Sync {
 
     // async fn get_device(&self, identifier: &Vec<u8>) -> Option<Device>;
 
-    // /* Groups */
+    /* Groups */
     async fn add_group<'a>(
         &self,
         identifier: &[u8],
@@ -31,6 +31,7 @@ pub trait MeesignRepo: Send + Sync {
     // async fn get_group(&self, group_identifier: &Vec<u8>) -> Option<Group>;
     async fn get_groups(&self) -> Result<Vec<Group>, PersistenceError>;
 
+    /* Tasks */
     async fn create_group_task<'a>(
         &self,
         name: &str,
@@ -38,5 +39,12 @@ pub trait MeesignRepo: Send + Sync {
         threshold: u32,
         protocol: ProtocolType,
         key_type: KeyType,
+    ) -> Result<Task, PersistenceError>;
+
+    async fn create_sign_task<'a>(
+        &self,
+        group_identifier: &Vec<u8>,
+        name: &str,
+        data: &Vec<u8>,
     ) -> Result<Task, PersistenceError>;
 }

@@ -14,8 +14,9 @@ pub async fn create_task<Conn>(
     connection: &mut Conn,
     task_type: TaskType,
     name: &str,
+    data: Option<&Vec<u8>>,
     devices: &[Vec<u8>],
-    threshold: u32,
+    threshold: Option<u32>,
     key_type: Option<KeyType>,
     protocol_type: Option<ProtocolType>,
 ) -> Result<Task, PersistenceError>
@@ -28,12 +29,12 @@ where
         )));
     }
 
-    let threshold: i32 = threshold.try_into()?;
+    // let threshold: i32 = threshold.try_into()?;
     let task = NewTask {
         protocol_round: 0,
         attempt_count: 0,
         error_message: None,
-        threshold,
+        threshold: 0, // TODO: decide if optional or not
         last_update: None,
         task_data: None,
         preprocessed: None,

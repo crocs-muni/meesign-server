@@ -63,6 +63,7 @@ impl PostgresMeesignRepo {
 
 #[tonic::async_trait]
 impl MeesignRepo for PostgresMeesignRepo {
+    /* Devices */
     async fn add_device(
         &self,
         identifier: &[u8],
@@ -89,6 +90,7 @@ impl MeesignRepo for PostgresMeesignRepo {
         get_devices(&mut self.get_async_connection().await?).await
     }
 
+    /* Groups */
     async fn get_groups(&self) -> Result<Vec<Group>, PersistenceError> {
         get_groups(&mut self.get_async_connection().await?).await
     }
@@ -114,6 +116,7 @@ impl MeesignRepo for PostgresMeesignRepo {
         .await
     }
 
+    /* Tasks */
     async fn create_group_task<'a>(
         &self,
         name: &str,
@@ -126,10 +129,30 @@ impl MeesignRepo for PostgresMeesignRepo {
             &mut self.get_async_connection().await?,
             TaskType::Group,
             name,
+            None,
             devices,
-            threshold,
+            Some(threshold),
             Some(key_type),
             Some(protocol_type),
+        )
+        .await
+    }
+
+    async fn create_sign_task<'a>(
+        &self,
+        group_identifier: &Vec<u8>,
+        name: &str,
+        data: &Vec<u8>,
+    ) -> Result<Task, PersistenceError> {
+        create_task(
+            &mut self.get_async_connection().await?,
+            TaskType::Sign,
+            name,
+            Some(data),
+            &vec![],
+            None,
+            None,
+            None,
         )
         .await
     }
