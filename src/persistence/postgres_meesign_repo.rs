@@ -146,7 +146,26 @@ impl MeesignRepo for PostgresMeesignRepo {
     ) -> Result<Task, PersistenceError> {
         create_task(
             &mut self.get_async_connection().await?,
-            TaskType::Sign,
+            TaskType::SignChallenge, // TODO: based on data
+            name,
+            Some(data),
+            &vec![],
+            None,
+            None,
+            None,
+        )
+        .await
+    }
+
+    async fn create_decrypt_task(
+        &self,
+        group_identifier: &Vec<u8>,
+        name: &str,
+        data: &Vec<u8>,
+    ) -> Result<Task, PersistenceError> {
+        create_task(
+            &mut self.get_async_connection().await?,
+            TaskType::Decrypt,
             name,
             Some(data),
             &vec![],
