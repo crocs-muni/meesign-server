@@ -17,6 +17,9 @@ pub enum PersistenceError {
     ExecutionError(#[from] diesel::result::Error),
     #[error("TryFromIntError: {0}")]
     TryFromIntError(#[from] TryFromIntError),
+    #[cfg(test)]
+    #[error("diesel connection error: {0}")]
+    ConnectionError(#[from] diesel::ConnectionError),
 }
 
 impl From<PersistenceError> for tonic::Status {

@@ -20,7 +20,7 @@ mod group;
 mod task;
 mod utils;
 
-const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
+pub(crate) const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 
 pub struct PostgresMeesignRepo {
     pg_pool: Arc<PgPool>,
