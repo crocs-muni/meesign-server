@@ -31,6 +31,8 @@ pub trait MeesignRepo: Send + Sync {
     // async fn get_group(&self, group_identifier: &Vec<u8>) -> Option<Group>;
     async fn get_groups(&self) -> Result<Vec<Group>, PersistenceError>;
 
+    async fn get_device_groups(&self, identifier: &[u8]) -> Result<Vec<Group>, PersistenceError>;
+
     /* Tasks */
     async fn create_group_task<'a>(
         &self,

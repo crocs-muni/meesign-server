@@ -116,6 +116,10 @@ impl MeesignRepo for PostgresMeesignRepo {
         .await
     }
 
+    async fn get_device_groups(&self, identifier: &[u8]) -> Result<Vec<Group>, PersistenceError> {
+        todo!()
+    }
+
     /* Tasks */
     async fn create_group_task<'a>(
         &self,
