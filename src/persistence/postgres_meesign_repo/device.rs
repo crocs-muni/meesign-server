@@ -95,11 +95,14 @@ where
 #[cfg(test)]
 mod test {
 
+    use std::{ops::Add, time::Duration};
+
     use diesel_async::AsyncPgConnection;
+    use tokio::time::sleep;
 
     use crate::persistence::{
         persistance_error::PersistenceError,
-        postgres_meesign_repo::device::{add_device, get_devices},
+        postgres_meesign_repo::device::{activate_device, add_device, get_devices},
         tests::persistency_unit_test_context::PersistencyUnitTestContext,
     };
 
@@ -162,6 +165,29 @@ mod test {
         assert!(add_device(&mut connection, &nonempty, "Non-empty", &empty)
             .await
             .is_err());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_activate_device() -> Result<(), PersistenceError> {
+        let ctx = PersistencyUnitTestContext::new();
+        let mut connection = ctx.get_test_connection().await?;
+        let timeout = Duration::from_millis(10);
+
+        let device_identifier = vec![3; 32];
+        add_device(&mut connection, &device_identifier, "user1", &vec![1; 400]).await?;
+        let fst_device_activation = activate_device(&mut connection, &device_identifier)
+            .await?
+            .unwrap();
+        sleep(timeout).await;
+        let snd_device_activation = activate_device(&mut connection, &device_identifier)
+            .await?
+            .unwrap();
+
+        assert!(
+            fst_device_activation.last_active.add(timeout) <= snd_device_activation.last_active
+        );
 
         Ok(())
     }
