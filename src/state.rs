@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
+use dashmap::DashMap;
 use log::{debug, warn};
 use uuid::Uuid;
 
+use crate::communicator::Communicator;
 use crate::group::Group;
 use crate::interfaces::grpc::format_task;
 use crate::persistence::meesign_repo::MeesignRepo;
@@ -17,11 +19,11 @@ use tonic::codegen::Arc;
 use tonic::Status;
 
 pub struct State {
-    // devices: HashMap<Vec<u8>, Arc<Device>>,
     groups: HashMap<Vec<u8>, Group>,
     tasks: HashMap<Uuid, Box<dyn Task + Send + Sync>>,
     subscribers: HashMap<Vec<u8>, Sender<Result<crate::proto::Task, Status>>>,
     repo: Arc<dyn MeesignRepo>,
+    communicators: DashMap<Uuid, Communicator>,
 }
 
 impl State {
@@ -31,6 +33,7 @@ impl State {
             tasks: HashMap::new(),
             subscribers: HashMap::new(),
             repo,
+            communicators: DashMap::default(),
         }
     }
 
