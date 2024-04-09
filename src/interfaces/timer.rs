@@ -2,8 +2,8 @@ use crate::state::State;
 use crate::tasks::TaskStatus;
 use crate::{get_timestamp, utils};
 
-use log::{debug, error};
 use hex::ToHex;
+use log::{debug, error};
 use tokio::sync::MutexGuard;
 use tokio::{sync::Mutex, time};
 use tonic::codegen::Arc;
@@ -37,7 +37,8 @@ fn check_tasks(state: &mut MutexGuard<State>) {
 
 async fn check_subscribers(state: &mut MutexGuard<'_, State>) {
     let mut remove = Vec::new();
-    for (device_id, tx) in state.get_subscribers() {
+    for subscriber in state.get_subscribers().iter() {
+        let (device_id, tx) = subscriber.pair();
         if tx.is_closed() {
             debug!(
                 "Closed channel detected device_id={:?}",

@@ -21,7 +21,7 @@ use tonic::Status;
 pub struct State {
     groups: HashMap<Vec<u8>, Group>,
     tasks: HashMap<Uuid, Box<dyn Task + Send + Sync>>,
-    subscribers: HashMap<Vec<u8>, Sender<Result<crate::proto::Task, Status>>>,
+    subscribers: DashMap<Vec<u8>, Sender<Result<crate::proto::Task, Status>>>,
     repo: Arc<dyn MeesignRepo>,
     communicators: DashMap<Uuid, Communicator>,
 }
@@ -31,7 +31,7 @@ impl State {
         State {
             groups: HashMap::new(),
             tasks: HashMap::new(),
-            subscribers: HashMap::new(),
+            subscribers: DashMap::new(),
             repo,
             communicators: DashMap::default(),
         }
@@ -245,7 +245,7 @@ impl State {
         );
     }
 
-    pub fn get_subscribers(&self) -> &HashMap<Vec<u8>, Sender<Result<crate::proto::Task, Status>>> {
+    pub fn get_subscribers(&self) -> &DashMap<Vec<u8>, Sender<Result<crate::proto::Task, Status>>> {
         &self.subscribers
     }
 
