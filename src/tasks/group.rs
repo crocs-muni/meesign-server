@@ -68,9 +68,6 @@ impl GroupTask {
             return Err("Invalid input".into());
         }
 
-        let mut devices = devices.to_vec();
-        devices.sort_by_key(|x| x.identifier().to_vec());
-
         let communicator = Communicator::new(&devices, devices.len() as u32, protocol.get_type());
 
         let request = (crate::proto::GroupRequest {
@@ -85,7 +82,7 @@ impl GroupTask {
         Ok(GroupTask {
             name: name.into(),
             threshold,
-            devices,
+            devices: devices.to_vec(),
             key_type,
             communicator,
             result: None,

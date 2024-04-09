@@ -24,10 +24,8 @@ pub struct DecryptTask {
 
 impl DecryptTask {
     pub fn new(group: Group, name: String, data: Vec<u8>, data_type: String) -> Self {
-        let mut devices: Vec<Arc<Device>> = group.devices().to_vec();
-        devices.sort_by_key(|x| x.identifier().to_vec());
-
-        let communicator = Communicator::new(&devices, group.threshold(), ProtocolType::Elgamal);
+        let communicator =
+            Communicator::new(group.devices(), group.threshold(), ProtocolType::Elgamal);
 
         let request = (DecryptRequest {
             group_id: group.identifier().to_vec(),
