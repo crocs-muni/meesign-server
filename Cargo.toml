@@ -24,7 +24,7 @@ lazy_static = "1.4.0"
 openssl = "0.10.60"
 sha2 = "0.10.6"
 meesign-crypto = { git = "https://github.com/crocs-muni/meesign-crypto", rev = "b0e7f14", default-features = false, features = ["elgamal-encrypt"] }
-diesel = { version = "2.1.0", features = ["postgres", "chrono"] }
+diesel = { version = "2.1.0", features = ["postgres", "chrono", "uuid"] }
 diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }
 diesel-async = { version = "0.4.1", features = ["postgres", "deadpool"] }
 diesel_migrations = "2.1.0"
