@@ -26,11 +26,9 @@ pub struct SignTask {
 
 impl SignTask {
     pub fn try_new(group: Group, name: String, data: Vec<u8>) -> Result<Self, String> {
-        let mut devices: Vec<Arc<Device>> = group.devices().to_vec();
-        devices.sort_by_key(|x| x.identifier().to_vec());
         let protocol_type = group.protocol();
 
-        let communicator = Communicator::new(&devices, group.threshold(), protocol_type);
+        let communicator = Communicator::new(&group.devices(), group.threshold(), protocol_type);
 
         let request = (SignRequest {
             group_id: group.identifier().to_vec(),
