@@ -291,15 +291,18 @@ impl Communicator {
         assert!(self.active_devices.is_some());
 
         let active_devices = self.get_active_devices().unwrap();
+        let mut devices_iter = self.device_list.iter().enumerate();
         let mut indices: Vec<u32> = Vec::new();
+
         for device in &active_devices {
-            indices.push(
-                self.device_list
-                    .iter()
-                    .position(|x| x.identifier() == device)
-                    .unwrap() as u32,
-            );
+            while let Some((idx, dev)) = devices_iter.next() {
+                if dev.identifier() == device {
+                    indices.push(idx as u32);
+                    break;
+                }
+            }
         }
+
         indices
     }
 
@@ -467,6 +470,16 @@ mod tests {
         let mut communicator = Communicator::new(&devices, 2, ProtocolType::Gg18);
         assert_eq!(communicator.decide(devices[0].identifier(), true), true);
         assert_eq!(communicator.decide(devices[0].identifier(), true), false);
+    }
+
+    #[test]
+    fn repeated_devices() {
+        let devices = prepare_devices(1);
+        let devices = vec![devices[0].clone(), devices[0].clone()];
+        let mut communicator = Communicator::new(&devices, 2, ProtocolType::Gg18);
+        assert_eq!(communicator.decide(devices[0].identifier(), true), true);
+        communicator.set_active_devices();
+        assert_eq!(communicator.get_protocol_indices(), vec![0, 1]);
     }
 
     #[test]
