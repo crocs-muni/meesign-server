@@ -16,6 +16,7 @@ pub struct NewDevice<'a> {
 
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = device)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Device {
     pub id: i32,
     pub identifier: Vec<u8>,
@@ -37,6 +38,7 @@ impl From<Device> for crate::proto::Device {
 
 #[derive(Queryable, Clone, Eq, PartialEq, Selectable)]
 #[diesel(table_name=signinggroup)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Group {
     pub id: i32,
     pub identifier: Vec<u8>,
@@ -68,6 +70,7 @@ pub struct NewGroupParticipant {
 
 #[derive(Queryable, Clone, Eq, PartialEq, Selectable)]
 #[diesel(table_name=task)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Task {
     pub id: Uuid,
     pub protocol_round: i32,
