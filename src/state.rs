@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::communicator::Communicator;
 use crate::group::Group;
 use crate::interfaces::grpc::format_task;
-use crate::persistence::meesign_repo::MeesignRepo;
+use crate::persistence::Repository;
 use crate::proto::KeyType;
 use crate::tasks::decrypt::DecryptTask;
 use crate::tasks::sign::SignTask;
@@ -22,12 +22,12 @@ pub struct State {
     groups: HashMap<Vec<u8>, Group>,
     tasks: HashMap<Uuid, Box<dyn Task + Send + Sync>>,
     subscribers: DashMap<Vec<u8>, Sender<Result<crate::proto::Task, Status>>>,
-    repo: Arc<dyn MeesignRepo>,
+    repo: Arc<Repository>,
     communicators: DashMap<Uuid, Communicator>,
 }
 
 impl State {
-    pub fn new(repo: Arc<dyn MeesignRepo>) -> Self {
+    pub fn new(repo: Arc<Repository>) -> Self {
         State {
             groups: HashMap::new(),
             tasks: HashMap::new(),
@@ -272,7 +272,7 @@ impl State {
         }
     }
 
-    pub fn get_repo(&self) -> &Arc<dyn MeesignRepo> {
+    pub fn get_repo(&self) -> &Arc<Repository> {
         &self.repo
     }
 }

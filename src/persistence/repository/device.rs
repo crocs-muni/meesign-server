@@ -6,7 +6,7 @@ use diesel_async::RunQueryDsl;
 use crate::persistence::{
     error::PersistenceError,
     models::{Device, NewDevice},
-    postgres_meesign_repo::utils::NameValidator,
+    repository::utils::NameValidator,
 };
 
 pub async fn get_devices<Conn>(connection: &mut Conn) -> Result<Vec<Device>, PersistenceError>
@@ -102,7 +102,7 @@ mod test {
 
     use crate::persistence::{
         error::PersistenceError,
-        postgres_meesign_repo::device::{activate_device, add_device, get_devices},
+        repository::device::{activate_device, add_device, get_devices},
         tests::persistency_unit_test_context::PersistencyUnitTestContext,
     };
 

@@ -1,11 +1,14 @@
+use uuid::Uuid;
+
+use super::{
+    enums::{KeyType, ProtocolType, TaskType},
+    error::PersistenceError,
+    models::{Device, Group, Task},
+};
+
 use self::device::{activate_device, add_device, get_devices};
 use self::group::{add_group, get_groups};
 use self::task::create_task;
-
-use super::enums::{KeyType, ProtocolType, TaskType};
-use super::error::PersistenceError;
-use super::meesign_repo::MeesignRepo;
-use super::models::{Device, Group, Task};
 
 use diesel::{Connection, PgConnection};
 use diesel_async::pooled_connection::deadpool::{Object, Pool};
@@ -14,7 +17,6 @@ use diesel_async::AsyncPgConnection;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use std::env;
 use std::sync::Arc;
-use uuid::Uuid;
 
 mod device;
 mod group;
@@ -23,17 +25,17 @@ mod utils;
 
 pub(crate) const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 
-pub struct PostgresMeesignRepo {
+pub struct Repository {
     pg_pool: Arc<PgPool>,
 }
 
 type PgPool = Pool<AsyncPgConnection>;
 type DeadpoolPgConnection = Object<AsyncPgConnection>;
 
-impl PostgresMeesignRepo {
+impl Repository {
     pub async fn from_url(database_url: &str) -> Result<Self, PersistenceError> {
         let repo = Self {
-            pg_pool: Arc::new(PostgresMeesignRepo::init_pool(database_url)?),
+            pg_pool: Arc::new(Repository::init_pool(database_url)?),
         };
         repo.apply_migrations()?;
         Ok(repo)
@@ -62,10 +64,10 @@ impl PostgresMeesignRepo {
     }
 }
 
-#[tonic::async_trait]
-impl MeesignRepo for PostgresMeesignRepo {
+/// Interface
+impl Repository {
     /* Devices */
-    async fn add_device(
+    pub async fn add_device(
         &self,
         identifier: &[u8],
         name: &str,
@@ -80,15 +82,15 @@ impl MeesignRepo for PostgresMeesignRepo {
         .await
     }
 
-    async fn get_devices(&self) -> Result<Vec<Device>, PersistenceError> {
+    pub async fn get_devices(&self) -> Result<Vec<Device>, PersistenceError> {
         get_devices(&mut self.get_async_connection().await?).await
     }
 
-    async fn get_task_devices(&self, task_id: &Uuid) -> Result<Vec<Device>, PersistenceError> {
+    pub async fn get_task_devices(&self, task_id: &Uuid) -> Result<Vec<Device>, PersistenceError> {
         todo!()
     }
 
-    async fn activate_device(
+    pub async fn activate_device(
         &self,
         target_identifier: &[u8],
     ) -> Result<Option<Device>, PersistenceError> {
@@ -96,7 +98,7 @@ impl MeesignRepo for PostgresMeesignRepo {
     }
 
     /* Groups */
-    async fn add_group<'a>(
+    pub async fn add_group<'a>(
         &self,
         identifier: &[u8],
         name: &str,
@@ -117,22 +119,25 @@ impl MeesignRepo for PostgresMeesignRepo {
         .await
     }
 
-    async fn get_group(
+    pub async fn get_group(
         &self,
         group_identifier: &Vec<u8>,
     ) -> Result<Option<Group>, PersistenceError> {
         todo!()
     }
 
-    async fn get_groups(&self) -> Result<Vec<Group>, PersistenceError> {
+    pub async fn get_groups(&self) -> Result<Vec<Group>, PersistenceError> {
         get_groups(&mut self.get_async_connection().await?).await
     }
 
-    async fn get_device_groups(&self, identifier: &[u8]) -> Result<Vec<Group>, PersistenceError> {
+    pub async fn get_device_groups(
+        &self,
+        identifier: &[u8],
+    ) -> Result<Vec<Group>, PersistenceError> {
         todo!()
     }
 
-    async fn does_group_contain_device(
+    pub async fn does_group_contain_device(
         &self,
         group_id: &[u8],
         device_id: &[u8],
@@ -141,7 +146,7 @@ impl MeesignRepo for PostgresMeesignRepo {
     }
 
     /* Tasks */
-    async fn create_group_task<'a>(
+    pub async fn create_group_task<'a>(
         &self,
         name: &str,
         devices: &[Vec<u8>],
@@ -162,7 +167,7 @@ impl MeesignRepo for PostgresMeesignRepo {
         .await
     }
 
-    async fn create_sign_task<'a>(
+    pub async fn create_sign_task<'a>(
         &self,
         group_identifier: &Vec<u8>,
         name: &str,
@@ -181,7 +186,7 @@ impl MeesignRepo for PostgresMeesignRepo {
         .await
     }
 
-    async fn create_decrypt_task(
+    pub async fn create_decrypt_task(
         &self,
         group_identifier: &Vec<u8>,
         name: &str,
@@ -200,19 +205,19 @@ impl MeesignRepo for PostgresMeesignRepo {
         .await
     }
 
-    async fn get_task(&self, task_id: &Uuid) -> Result<Option<Task>, PersistenceError> {
+    pub async fn get_task(&self, task_id: &Uuid) -> Result<Option<Task>, PersistenceError> {
         todo!()
     }
 
-    async fn get_tasks(&self) -> Result<Vec<Task>, PersistenceError> {
+    pub async fn get_tasks(&self) -> Result<Vec<Task>, PersistenceError> {
         todo!()
     }
 
-    async fn get_tasks_for_restart(&self) -> Result<Vec<Task>, PersistenceError> {
+    pub async fn get_tasks_for_restart(&self) -> Result<Vec<Task>, PersistenceError> {
         todo!()
     }
 
-    async fn get_device_tasks(&self, identifier: &[u8]) -> Result<Vec<Task>, PersistenceError> {
+    pub async fn get_device_tasks(&self, identifier: &[u8]) -> Result<Vec<Task>, PersistenceError> {
         todo!()
     }
 }

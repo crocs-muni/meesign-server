@@ -7,7 +7,7 @@ use crate::persistence::{
     enums::ProtocolType,
     error::PersistenceError,
     models::{Group, NewGroup, NewGroupParticipant},
-    postgres_meesign_repo::device::device_ids_to_identifiers,
+    repository::device::device_ids_to_identifiers,
 };
 
 pub async fn get_groups<Conn>(connection: &mut Conn) -> Result<Vec<Group>, PersistenceError>
