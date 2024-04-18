@@ -4,8 +4,8 @@ use diesel_async::AsyncConnection;
 use diesel_async::RunQueryDsl;
 
 use crate::persistence::{
+    error::PersistenceError,
     models::{Device, NewDevice},
-    persistance_error::PersistenceError,
     postgres_meesign_repo::utils::NameValidator,
 };
 
@@ -101,7 +101,7 @@ mod test {
     use tokio::time::sleep;
 
     use crate::persistence::{
-        persistance_error::PersistenceError,
+        error::PersistenceError,
         postgres_meesign_repo::device::{activate_device, add_device, get_devices},
         tests::persistency_unit_test_context::PersistencyUnitTestContext,
     };

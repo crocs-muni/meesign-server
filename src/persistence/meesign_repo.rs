@@ -2,8 +2,8 @@ use uuid::Uuid;
 
 use super::{
     enums::{KeyType, ProtocolType},
+    error::PersistenceError,
     models::{Device, Group, Task},
-    persistance_error::PersistenceError,
 };
 
 #[tonic::async_trait]

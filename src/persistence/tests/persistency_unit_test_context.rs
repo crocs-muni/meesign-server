@@ -5,7 +5,7 @@ use diesel_async::{AsyncConnection, AsyncPgConnection};
 use diesel_migrations::MigrationHarness;
 use dotenvy::dotenv;
 
-use crate::persistence::{persistance_error::PersistenceError, postgres_meesign_repo::MIGRATIONS};
+use crate::persistence::{error::PersistenceError, postgres_meesign_repo::MIGRATIONS};
 
 static INIT: Once = Once::new();
 const TEST_DB_URL_ENV_NAME: &str = "TEST_DATABASE_URL";

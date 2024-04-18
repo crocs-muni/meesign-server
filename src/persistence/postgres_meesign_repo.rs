@@ -3,9 +3,9 @@ use self::group::{add_group, get_groups};
 use self::task::create_task;
 
 use super::enums::{KeyType, ProtocolType, TaskType};
+use super::error::PersistenceError;
 use super::meesign_repo::MeesignRepo;
 use super::models::{Device, Group, Task};
-use super::persistance_error::PersistenceError;
 
 use diesel::{Connection, PgConnection};
 use diesel_async::pooled_connection::deadpool::{Object, Pool};

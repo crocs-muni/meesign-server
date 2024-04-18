@@ -6,8 +6,8 @@ use diesel_async::AsyncConnection;
 use super::utils::NameValidator;
 use crate::persistence::{
     enums::{KeyType, ProtocolType, TaskState, TaskType},
+    error::PersistenceError,
     models::{NewTask, Task},
-    persistance_error::PersistenceError,
 };
 
 pub async fn create_task<Conn>(

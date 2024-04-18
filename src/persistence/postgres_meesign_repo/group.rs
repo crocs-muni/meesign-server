@@ -5,8 +5,8 @@ use diesel_async::{AsyncConnection, RunQueryDsl};
 
 use crate::persistence::{
     enums::ProtocolType,
+    error::PersistenceError,
     models::{Group, NewGroup, NewGroupParticipant},
-    persistance_error::PersistenceError,
     postgres_meesign_repo::device::device_ids_to_identifiers,
 };
 
