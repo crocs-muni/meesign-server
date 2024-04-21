@@ -6,9 +6,12 @@ use super::{
     models::{Device, Group, Task},
 };
 
-use self::device::{activate_device, add_device, get_devices};
 use self::group::{add_group, get_groups};
 use self::task::create_task;
+use self::{
+    device::{activate_device, add_device, get_devices},
+    group::get_group,
+};
 
 use diesel::{Connection, PgConnection};
 use diesel_async::pooled_connection::deadpool::{Object, Pool};
@@ -73,17 +76,13 @@ impl Repository {
         name: &str,
         certificate: &[u8],
     ) -> Result<Device, PersistenceError> {
-        add_device(
-            &mut self.get_async_connection().await?,
-            identifier,
-            name,
-            certificate,
-        )
-        .await
+        let connection = &mut self.get_async_connection().await?;
+        add_device(connection, identifier, name, certificate).await
     }
 
     pub async fn get_devices(&self) -> Result<Vec<Device>, PersistenceError> {
-        get_devices(&mut self.get_async_connection().await?).await
+        let connection = &mut self.get_async_connection().await?;
+        get_devices(connection).await
     }
 
     pub async fn get_task_devices(&self, task_id: &Uuid) -> Result<Vec<Device>, PersistenceError> {
@@ -94,7 +93,8 @@ impl Repository {
         &self,
         target_identifier: &[u8],
     ) -> Result<Option<Device>, PersistenceError> {
-        activate_device(&mut self.get_async_connection().await?, target_identifier).await
+        let connection = &mut self.get_async_connection().await?;
+        activate_device(connection, target_identifier).await
     }
 
     /* Groups */
@@ -107,8 +107,9 @@ impl Repository {
         protocol: ProtocolType,
         certificate: Option<&[u8]>,
     ) -> Result<Group, PersistenceError> {
+        let connection = &mut self.get_async_connection().await?;
         add_group(
-            &mut self.get_async_connection().await?,
+            connection,
             identifier,
             name,
             devices,
@@ -123,11 +124,13 @@ impl Repository {
         &self,
         group_identifier: &Vec<u8>,
     ) -> Result<Option<Group>, PersistenceError> {
-        todo!()
+        let connection = &mut self.get_async_connection().await?;
+        get_group(connection, group_identifier).await
     }
 
     pub async fn get_groups(&self) -> Result<Vec<Group>, PersistenceError> {
-        get_groups(&mut self.get_async_connection().await?).await
+        let connection = &mut self.get_async_connection().await?;
+        get_groups(connection).await
     }
 
     pub async fn get_device_groups(
@@ -154,8 +157,9 @@ impl Repository {
         protocol_type: ProtocolType,
         key_type: KeyType,
     ) -> Result<Task, PersistenceError> {
+        let connection = &mut self.get_async_connection().await?;
         create_task(
-            &mut self.get_async_connection().await?,
+            connection,
             TaskType::Group,
             name,
             None,
@@ -173,8 +177,9 @@ impl Repository {
         name: &str,
         data: &Vec<u8>,
     ) -> Result<Task, PersistenceError> {
+        let connection = &mut self.get_async_connection().await?;
         create_task(
-            &mut self.get_async_connection().await?,
+            connection,
             TaskType::SignChallenge, // TODO: based on data
             name,
             Some(data),
@@ -192,8 +197,9 @@ impl Repository {
         name: &str,
         data: &Vec<u8>,
     ) -> Result<Task, PersistenceError> {
+        let connection = &mut self.get_async_connection().await?;
         create_task(
-            &mut self.get_async_connection().await?,
+            connection,
             TaskType::Decrypt,
             name,
             Some(data),
