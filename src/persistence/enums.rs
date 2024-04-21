@@ -3,6 +3,7 @@ use diesel_derive_enum::DbEnum;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, DbEnum)]
 #[ExistingTypePath = "crate::persistence::schema::sql_types::Protocoltype"]
+#[DbValueStyle = "PascalCase"]
 pub enum ProtocolType {
     Gg18,
     ElGamal,
@@ -21,7 +22,7 @@ impl From<proto::ProtocolType> for ProtocolType {
 
 #[derive(Debug, DbEnum, Clone, PartialEq, Eq)]
 #[ExistingTypePath = "crate::persistence::schema::sql_types::Tasktype"]
-
+#[DbValueStyle = "PascalCase"]
 pub enum TaskType {
     Group,
     SignPdf,
@@ -31,7 +32,7 @@ pub enum TaskType {
 
 #[derive(Debug, DbEnum)]
 #[ExistingTypePath = "crate::persistence::schema::sql_types::Taskresulttype"]
-
+#[DbValueStyle = "PascalCase"]
 pub enum TaskResultType {
     GroupEstablished,
     Signed,
@@ -41,7 +42,7 @@ pub enum TaskResultType {
 
 #[derive(Debug, DbEnum, Clone, PartialEq, Eq)]
 #[ExistingTypePath = "crate::persistence::schema::sql_types::Taskstate"]
-
+#[DbValueStyle = "PascalCase"]
 pub enum TaskState {
     Created,
     Running,
@@ -51,9 +52,9 @@ pub enum TaskState {
 
 #[derive(Debug, Clone, PartialEq, Eq, DbEnum)]
 #[ExistingTypePath = "crate::persistence::schema::sql_types::Keytype"]
-
+#[DbValueStyle = "PascalCase"]
 pub enum KeyType {
-    SignPDF,
+    SignPdf,
     SignChallenge,
     Decrypt,
 }
@@ -61,7 +62,7 @@ pub enum KeyType {
 impl From<proto::KeyType> for KeyType {
     fn from(value: proto::KeyType) -> Self {
         match value {
-            proto::KeyType::SignPdf => Self::SignPDF,
+            proto::KeyType::SignPdf => Self::SignPdf,
             proto::KeyType::SignChallenge => Self::SignChallenge,
             proto::KeyType::Decrypt => Self::Decrypt,
         }
@@ -81,7 +82,7 @@ impl From<ProtocolType> for proto::ProtocolType {
 impl From<KeyType> for proto::KeyType {
     fn from(value: KeyType) -> Self {
         match value {
-            KeyType::SignPDF => proto::KeyType::SignPdf,
+            KeyType::SignPdf => proto::KeyType::SignPdf,
             KeyType::SignChallenge => proto::KeyType::SignChallenge,
             KeyType::Decrypt => proto::KeyType::Decrypt,
         }

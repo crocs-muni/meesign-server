@@ -1,5 +1,5 @@
 CREATE TYPE ProtocolType AS ENUM (
-    'GG18', 'ElGamal', 'Frost'
+    'Gg18', 'ElGamal', 'Frost'
 );
 
 CREATE TYPE KeyType AS ENUM (
