@@ -4,7 +4,7 @@ use diesel::{pg::Pg, result::Error::NotFound, ExpressionMethods, QueryDsl, Selec
 use diesel_async::{AsyncConnection, RunQueryDsl};
 
 use crate::persistence::{
-    enums::ProtocolType,
+    enums::{KeyType, ProtocolType},
     error::PersistenceError,
     models::{Group, NewGroup, NewGroupParticipant},
     repository::device::device_ids_to_identifiers,
@@ -25,6 +25,7 @@ pub async fn add_group<'a, Conn>(
     devices: &[&[u8]],
     threshold: u32,
     protocol: ProtocolType,
+    key_type: KeyType,
     certificate: Option<&[u8]>,
 ) -> Result<Group, PersistenceError>
 where
@@ -53,6 +54,7 @@ where
         group_name: name,
         round: 0, // TODO: check why
         group_certificate: certificate,
+        key_type,
     };
 
     let devices: Vec<Vec<u8>> = devices
@@ -103,4 +105,74 @@ where
     };
 
     Ok(group)
+}
+
+#[cfg(test)]
+mod test {
+    use diesel_async::AsyncPgConnection;
+
+    use crate::persistence::{
+        repository::device::add_device,
+        tests::persistency_unit_test_context::PersistencyUnitTestContext,
+    };
+
+    use super::*;
+
+    #[tokio::test]
+    async fn given_valid_arguments_create_group() -> Result<(), PersistenceError> {
+        let ctx = PersistencyUnitTestContext::new();
+        let group_identifier = vec![1; 32];
+        let group_name = "Test Group";
+        let group_certificate = vec![42; 150];
+        let threshold = 2;
+        let device_identifier_1 = vec![11; 32];
+        let device_identifier_2 = vec![12; 32];
+        let devices = &vec![&device_identifier_1[..], &device_identifier_2[..]];
+        let mut connection: AsyncPgConnection = ctx.get_test_connection().await?;
+        add_device(
+            &mut connection,
+            &device_identifier_1,
+            "Device 1",
+            &vec![42; 5],
+        )
+        .await?;
+        add_device(
+            &mut connection,
+            &device_identifier_2,
+            "Device 2",
+            &vec![42; 5],
+        )
+        .await?;
+        let created_group = add_group(
+            &mut connection,
+            &group_identifier,
+            group_name,
+            devices,
+            threshold,
+            ProtocolType::ElGamal,
+            KeyType::Decrypt,
+            Some(&group_certificate),
+        )
+        .await?;
+        let retrieved_group = get_group(&mut connection, &group_identifier).await?;
+        assert!(
+            retrieved_group.is_some(),
+            "Created group couldn't be retrieved"
+        );
+        let retrieved_group = retrieved_group.unwrap();
+        assert_eq!(created_group, retrieved_group);
+        let target_group = Group {
+            id: retrieved_group.id,
+            identifier: group_identifier,
+            group_name: group_name.into(),
+            threshold: threshold as i32,
+            protocol: ProtocolType::ElGamal,
+            round: 0,
+            key_type: KeyType::Decrypt,
+            group_certificate: Some(group_certificate),
+        };
+
+        assert_eq!(retrieved_group, target_group);
+        Ok(())
+    }
 }

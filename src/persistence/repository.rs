@@ -105,6 +105,7 @@ impl Repository {
         devices: &[&[u8]],
         threshold: u32,
         protocol: ProtocolType,
+        key_type: KeyType,
         certificate: Option<&[u8]>,
     ) -> Result<Group, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
@@ -115,6 +116,7 @@ impl Repository {
             devices,
             threshold,
             protocol,
+            key_type,
             certificate,
         )
         .await

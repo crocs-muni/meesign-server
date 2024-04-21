@@ -36,7 +36,7 @@ impl From<Device> for crate::proto::Device {
     }
 }
 
-#[derive(Queryable, Clone, Eq, PartialEq, Selectable)]
+#[derive(Queryable, Clone, Eq, PartialEq, Selectable, Debug)]
 #[diesel(table_name=signinggroup)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Group {
@@ -58,6 +58,7 @@ pub struct NewGroup<'a> {
     pub threshold: i32,
     pub protocol: ProtocolType,
     pub round: i32,
+    pub key_type: KeyType,
     pub group_certificate: Option<&'a [u8]>,
 }
 
