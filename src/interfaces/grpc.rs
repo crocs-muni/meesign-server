@@ -118,7 +118,7 @@ impl MeeSign for MeeSignService {
         info!("SignRequest group_id={}", utils::hextrunc(&group_id));
 
         let mut state = self.state.lock().await;
-        if let Some(task_id) = state.add_sign_task(&group_id, &name, &data) {
+        if let Some(task_id) = state.add_sign_task(&group_id, &name, &data).await? {
             let task = state.get_task(&task_id).unwrap();
             Ok(Response::new(format_task(&task_id, task, None, None)))
         } else {
@@ -140,7 +140,10 @@ impl MeeSign for MeeSignService {
         info!("DecryptRequest group_id={}", utils::hextrunc(&group_id));
 
         let mut state = self.state.lock().await;
-        if let Some(task_id) = state.add_decrypt_task(&group_id, &name, &data, &data_type) {
+        if let Some(task_id) = state
+            .add_decrypt_task(&group_id, &name, &data, &data_type)
+            .await?
+        {
             let task = state.get_task(&task_id).unwrap();
             Ok(Response::new(format_task(&task_id, task, None, None)))
         } else {
@@ -277,13 +280,15 @@ impl MeeSign for MeeSignService {
             state.get_repo().activate_device(&device_id).await?;
             state
                 .get_device_groups(&device_id)
-                .iter()
+                .await?
+                .into_iter()
                 .map(|group| group.into())
                 .collect()
         } else {
             state
                 .get_groups()
-                .values()
+                .await?
+                .into_iter()
                 .map(|group| group.into())
                 .collect()
         };

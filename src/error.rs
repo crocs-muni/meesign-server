@@ -15,3 +15,12 @@ impl From<String> for Error {
         Self::GeneralProtocolError(value)
     }
 }
+
+impl From<Error> for tonic::Status {
+    fn from(value: Error) -> Self {
+        match value {
+            Error::PersistenceError(_) => Self::internal("Internal error occurred"),
+            Error::GeneralProtocolError(error) => Self::failed_precondition(error),
+        }
+    }
+}

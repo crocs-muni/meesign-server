@@ -119,3 +119,17 @@ impl From<Group> for crate::proto::Group {
         }
     }
 }
+
+impl From<Group> for crate::group::Group {
+    fn from(value: Group) -> Self {
+        Self::new(
+            value.identifier,
+            value.group_name,
+            vec![], /* TODO */
+            value.threshold as u32,
+            value.protocol.into(),
+            value.key_type.into(),
+            value.group_certificate,
+        )
+    }
+}

@@ -136,7 +136,7 @@ impl Repository {
 
     pub async fn get_group(
         &self,
-        group_identifier: &Vec<u8>,
+        group_identifier: &[u8],
     ) -> Result<Option<Group>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         get_group(connection, group_identifier).await

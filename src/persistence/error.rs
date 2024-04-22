@@ -24,6 +24,6 @@ pub enum PersistenceError {
 
 impl From<PersistenceError> for tonic::Status {
     fn from(_value: PersistenceError) -> Self {
-        tonic::Status::internal("Internal error occurred")
+        Self::internal("Internal error occurred")
     }
 }

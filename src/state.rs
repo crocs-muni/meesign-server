@@ -6,10 +6,9 @@ use uuid::Uuid;
 
 use crate::communicator::Communicator;
 use crate::error::Error;
-use crate::group::Group;
 use crate::interfaces::grpc::format_task;
-use crate::persistence::{PersistenceError, Repository};
-use crate::proto::{KeyType, ProtocolType};
+use crate::persistence::{Group, Repository};
+use crate::proto::KeyType;
 use crate::tasks::decrypt::DecryptTask;
 use crate::tasks::sign::SignTask;
 use crate::tasks::sign_pdf::SignPDFTask;
@@ -20,7 +19,6 @@ use tonic::codegen::Arc;
 use tonic::Status;
 
 pub struct State {
-    groups: HashMap<Vec<u8>, Group>,
     tasks: HashMap<Uuid, Box<dyn Task + Send + Sync>>,
     subscribers: DashMap<Vec<u8>, Sender<Result<crate::proto::Task, Status>>>,
     repo: Arc<Repository>,
@@ -30,7 +28,6 @@ pub struct State {
 impl State {
     pub fn new(repo: Arc<Repository>) -> Self {
         State {
-            groups: HashMap::new(),
             tasks: HashMap::new(),
             subscribers: DashMap::new(),
             repo,
@@ -38,14 +35,23 @@ impl State {
         }
     }
 
-    pub fn add_sign_task(&mut self, group_id: &[u8], name: &str, data: &[u8]) -> Option<Uuid> {
-        let group = self.groups.get(group_id);
+    pub async fn add_sign_task(
+        &mut self,
+        group_id: &[u8],
+        name: &str,
+        data: &[u8],
+    ) -> Result<Option<Uuid>, Error> {
+        let group: Option<crate::group::Group> = self
+            .get_repo()
+            .get_group(group_id)
+            .await?
+            .map(|val| val.into());
         if group.is_none() {
             warn!(
                 "Signing requested from an unknown group group_id={}",
                 utils::hextrunc(group_id)
             );
-            return None;
+            return Ok(None);
         }
         let group = group.unwrap();
         let task = match group.key_type() {
@@ -64,7 +70,7 @@ impl State {
                     "Signing request made for decryption group group_id={}",
                     utils::hextrunc(group_id)
                 );
-                return None;
+                return Ok(None);
             }
         };
 
@@ -72,23 +78,27 @@ impl State {
         if let Some(task_id) = &task_id {
             self.send_updates(task_id);
         }
-        task_id
+        Ok(task_id)
     }
 
-    pub fn add_decrypt_task(
+    pub async fn add_decrypt_task(
         &mut self,
         group_id: &[u8],
         name: &str,
         data: &[u8],
         data_type: &str,
-    ) -> Option<Uuid> {
-        let group = self.groups.get(group_id);
+    ) -> Result<Option<Uuid>, Error> {
+        let group: Option<crate::group::Group> = self
+            .get_repo()
+            .get_group(group_id)
+            .await?
+            .map(|val| val.into());
         if group.is_none() {
             warn!(
                 "Decryption requested from an unknown group group_id={}",
                 utils::hextrunc(group_id)
             );
-            return None;
+            return Ok(None);
         }
         let group = group.unwrap();
         let task = match group.key_type() {
@@ -104,7 +114,7 @@ impl State {
                     "Decryption request made for a signing group group_id={}",
                     utils::hextrunc(group_id)
                 );
-                return None;
+                return Ok(None);
             }
         };
 
@@ -112,7 +122,7 @@ impl State {
         if let Some(task_id) = &task_id {
             self.send_updates(task_id);
         }
-        task_id
+        Ok(task_id)
     }
 
     fn add_task(&mut self, task: Box<dyn Task + Sync + Send>) -> Uuid {
@@ -136,18 +146,12 @@ impl State {
         tasks
     }
 
-    pub fn get_device_groups(&self, device: &[u8]) -> Vec<Group> {
-        let mut groups = Vec::new();
-        for group in self.groups.values() {
-            if group.contains(device) {
-                groups.push(group.clone());
-            }
-        }
-        groups
+    pub async fn get_device_groups(&self, device: &[u8]) -> Result<Vec<Group>, Error> {
+        Ok(self.get_repo().get_device_groups(device).await?)
     }
 
-    pub fn get_groups(&self) -> &HashMap<Vec<u8>, Group> {
-        &self.groups
+    pub async fn get_groups(&self) -> Result<Vec<Group>, Error> {
+        Ok(self.get_repo().get_groups().await?)
     }
 
     pub fn get_tasks(&self) -> &HashMap<Uuid, Box<dyn Task + Send + Sync>> {
@@ -181,8 +185,6 @@ impl State {
         if previous_status != TaskStatus::Finished && task.get_status() == TaskStatus::Finished {
             // TODO join if statements once #![feature(let_chains)] gets stabilized
             if let TaskResult::GroupEstablished(group) = task.get_result().unwrap() {
-                self.groups
-                    .insert(group.identifier().to_vec(), group.clone());
                 let device_ids: Vec<&[u8]> = group
                     .devices()
                     .iter()

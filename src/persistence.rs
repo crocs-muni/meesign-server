@@ -8,4 +8,5 @@ mod repository;
 mod schema;
 
 pub use error::PersistenceError;
+pub use models::Group;
 pub use repository::Repository;
