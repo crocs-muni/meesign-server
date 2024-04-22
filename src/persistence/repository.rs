@@ -14,9 +14,14 @@ use self::{
 };
 
 use diesel::{Connection, PgConnection};
-use diesel_async::pooled_connection::deadpool::{Object, Pool};
-use diesel_async::pooled_connection::AsyncDieselConnectionManager;
 use diesel_async::AsyncPgConnection;
+use diesel_async::{
+    pooled_connection::deadpool::{Object, Pool},
+    AsyncConnection,
+};
+use diesel_async::{
+    pooled_connection::AsyncDieselConnectionManager, scoped_futures::ScopedFutureExt,
+};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use std::env;
 use std::sync::Arc;
@@ -98,7 +103,7 @@ impl Repository {
     }
 
     /* Groups */
-    pub async fn add_group<'a>(
+    pub async fn add_group(
         &self,
         identifier: &[u8],
         name: &str,
@@ -109,17 +114,24 @@ impl Repository {
         certificate: Option<&[u8]>,
     ) -> Result<Group, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
-        add_group(
-            connection,
-            identifier,
-            name,
-            devices,
-            threshold,
-            protocol,
-            key_type,
-            certificate,
-        )
-        .await
+        connection
+            .transaction(|connection| {
+                async move {
+                    add_group(
+                        connection,
+                        identifier,
+                        name,
+                        devices,
+                        threshold,
+                        protocol,
+                        key_type,
+                        certificate,
+                    )
+                    .await
+                }
+                .scope_boxed()
+            })
+            .await
     }
 
     pub async fn get_group(
