@@ -17,7 +17,9 @@ use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use crate::proto::{DeviceKind, KeyType, MeeSign, MeeSignServer, ProtocolType};
+use crate::error::Error;
+use crate::proto::mpc_server::{Mpc, MpcServer};
+use crate::proto::{KeyType, ProtocolType};
 use crate::state::State;
 use crate::tasks::{Task, TaskStatus};
 use crate::{proto as msg, utils, CA_CERT, CA_KEY};
@@ -210,13 +212,16 @@ impl MeeSign for MeeSignService {
 
         let mut state = self.state.lock().await;
         state.get_repo().activate_device(&device_id).await?;
-        let result = state.update_task(&task_id, &device_id, &data, attempt);
+        let result = state
+            .update_task(&task_id, &device_id, &data, attempt)
+            .await;
 
         match result {
             Ok(_) => Ok(Response::new(msg::Resp {
                 message: "OK".into(),
             })),
-            Err(e) => Err(Status::failed_precondition(e)),
+            Err(Error::GeneralProtocolError(e)) => Err(Status::failed_precondition(e)),
+            Err(e) => Err(Status::internal("Internal error occurred")),
         }
     }
 

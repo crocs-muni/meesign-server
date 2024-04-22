@@ -14,6 +14,7 @@ use tonic::codegen::Arc;
 
 mod communicator;
 mod device;
+mod error;
 mod group;
 mod interfaces;
 mod persistence;

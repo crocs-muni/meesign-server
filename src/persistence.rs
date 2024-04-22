@@ -7,4 +7,5 @@ mod models;
 mod repository;
 mod schema;
 
+pub use error::PersistenceError;
 pub use repository::Repository;

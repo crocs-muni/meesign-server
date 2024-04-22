@@ -5,10 +5,11 @@ use log::{debug, warn};
 use uuid::Uuid;
 
 use crate::communicator::Communicator;
+use crate::error::Error;
 use crate::group::Group;
 use crate::interfaces::grpc::format_task;
-use crate::persistence::Repository;
-use crate::proto::KeyType;
+use crate::persistence::{PersistenceError, Repository};
+use crate::proto::{KeyType, ProtocolType};
 use crate::tasks::decrypt::DecryptTask;
 use crate::tasks::sign::SignTask;
 use crate::tasks::sign_pdf::SignPDFTask;
@@ -157,13 +158,13 @@ impl State {
         self.tasks.get(task).map(|task| task.as_ref() as &dyn Task)
     }
 
-    pub fn update_task(
+    pub async fn update_task(
         &mut self,
         task_id: &Uuid,
         device: &[u8],
         data: &Vec<Vec<u8>>,
         attempt: u32,
-    ) -> Result<bool, String> {
+    ) -> Result<bool, Error> {
         let task = self.tasks.get_mut(task_id).unwrap();
         if attempt != task.get_attempts() {
             warn!(
@@ -172,7 +173,7 @@ impl State {
                 utils::hextrunc(device),
                 attempt
             );
-            return Err("Stale update".to_string());
+            return Err(Error::GeneralProtocolError("Stale update".to_string()));
         }
 
         let previous_status = task.get_status();
@@ -180,13 +181,30 @@ impl State {
         if previous_status != TaskStatus::Finished && task.get_status() == TaskStatus::Finished {
             // TODO join if statements once #![feature(let_chains)] gets stabilized
             if let TaskResult::GroupEstablished(group) = task.get_result().unwrap() {
-                self.groups.insert(group.identifier().to_vec(), group);
+                self.groups
+                    .insert(group.identifier().to_vec(), group.clone());
+                let device_ids: Vec<&[u8]> = group
+                    .devices()
+                    .iter()
+                    .map(|device| device.identifier())
+                    .collect();
+                self.get_repo()
+                    .add_group(
+                        group.identifier(),
+                        group.name(),
+                        &device_ids[..],
+                        group.threshold(),
+                        group.protocol().into(),
+                        group.key_type().into(),
+                        group.certificate().map(|v| v.as_ref()),
+                    )
+                    .await?;
             }
         }
         if let Ok(true) = update_result {
             self.send_updates(task_id);
         }
-        update_result
+        update_result.map_err(|err| Error::GeneralProtocolError(err))
     }
 
     pub fn decide_task(&mut self, task_id: &Uuid, device: &[u8], decision: bool) -> bool {
