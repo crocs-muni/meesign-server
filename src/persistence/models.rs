@@ -36,7 +36,8 @@ impl From<Device> for crate::proto::Device {
     }
 }
 
-#[derive(Queryable, Clone, Eq, PartialEq, Selectable, Debug)]
+#[derive(Queryable, Clone, Eq, PartialEq, Selectable)]
+#[cfg_attr(test, derive(PartialOrd, Ord, Debug))]
 #[diesel(table_name=signinggroup)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Group {

@@ -141,11 +141,15 @@ mod test {
 
     use super::*;
 
-    const GROUP_IDENTIFIER: [u8; 32] = [1; 32];
-    const GROUP_NAME: &str = "Test Group";
-    const GROUP_CERTIFICATE: [u8; 150] = [42; 150];
+    const GROUP_1_IDENTIFIER: [u8; 32] = [1; 32];
+    const GROUP_2_IDENTIFIER: [u8; 32] = [2; 32];
+    const GROUP_1_NAME: &str = "Group 1";
+    const GROUP_2_NAME: &str = "Group 2";
+    const GROUP_1_CERT: [u8; 150] = [11; 150];
+    const GROUP_2_CERT: [u8; 150] = [22; 150];
     const DEVICE_1_ID: [u8; 32] = [1; 32];
     const DEVICE_2_ID: [u8; 32] = [2; 32];
+    const DEVICE_3_ID: [u8; 32] = [3; 32];
 
     #[tokio::test]
     async fn given_valid_arguments_create_group() -> Result<(), PersistenceError> {
@@ -158,16 +162,16 @@ mod test {
         add_device(&mut connection, &DEVICE_2_ID, "Device 2", &vec![42; 5]).await?;
         let created_group = add_group(
             &mut connection,
-            &GROUP_IDENTIFIER,
-            GROUP_NAME,
+            &GROUP_1_IDENTIFIER,
+            GROUP_1_NAME,
             devices,
             threshold,
             ProtocolType::ElGamal,
             KeyType::Decrypt,
-            Some(&GROUP_CERTIFICATE),
+            Some(&GROUP_1_CERT),
         )
         .await?;
-        let retrieved_group = get_group(&mut connection, &GROUP_IDENTIFIER).await?;
+        let retrieved_group = get_group(&mut connection, &GROUP_1_IDENTIFIER).await?;
         assert!(
             retrieved_group.is_some(),
             "Created group couldn't be retrieved"
@@ -176,16 +180,72 @@ mod test {
         assert_eq!(created_group, retrieved_group);
         let target_group = Group {
             id: retrieved_group.id,
-            identifier: Vec::from(GROUP_IDENTIFIER),
-            group_name: GROUP_NAME.into(),
+            identifier: Vec::from(GROUP_1_IDENTIFIER),
+            group_name: GROUP_1_NAME.into(),
             threshold: threshold as i32,
             protocol: ProtocolType::ElGamal,
             round: 0,
             key_type: KeyType::Decrypt,
-            group_certificate: Some(GROUP_CERTIFICATE.into()),
+            group_certificate: Some(GROUP_1_CERT.into()),
         };
 
         assert_eq!(retrieved_group, target_group);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn given_valid_group_and_device_get_device_groups_returns_correct_group(
+    ) -> Result<(), PersistenceError> {
+        let ctx = PersistencyUnitTestContext::new();
+        let mut connection: AsyncPgConnection = ctx.get_test_connection().await?;
+
+        let group_1_devices = &vec![&DEVICE_1_ID[..], &DEVICE_2_ID[..]];
+        let group_2_devices = &vec![&DEVICE_2_ID[..], &DEVICE_3_ID[..]];
+        let threshold = 2;
+
+        add_device(&mut connection, &DEVICE_1_ID, "Device 1", &vec![42; 5]).await?;
+        add_device(&mut connection, &DEVICE_2_ID, "Device 2", &vec![42; 5]).await?;
+        add_device(&mut connection, &DEVICE_3_ID, "Device 3", &vec![42; 5]).await?;
+
+        let group_1 = add_group(
+            &mut connection,
+            &GROUP_1_IDENTIFIER,
+            GROUP_1_NAME,
+            group_1_devices,
+            threshold,
+            ProtocolType::ElGamal,
+            KeyType::Decrypt,
+            Some(&GROUP_1_CERT),
+        )
+        .await?;
+
+        let group_2 = add_group(
+            &mut connection,
+            &GROUP_2_IDENTIFIER,
+            GROUP_2_NAME,
+            group_2_devices,
+            threshold,
+            ProtocolType::Frost,
+            KeyType::SignChallenge,
+            Some(&GROUP_2_CERT),
+        )
+        .await?;
+
+        assert_eq!(
+            get_device_groups(&mut connection, &DEVICE_1_ID).await?,
+            vec![group_1.clone()]
+        );
+
+        let mut expected_device2_groups = vec![group_1, group_2.clone()];
+        let mut received_device2_groups = get_device_groups(&mut connection, &DEVICE_2_ID).await?;
+        expected_device2_groups.sort_unstable();
+        received_device2_groups.sort_unstable();
+        assert_eq!(expected_device2_groups, received_device2_groups);
+
+        assert_eq!(
+            get_device_groups(&mut connection, &DEVICE_3_ID).await?,
+            vec![group_2]
+        );
         Ok(())
     }
 }

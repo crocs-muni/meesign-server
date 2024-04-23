@@ -2,6 +2,7 @@ use crate::proto;
 use diesel_derive_enum::DbEnum;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, DbEnum)]
+#[cfg_attr(test, derive(PartialOrd, Ord))]
 #[ExistingTypePath = "crate::persistence::schema::sql_types::Protocoltype"]
 #[DbValueStyle = "PascalCase"]
 pub enum ProtocolType {
@@ -51,6 +52,7 @@ pub enum TaskState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, DbEnum)]
+#[cfg_attr(test, derive(PartialOrd, Ord))]
 #[ExistingTypePath = "crate::persistence::schema::sql_types::Keytype"]
 #[DbValueStyle = "PascalCase"]
 pub enum KeyType {
