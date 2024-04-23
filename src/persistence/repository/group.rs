@@ -107,6 +107,29 @@ where
     Ok(group)
 }
 
+pub async fn get_device_groups<Conn>(
+    connection: &mut Conn,
+    device_identifier: &[u8],
+) -> Result<Vec<Group>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    use crate::persistence::schema::device::dsl::{device, identifier};
+    use crate::persistence::schema::groupparticipant::dsl::groupparticipant;
+    use crate::persistence::schema::signinggroup::dsl::signinggroup;
+
+    // TODO: consider not using artificial IDs
+    let groups: Vec<Group> = groupparticipant
+        .inner_join(signinggroup)
+        .inner_join(device)
+        .filter(identifier.eq(device_identifier))
+        .select(Group::as_select())
+        .load(connection)
+        .await?;
+
+    Ok(groups)
+}
+
 #[cfg(test)]
 mod test {
     use diesel_async::AsyncPgConnection;

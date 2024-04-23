@@ -6,7 +6,7 @@ use super::{
     models::{Device, Group, Task},
 };
 
-use self::group::{add_group, get_groups};
+use self::group::{add_group, get_device_groups, get_groups};
 use self::task::create_task;
 use self::{
     device::{activate_device, add_device, get_devices},
@@ -151,7 +151,8 @@ impl Repository {
         &self,
         identifier: &[u8],
     ) -> Result<Vec<Group>, PersistenceError> {
-        todo!()
+        let connection = &mut self.get_async_connection().await?;
+        get_device_groups(connection, identifier).await
     }
 
     pub async fn does_group_contain_device(
