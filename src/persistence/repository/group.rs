@@ -141,43 +141,33 @@ mod test {
 
     use super::*;
 
+    const GROUP_IDENTIFIER: [u8; 32] = [1; 32];
+    const GROUP_NAME: &str = "Test Group";
+    const GROUP_CERTIFICATE: [u8; 150] = [42; 150];
+    const DEVICE_1_ID: [u8; 32] = [1; 32];
+    const DEVICE_2_ID: [u8; 32] = [2; 32];
+
     #[tokio::test]
     async fn given_valid_arguments_create_group() -> Result<(), PersistenceError> {
         let ctx = PersistencyUnitTestContext::new();
-        let group_identifier = vec![1; 32];
-        let group_name = "Test Group";
-        let group_certificate = vec![42; 150];
-        let threshold = 2;
-        let device_identifier_1 = vec![11; 32];
-        let device_identifier_2 = vec![12; 32];
-        let devices = &vec![&device_identifier_1[..], &device_identifier_2[..]];
         let mut connection: AsyncPgConnection = ctx.get_test_connection().await?;
-        add_device(
-            &mut connection,
-            &device_identifier_1,
-            "Device 1",
-            &vec![42; 5],
-        )
-        .await?;
-        add_device(
-            &mut connection,
-            &device_identifier_2,
-            "Device 2",
-            &vec![42; 5],
-        )
-        .await?;
+
+        let devices = &vec![&DEVICE_1_ID[..], &DEVICE_2_ID[..]];
+        let threshold = 2;
+        add_device(&mut connection, &DEVICE_1_ID, "Device 1", &vec![42; 5]).await?;
+        add_device(&mut connection, &DEVICE_2_ID, "Device 2", &vec![42; 5]).await?;
         let created_group = add_group(
             &mut connection,
-            &group_identifier,
-            group_name,
+            &GROUP_IDENTIFIER,
+            GROUP_NAME,
             devices,
             threshold,
             ProtocolType::ElGamal,
             KeyType::Decrypt,
-            Some(&group_certificate),
+            Some(&GROUP_CERTIFICATE),
         )
         .await?;
-        let retrieved_group = get_group(&mut connection, &group_identifier).await?;
+        let retrieved_group = get_group(&mut connection, &GROUP_IDENTIFIER).await?;
         assert!(
             retrieved_group.is_some(),
             "Created group couldn't be retrieved"
@@ -186,13 +176,13 @@ mod test {
         assert_eq!(created_group, retrieved_group);
         let target_group = Group {
             id: retrieved_group.id,
-            identifier: group_identifier,
-            group_name: group_name.into(),
+            identifier: Vec::from(GROUP_IDENTIFIER),
+            group_name: GROUP_NAME.into(),
             threshold: threshold as i32,
             protocol: ProtocolType::ElGamal,
             round: 0,
             key_type: KeyType::Decrypt,
-            group_certificate: Some(group_certificate),
+            group_certificate: Some(GROUP_CERTIFICATE.into()),
         };
 
         assert_eq!(retrieved_group, target_group);
