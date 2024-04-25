@@ -9,7 +9,7 @@ use super::enums::{KeyType, ProtocolType, TaskState, TaskType};
 #[derive(Insertable)]
 #[diesel(table_name = device)]
 pub struct NewDevice<'a> {
-    pub identifier: &'a Vec<u8>,
+    pub id: &'a Vec<u8>,
     pub device_name: &'a str,
     pub device_certificate: &'a Vec<u8>,
 }
@@ -18,8 +18,7 @@ pub struct NewDevice<'a> {
 #[diesel(table_name = device)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Device {
-    pub id: i32,
-    pub identifier: Vec<u8>,
+    pub id: Vec<u8>,
     pub device_name: String,
     pub device_certificate: Vec<u8>,
     pub last_active: DateTime<Local>,
@@ -28,7 +27,7 @@ pub struct Device {
 impl From<Device> for crate::proto::Device {
     fn from(device: Device) -> Self {
         crate::proto::Device {
-            identifier: device.identifier,
+            identifier: device.id,
             name: device.device_name,
             certificate: device.device_certificate,
             last_active: device.last_active.timestamp_millis() as u64,
@@ -66,7 +65,7 @@ pub struct NewGroup<'a> {
 #[derive(Insertable)]
 #[diesel(table_name=groupparticipant)]
 pub struct NewGroupParticipant {
-    pub device_id: i32,
+    pub device_id: Vec<u8>,
     pub group_id: Option<i32>,
 }
 

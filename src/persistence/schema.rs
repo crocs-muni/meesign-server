@@ -24,8 +24,7 @@ pub mod sql_types {
 
 diesel::table! {
     device (id) {
-        id -> Int4,
-        identifier -> Bytea,
+        id -> Bytea,
         device_name -> Varchar,
         device_certificate -> Bytea,
         last_active -> Timestamptz,
@@ -35,7 +34,7 @@ diesel::table! {
 diesel::table! {
     groupparticipant (id) {
         id -> Int4,
-        device_id -> Nullable<Int4>,
+        device_id -> Nullable<Bytea>,
         group_id -> Nullable<Int4>,
     }
 }

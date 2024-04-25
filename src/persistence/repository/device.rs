@@ -1,5 +1,5 @@
 use chrono::Local;
-use diesel::{pg::Pg, ExpressionMethods, QueryDsl, SelectableHelper};
+use diesel::{pg::Pg, ExpressionMethods, SelectableHelper};
 use diesel_async::AsyncConnection;
 use diesel_async::RunQueryDsl;
 
@@ -26,7 +26,7 @@ where
 {
     use crate::persistence::schema::device::dsl::*;
     let activated_device = diesel::update(device)
-        .filter(identifier.eq(target_identifier))
+        .filter(id.eq(target_identifier))
         .set(last_active.eq(Local::now()))
         .returning(Device::as_returning())
         .get_result(connection)
@@ -63,7 +63,7 @@ where
     }
 
     let new_device = NewDevice {
-        identifier: &identifier.to_vec(),
+        id: &identifier.to_vec(),
         device_name: name,
         device_certificate: &certificate.to_vec(),
     };
@@ -75,21 +75,6 @@ where
         .get_result(connection)
         .await?;
     Ok(device)
-}
-
-pub async fn device_ids_to_identifiers<Conn>(
-    connection: &mut Conn,
-    identifiers: Vec<Vec<u8>>,
-) -> Result<Vec<i32>, PersistenceError>
-where
-    Conn: AsyncConnection<Backend = Pg>,
-{
-    use crate::persistence::schema::device::dsl::*;
-    Ok(device
-        .filter(identifier.eq_any(identifiers))
-        .select(id)
-        .load(connection)
-        .await?)
 }
 
 #[cfg(test)]
@@ -119,7 +104,7 @@ mod test {
         let devices = get_devices(&mut connection).await?;
         assert_eq!(devices.len(), 1);
         let fetched_device = devices.first().unwrap();
-        assert_eq!(fetched_device.identifier, identifier);
+        assert_eq!(fetched_device.id, identifier);
         assert_eq!(fetched_device.device_name, name);
         assert_eq!(fetched_device.device_certificate, certificate);
         Ok(())

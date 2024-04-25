@@ -7,7 +7,6 @@ use crate::persistence::{
     enums::{KeyType, ProtocolType},
     error::PersistenceError,
     models::{Group, NewGroup, NewGroupParticipant},
-    repository::device::device_ids_to_identifiers,
 };
 
 pub async fn get_groups<Conn>(connection: &mut Conn) -> Result<Vec<Group>, PersistenceError>
@@ -61,7 +60,6 @@ where
         .iter()
         .map(|identifier| identifier.to_vec())
         .collect();
-    let ids = device_ids_to_identifiers(connection, devices).await?;
     let group = diesel::insert_into(signinggroup::table)
         .values(new_group)
         .returning(Group::as_returning())
@@ -69,7 +67,7 @@ where
         .await?;
 
     let group_id = group.id;
-    let group_participants: Vec<NewGroupParticipant> = ids
+    let group_participants: Vec<NewGroupParticipant> = devices
         .into_iter()
         .map(|device_id| NewGroupParticipant {
             device_id,
@@ -114,15 +112,13 @@ pub async fn get_device_groups<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    use crate::persistence::schema::device::dsl::{device, identifier};
+    use crate::persistence::schema::groupparticipant::device_id;
     use crate::persistence::schema::groupparticipant::dsl::groupparticipant;
     use crate::persistence::schema::signinggroup::dsl::signinggroup;
 
-    // TODO: consider not using artificial IDs
     let groups: Vec<Group> = groupparticipant
         .inner_join(signinggroup)
-        .inner_join(device)
-        .filter(identifier.eq(device_identifier))
+        .filter(device_id.eq(device_identifier))
         .select(Group::as_select())
         .load(connection)
         .await?;

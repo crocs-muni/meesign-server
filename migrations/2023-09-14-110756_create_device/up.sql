@@ -1,6 +1,5 @@
 CREATE TABLE Device (
-    id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    identifier bytea UNIQUE NOT NULL,
+    id bytea PRIMARY KEY,
     device_name varchar UNIQUE NOT NULL,
     device_certificate bytea NOT NULL,
     last_active timestamptz NOT NULL DEFAULT NOW()
