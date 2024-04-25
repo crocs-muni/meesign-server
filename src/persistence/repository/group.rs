@@ -73,7 +73,7 @@ where
         .into_iter()
         .map(|device_id| NewGroupParticipant {
             device_id,
-            group_id,
+            group_id: Some(group_id),
         })
         .collect();
 

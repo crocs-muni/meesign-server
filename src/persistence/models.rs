@@ -67,7 +67,7 @@ pub struct NewGroup<'a> {
 #[diesel(table_name=groupparticipant)]
 pub struct NewGroupParticipant {
     pub device_id: i32,
-    pub group_id: i32,
+    pub group_id: Option<i32>,
 }
 
 #[derive(Queryable, Clone, Eq, PartialEq, Selectable)]
