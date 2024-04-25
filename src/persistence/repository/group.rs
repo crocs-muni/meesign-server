@@ -68,9 +68,9 @@ where
 
     let group_id = group.id;
     let group_participants: Vec<NewGroupParticipant> = devices
-        .into_iter()
+        .iter()
         .map(|device_id| NewGroupParticipant {
-            device_id,
+            device_id: &device_id,
             group_id: Some(group_id),
         })
         .collect();

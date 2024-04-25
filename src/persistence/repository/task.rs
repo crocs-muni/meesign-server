@@ -1,13 +1,14 @@
 use std::convert::TryInto;
 
-use diesel::pg::Pg;
-use diesel_async::AsyncConnection;
+use diesel::{pg::Pg, SelectableHelper};
+use diesel_async::{AsyncConnection, RunQueryDsl};
 
 use super::utils::NameValidator;
 use crate::persistence::{
     enums::{KeyType, ProtocolType, TaskState, TaskType},
     error::PersistenceError,
-    models::{NewTask, Task},
+    models::{GroupParticipant, NewGroupParticipant, NewTask, NewTaskParticipant, Task},
+    schema::{groupparticipant, task, taskparticipant},
 };
 
 pub async fn create_task<Conn>(
@@ -45,5 +46,40 @@ where
         protocol_type,
     };
 
-    todo!()
+    // TODO: either use this function just for group tasks, or fetch group participants from the DB by default.
+    let group_participants: Vec<NewGroupParticipant> = devices
+        .into_iter()
+        .map(|device_id| NewGroupParticipant {
+            device_id,
+            group_id: None,
+        })
+        .collect();
+
+    let group_participants: Vec<GroupParticipant> = diesel::insert_into(groupparticipant::table)
+        .values(group_participants)
+        .returning(GroupParticipant::as_returning())
+        .load(connection)
+        .await?;
+
+    let task: Task = diesel::insert_into(task::table)
+        .values(task)
+        .returning(Task::as_returning())
+        .get_result(connection)
+        .await?;
+
+    let new_task_participants: Vec<NewTaskParticipant> = group_participants
+        .into_iter()
+        .map(|group_participant| NewTaskParticipant {
+            group_participant_id: group_participant.id,
+            task_id: &task.id,
+            decision: None,
+            acknowledgment: None,
+        })
+        .collect();
+
+    diesel::insert_into(taskparticipant::table)
+        .values(new_task_participants)
+        .execute(connection)
+        .await?;
+    Ok(task)
 }

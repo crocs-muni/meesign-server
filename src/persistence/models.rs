@@ -64,9 +64,27 @@ pub struct NewGroup<'a> {
 
 #[derive(Insertable)]
 #[diesel(table_name=groupparticipant)]
-pub struct NewGroupParticipant {
-    pub device_id: Vec<u8>,
+pub struct NewGroupParticipant<'a> {
+    pub device_id: &'a [u8],
     pub group_id: Option<i32>,
+}
+
+#[derive(Queryable, Selectable)]
+#[diesel(table_name = groupparticipant)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct GroupParticipant {
+    pub id: i32,
+    pub device_id: Option<Vec<u8>>,
+    pub group_id: Option<i32>,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name=taskparticipant)]
+pub struct NewTaskParticipant<'a> {
+    pub group_participant_id: i32,
+    pub task_id: &'a Uuid,
+    pub decision: Option<bool>,
+    pub acknowledgment: Option<bool>,
 }
 
 #[derive(Queryable, Clone, Eq, PartialEq, Selectable)]

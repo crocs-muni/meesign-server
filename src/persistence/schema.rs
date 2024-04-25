@@ -82,6 +82,16 @@ diesel::table! {
 }
 
 diesel::table! {
+    taskparticipant (id) {
+        id -> Int4,
+        group_participant_id -> Nullable<Int4>,
+        task_id -> Nullable<Uuid>,
+        decision -> Nullable<Bool>,
+        acknowledgment -> Nullable<Bool>,
+    }
+}
+
+diesel::table! {
     use diesel::sql_types::*;
     use super::sql_types::Taskresulttype;
 
@@ -96,6 +106,8 @@ diesel::table! {
 diesel::joinable!(groupparticipant -> device (device_id));
 diesel::joinable!(groupparticipant -> signinggroup (group_id));
 diesel::joinable!(task -> signinggroup (group_id));
+diesel::joinable!(taskparticipant -> groupparticipant (group_participant_id));
+diesel::joinable!(taskparticipant -> task (task_id));
 diesel::joinable!(taskresult -> signinggroup (signing_group_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
@@ -103,5 +115,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     groupparticipant,
     signinggroup,
     task,
+    taskparticipant,
     taskresult,
 );
