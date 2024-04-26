@@ -100,6 +100,7 @@ pub struct Task {
     pub task_data: Option<Vec<u8>>,
     pub preprocessed: Option<Vec<u8>>,
     pub request: Option<Vec<u8>>,
+    pub group_id: Option<i32>,
     pub task_type: TaskType,
     pub task_state: TaskState,
     pub key_type: Option<KeyType>,

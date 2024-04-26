@@ -1,16 +1,21 @@
 use uuid::Uuid;
 
+use crate::tasks::Task as TaskTrait;
+
 use super::{
     enums::{KeyType, ProtocolType, TaskType},
     error::PersistenceError,
     models::{Device, Group, Task},
 };
 
-use self::group::{add_group, get_device_groups, get_groups};
 use self::task::create_task;
 use self::{
     device::{activate_device, add_device, get_devices},
     group::get_group,
+};
+use self::{
+    group::{add_group, get_device_groups, get_groups},
+    task::get_task,
 };
 
 use diesel::{Connection, PgConnection};
@@ -247,8 +252,13 @@ impl Repository {
             .await
     }
 
-    pub async fn get_task(&self, task_id: &Uuid) -> Result<Option<Task>, PersistenceError> {
-        todo!()
+    pub async fn get_task(
+        &self,
+        task_id: &Uuid,
+    ) -> Result<Option<Arc<dyn TaskTrait>>, PersistenceError> {
+        let connection = &mut self.get_async_connection().await?;
+        let task = get_task(connection, task_id).await?;
+        Ok(task.map(|task| task.into()))
     }
 
     pub async fn get_tasks(&self) -> Result<Vec<Task>, PersistenceError> {

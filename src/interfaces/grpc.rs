@@ -335,8 +335,10 @@ impl MeeSign for MeeSignService {
             let task_id = group_task.id;
             state.send_updates(&task_id);
             // TODO: use group task
-            let task = state.get_task(&task_id).unwrap();
-            Ok(Response::new(format_task(&task_id, task, None, None)))
+            let Some(task) = state.get_repo().get_task(&task_id).await? else {
+                return Err(Status::internal("Internal error"));
+            };
+            Ok(Response::new(format_task(&task_id, &*task, None, None)))
         } else {
             Err(Status::failed_precondition("Request failed"))
         }

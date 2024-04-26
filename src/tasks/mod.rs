@@ -5,6 +5,7 @@ pub(crate) mod sign_pdf;
 
 use crate::device::Device;
 use crate::group::Group;
+use crate::persistence::Task as TaskModel;
 use tonic::codegen::Arc;
 
 #[derive(Clone, PartialEq, Eq)]
@@ -76,4 +77,10 @@ pub trait Task {
     fn get_request(&self) -> &[u8];
 
     fn get_attempts(&self) -> u32;
+}
+
+impl From<TaskModel> for Arc<dyn Task> {
+    fn from(value: TaskModel) -> Self {
+        todo!()
+    }
 }

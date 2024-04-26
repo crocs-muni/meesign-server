@@ -9,4 +9,5 @@ mod schema;
 
 pub use error::PersistenceError;
 pub use models::Group;
+pub use models::Task;
 pub use repository::Repository;

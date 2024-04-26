@@ -1,7 +1,8 @@
-use std::convert::TryInto;
-
-use diesel::{pg::Pg, SelectableHelper};
+use diesel::result::Error::NotFound;
+use diesel::ExpressionMethods;
+use diesel::{pg::Pg, QueryDsl, SelectableHelper};
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use uuid::Uuid;
 
 use super::utils::NameValidator;
 use crate::persistence::{
@@ -35,7 +36,7 @@ where
         protocol_round: 0,
         attempt_count: 0,
         error_message: None,
-        threshold: 0, // TODO: decide if optional or not
+        threshold: 2, // TODO: decide if optional or not
         last_update: None,
         task_data: None,
         preprocessed: None,
@@ -82,4 +83,20 @@ where
         .execute(connection)
         .await?;
     Ok(task)
+}
+
+pub async fn get_task<Conn>(
+    connection: &mut Conn,
+    task_id: &Uuid,
+) -> Result<Option<Task>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    use crate::persistence::schema::task::dsl::*;
+    let retrieved_task: Option<Task> = match task.filter(id.eq(task_id)).first(connection).await {
+        Ok(val) => Some(val),
+        Err(NotFound) => None,
+        Err(err) => return Err(PersistenceError::ExecutionError(err)),
+    };
+    Ok(retrieved_task)
 }
