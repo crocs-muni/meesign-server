@@ -10,6 +10,7 @@ use crate::interfaces::grpc::format_task;
 use crate::persistence::{Group, Repository};
 use crate::proto::KeyType;
 use crate::tasks::decrypt::DecryptTask;
+use crate::tasks::group::GroupTask;
 use crate::tasks::sign::SignTask;
 use crate::tasks::sign_pdf::SignPDFTask;
 use crate::tasks::{Task, TaskResult, TaskStatus};
@@ -76,7 +77,7 @@ impl State {
 
         let task_id = task.map(|task| self.add_task(task));
         if let Some(task_id) = &task_id {
-            self.send_updates(task_id);
+            self.send_updates(task_id).await?;
         }
         Ok(task_id)
     }
@@ -120,7 +121,7 @@ impl State {
 
         let task_id = task.map(|task| self.add_task(task));
         if let Some(task_id) = &task_id {
-            self.send_updates(task_id);
+            self.send_updates(task_id).await?;
         }
         Ok(task_id)
     }
@@ -204,16 +205,21 @@ impl State {
             }
         }
         if let Ok(true) = update_result {
-            self.send_updates(task_id);
+            self.send_updates(task_id).await?;
         }
         update_result.map_err(|err| Error::GeneralProtocolError(err))
     }
 
-    pub fn decide_task(&mut self, task_id: &Uuid, device: &[u8], decision: bool) -> bool {
+    pub async fn decide_task(
+        &mut self,
+        task_id: &Uuid,
+        device: &[u8],
+        decision: bool,
+    ) -> Result<bool, Error> {
         let task = self.tasks.get_mut(task_id).unwrap();
         let change = task.decide(device, decision);
         if change.is_some() {
-            self.send_updates(task_id);
+            self.send_updates(task_id).await?;
             if change.unwrap() {
                 log::info!(
                     "Task approved task_id={}",
@@ -225,9 +231,9 @@ impl State {
                     utils::hextrunc(task_id.as_bytes())
                 );
             }
-            return true;
+            return Ok(true);
         }
-        false
+        Ok(false)
     }
 
     pub fn acknowledge_task(&mut self, task: &Uuid, device: &[u8]) {
@@ -235,17 +241,17 @@ impl State {
         task.acknowledge(device);
     }
 
-    pub fn restart_task(&mut self, task_id: &Uuid) -> bool {
+    pub async fn restart_task(&mut self, task_id: &Uuid) -> Result<bool, Error> {
         if self
             .tasks
             .get_mut(task_id)
             .and_then(|task| task.restart().ok())
             .unwrap_or(false)
         {
-            self.send_updates(task_id);
-            true
+            self.send_updates(task_id).await?;
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     }
 
@@ -269,13 +275,18 @@ impl State {
         &self.subscribers
     }
 
-    pub fn send_updates(&mut self, task_id: &Uuid) {
-        let task = self.get_task(task_id).unwrap();
+    pub async fn send_updates(&mut self, task_id: &Uuid) -> Result<(), Error> {
+        let Some(task): Option<GroupTask> = self.get_repo().get_task(task_id).await? else {
+            return Err(Error::GeneralProtocolError(format!(
+                "Couldn't find task with id {}",
+                task_id
+            )));
+        };
         let mut remove = Vec::new();
 
         for device_id in task.get_devices().iter().map(|device| device.identifier()) {
             if let Some(tx) = self.subscribers.get(device_id) {
-                let result = tx.try_send(Ok(format_task(task_id, task, Some(device_id), None)));
+                let result = tx.try_send(Ok(format_task(task_id, &task, Some(device_id), None)));
 
                 if result.is_err() {
                     debug!(
@@ -290,6 +301,8 @@ impl State {
         for device_id in remove {
             self.remove_subscriber(&device_id);
         }
+
+        Ok(())
     }
 
     pub fn get_repo(&self) -> &Arc<Repository> {

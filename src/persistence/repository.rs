@@ -1,6 +1,6 @@
 use uuid::Uuid;
 
-use crate::tasks::Task as TaskTrait;
+use crate::tasks::{group::GroupTask, Task as TaskTrait};
 
 use super::{
     enums::{KeyType, ProtocolType, TaskType},
@@ -252,13 +252,14 @@ impl Repository {
             .await
     }
 
-    pub async fn get_task(
-        &self,
-        task_id: &Uuid,
-    ) -> Result<Option<Arc<dyn TaskTrait>>, PersistenceError> {
+    pub async fn get_task<T>(&self, task_id: &Uuid) -> Result<Option<T>, PersistenceError>
+    where
+        T: TaskTrait + From<Task>,
+    {
         let connection = &mut self.get_async_connection().await?;
         let task = get_task(connection, task_id).await?;
-        Ok(task.map(|task| task.into()))
+        let task: Option<T> = task.map(|task| task.into());
+        Ok(task)
     }
 
     pub async fn get_tasks(&self) -> Result<Vec<Task>, PersistenceError> {

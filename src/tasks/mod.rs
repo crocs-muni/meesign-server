@@ -5,8 +5,6 @@ pub(crate) mod sign_pdf;
 
 use crate::device::Device;
 use crate::group::Group;
-use crate::persistence::{Task as TaskModel, TaskType};
-use crate::tasks::group::GroupTask;
 use tonic::codegen::Arc;
 
 #[derive(Clone, PartialEq, Eq)]
@@ -78,31 +76,4 @@ pub trait Task {
     fn get_request(&self) -> &[u8];
 
     fn get_attempts(&self) -> u32;
-}
-
-impl From<TaskModel> for Arc<dyn Task> {
-    fn from(model: TaskModel) -> Self {
-        match model.task_type {
-            TaskType::Group => {
-                let group_task = GroupTask::try_new(
-                    "TODO name",
-                    &vec![], // TODO
-                    model.threshold as u32,
-                    model.protocol_type.unwrap().into(),
-                    model.key_type.unwrap().into(),
-                )
-                .unwrap();
-                Arc::new(group_task)
-            }
-            TaskType::SignChallenge => {
-                todo!()
-            }
-            TaskType::SignPdf => {
-                todo!()
-            }
-            TaskType::Decrypt => {
-                todo!()
-            }
-        }
-    }
 }

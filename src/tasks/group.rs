@@ -1,6 +1,7 @@
 use crate::communicator::Communicator;
 use crate::device::Device;
 use crate::group::Group;
+use crate::persistence::Task as TaskModel;
 use crate::proto::{KeyType, ProtocolType, TaskType};
 use crate::protocols::elgamal::ElgamalGroup;
 use crate::protocols::frost::FROSTGroup;
@@ -351,4 +352,17 @@ fn issue_certificate(name: &str, public_key: &[u8]) -> Vec<u8> {
         .read_to_end(&mut result)
         .unwrap();
     result
+}
+
+impl From<TaskModel> for GroupTask {
+    fn from(model: TaskModel) -> Self {
+        GroupTask::try_new(
+            "TODO name",
+            &vec![], // TODO
+            model.threshold as u32,
+            model.protocol_type.unwrap().into(),
+            model.key_type.unwrap().into(),
+        )
+        .unwrap()
+    }
 }

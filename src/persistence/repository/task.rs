@@ -2,6 +2,7 @@ use diesel::result::Error::NotFound;
 use diesel::ExpressionMethods;
 use diesel::{pg::Pg, QueryDsl, SelectableHelper};
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use log::info;
 use uuid::Uuid;
 
 use super::utils::NameValidator;

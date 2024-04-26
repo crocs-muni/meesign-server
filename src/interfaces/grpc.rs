@@ -21,6 +21,7 @@ use crate::error::Error;
 use crate::proto::mpc_server::{Mpc, MpcServer};
 use crate::proto::{KeyType, ProtocolType};
 use crate::state::State;
+use crate::tasks::group::GroupTask;
 use crate::tasks::{Task, TaskStatus};
 use crate::{proto as msg, utils, CA_CERT, CA_KEY};
 
@@ -334,12 +335,13 @@ impl MeeSign for MeeSignService {
         {
             Ok(group_task) => {
                 let task_id = group_task.id;
-                state.send_updates(&task_id);
+                state.send_updates(&task_id).await?;
                 // TODO: use group task
-                let Some(task) = state.get_repo().get_task(&task_id).await? else {
+                let Some(task): Option<GroupTask> = state.get_repo().get_task(&task_id).await?
+                else {
                     return Err(Status::internal("Internal error"));
                 };
-                Ok(Response::new(format_task(&task_id, &*task, None, None)))
+                Ok(Response::new(format_task(&task_id, &task, None, None)))
             }
             Err(err) => {
                 error!("{}", err);

@@ -1,3 +1,4 @@
+use crate::error::Error;
 use crate::state::State;
 use crate::tasks::TaskStatus;
 use crate::{get_timestamp, utils};
@@ -13,12 +14,12 @@ pub async fn run_timer(state: Arc<Mutex<State>>) -> Result<(), String> {
     loop {
         interval.tick().await;
         let mut state = state.lock().await;
-        check_tasks(&mut state);
+        check_tasks(&mut state).await;
         check_subscribers(&mut state).await;
     }
 }
 
-fn check_tasks(state: &mut MutexGuard<State>) {
+async fn check_tasks(state: &mut MutexGuard<'_, State>) -> Result<(), Error> {
     let mut restarts = Vec::new();
     let timestamp = get_timestamp();
     for (task_id, task) in state.get_tasks() {
@@ -31,8 +32,9 @@ fn check_tasks(state: &mut MutexGuard<State>) {
         }
     }
     for task_id in restarts {
-        state.restart_task(&task_id);
+        state.restart_task(&task_id).await?;
     }
+    Ok(())
 }
 
 async fn check_subscribers(state: &mut MutexGuard<'_, State>) {
