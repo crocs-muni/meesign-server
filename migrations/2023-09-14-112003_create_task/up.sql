@@ -1,8 +1,8 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE Task (
     id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
-    protocol_round integer NOT NULL CHECK (protocol_round > 0),
-    attempt_count integer NOT NULL CHECK (attempt_count > 0),
+    protocol_round integer NOT NULL CHECK (protocol_round >= 0),
+    attempt_count integer NOT NULL CHECK (attempt_count >= 0),
     error_message varchar,
     threshold integer NOT NULL CHECK (threshold > 0),
     last_update timestamptz NOT NULL DEFAULT NOW(),

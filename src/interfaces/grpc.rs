@@ -1,4 +1,4 @@
-use log::{debug, info, warn};
+use log::{debug, error, info};
 use openssl::asn1::{Asn1Integer, Asn1Time};
 use openssl::bn::BigNum;
 use openssl::hash::MessageDigest;
@@ -321,7 +321,7 @@ impl MeeSign for MeeSignService {
         );
 
         let mut state = self.state.lock().await;
-        if let Ok(group_task) = state
+        match state
             .get_repo()
             .create_group_task(
                 &name,
@@ -332,15 +332,19 @@ impl MeeSign for MeeSignService {
             )
             .await
         {
-            let task_id = group_task.id;
-            state.send_updates(&task_id);
-            // TODO: use group task
-            let Some(task) = state.get_repo().get_task(&task_id).await? else {
-                return Err(Status::internal("Internal error"));
-            };
-            Ok(Response::new(format_task(&task_id, &*task, None, None)))
-        } else {
-            Err(Status::failed_precondition("Request failed"))
+            Ok(group_task) => {
+                let task_id = group_task.id;
+                state.send_updates(&task_id);
+                // TODO: use group task
+                let Some(task) = state.get_repo().get_task(&task_id).await? else {
+                    return Err(Status::internal("Internal error"));
+                };
+                Ok(Response::new(format_task(&task_id, &*task, None, None)))
+            }
+            Err(err) => {
+                error!("{}", err);
+                Err(Status::failed_precondition("Request failed"))
+            }
         }
     }
 

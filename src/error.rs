@@ -1,3 +1,4 @@
+use log::error;
 use thiserror::Error;
 
 use crate::persistence::PersistenceError;
