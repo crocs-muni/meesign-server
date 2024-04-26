@@ -37,7 +37,7 @@ impl Communicator {
     /// * `threshold` - the minimal number of devices to successfully complete the task
     /// * `protocol_type` - the type of the threshold protocol
     pub fn new(devices: &[Arc<Device>], threshold: u32, protocol_type: ProtocolType) -> Self {
-        assert!(devices.len() > 1);
+        // assert!(devices.len() > 1);
         assert!(threshold <= devices.len() as u32);
 
         let mut devices: Vec<Arc<Device>> = devices.to_vec();
