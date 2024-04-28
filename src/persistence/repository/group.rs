@@ -120,9 +120,8 @@ mod test {
     use diesel_async::AsyncPgConnection;
 
     use crate::persistence::{
-        repository::{device::add_device, task::create_task},
+        repository::{device::add_device, task::create_group_task},
         tests::persistency_unit_test_context::PersistencyUnitTestContext,
-        TaskType,
     };
 
     use super::*;
@@ -147,15 +146,13 @@ mod test {
         add_device(&mut connection, &DEVICE_1_ID, "Device 1", &vec![42; 5]).await?;
         add_device(&mut connection, &DEVICE_2_ID, "Device 2", &vec![42; 5]).await?;
 
-        let group_creation_task = create_task(
+        let group_creation_task = create_group_task(
             &mut connection,
-            TaskType::Group,
             GROUP_1_NAME,
-            None,
             devices,
-            Some(2),
-            Some(KeyType::Decrypt),
-            Some(ProtocolType::ElGamal),
+            threshold,
+            KeyType::Decrypt,
+            ProtocolType::ElGamal,
         )
         .await?;
 
@@ -207,15 +204,13 @@ mod test {
         add_device(&mut connection, &DEVICE_2_ID, "Device 2", &vec![42; 5]).await?;
         add_device(&mut connection, &DEVICE_3_ID, "Device 3", &vec![42; 5]).await?;
 
-        let group1_creation_task = create_task(
+        let group1_creation_task = create_group_task(
             &mut connection,
-            TaskType::Group,
             GROUP_1_NAME,
-            None,
             group_1_devices,
-            Some(threshold),
-            Some(KeyType::Decrypt),
-            Some(ProtocolType::ElGamal),
+            threshold,
+            KeyType::Decrypt,
+            ProtocolType::ElGamal,
         )
         .await?;
         let group_1 = add_group(
@@ -231,15 +226,13 @@ mod test {
         )
         .await?;
 
-        let group2_creation_task = create_task(
+        let group2_creation_task = create_group_task(
             &mut connection,
-            TaskType::Group,
             GROUP_2_NAME,
-            None,
             group_2_devices,
-            Some(threshold),
-            Some(KeyType::SignChallenge),
-            Some(ProtocolType::Frost),
+            threshold,
+            KeyType::SignChallenge,
+            ProtocolType::Frost,
         )
         .await?;
         let group_2 = add_group(

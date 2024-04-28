@@ -8,7 +8,7 @@ use super::{
     models::{Device, Group, Task},
 };
 
-use self::task::create_task;
+use self::task::{create_group_task, create_task};
 use self::{
     device::{activate_device, add_device, get_devices},
     group::get_group,
@@ -183,15 +183,13 @@ impl Repository {
         connection
             .transaction(|connection| {
                 async move {
-                    create_task(
+                    create_group_task(
                         connection,
-                        TaskType::Group,
                         name,
-                        None,
                         devices,
-                        Some(threshold),
-                        Some(key_type),
-                        Some(protocol_type),
+                        threshold,
+                        key_type,
+                        protocol_type,
                     )
                     .await
                 }

@@ -85,6 +85,76 @@ where
     Ok(task)
 }
 
+pub async fn create_group_task<Conn>(
+    connection: &mut Conn,
+    name: &str,
+    devices: &[&[u8]],
+    threshold: u32,
+    key_type: KeyType,
+    protocol_type: ProtocolType,
+) -> Result<Task, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    if !name.is_name_valid() {
+        return Err(PersistenceError::InvalidArgumentError(format!(
+            "Invalid group name {name}"
+        )));
+    }
+
+    let threshold: i32 = threshold.try_into()?;
+    let task = NewTask {
+        protocol_round: 0,
+        attempt_count: 0,
+        error_message: None,
+        threshold,
+        last_update: None,
+        task_data: None,
+        preprocessed: None,
+        request: None,
+        task_type: TaskType::Group,
+        key_type: Some(key_type),
+        task_state: TaskState::Created,
+        protocol_type: Some(protocol_type),
+    };
+
+    let task: Task = diesel::insert_into(task::table)
+        .values(task)
+        .returning(Task::as_returning())
+        .get_result(connection)
+        .await?;
+
+    let group_participants: Vec<NewGroupParticipant> = devices
+        .into_iter()
+        .map(|device_id| NewGroupParticipant {
+            device_id,
+            group_id: None,
+        })
+        .collect();
+
+    let group_participants: Vec<GroupParticipant> = diesel::insert_into(groupparticipant::table)
+        .values(group_participants)
+        .returning(GroupParticipant::as_returning())
+        .load(connection)
+        .await?;
+
+    let new_task_participants: Vec<NewTaskParticipant> = group_participants
+        .into_iter()
+        .map(|group_participant| NewTaskParticipant {
+            group_participant_id: group_participant.id,
+            task_id: &task.id,
+            decision: None,
+            acknowledgment: None,
+        })
+        .collect();
+
+    diesel::insert_into(taskparticipant::table)
+        .values(new_task_participants)
+        .execute(connection)
+        .await?;
+    Ok(task)
+}
+
 pub async fn get_task<Conn>(
     connection: &mut Conn,
     task_id: &Uuid,
