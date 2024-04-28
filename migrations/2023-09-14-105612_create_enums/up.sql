@@ -3,7 +3,7 @@ CREATE TYPE ProtocolType AS ENUM (
 );
 
 CREATE TYPE KeyType AS ENUM (
-    'SignPDF', 'SignChallenge', 'Decrypt'
+    'SignPdf', 'SignChallenge', 'Decrypt'
 );
 
 CREATE TYPE TaskType AS ENUM (
