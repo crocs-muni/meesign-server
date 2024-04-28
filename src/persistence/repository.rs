@@ -174,7 +174,7 @@ impl Repository {
     pub async fn create_group_task<'a>(
         &self,
         name: &str,
-        devices: &[Vec<u8>],
+        devices: &[&[u8]],
         threshold: u32,
         protocol_type: ProtocolType,
         key_type: KeyType,

@@ -17,7 +17,7 @@ pub async fn create_task<Conn>(
     task_type: TaskType,
     name: &str,
     data: Option<&Vec<u8>>,
-    devices: &[Vec<u8>],
+    devices: &[&[u8]],
     threshold: Option<u32>,
     key_type: Option<KeyType>,
     protocol_type: Option<ProtocolType>,
