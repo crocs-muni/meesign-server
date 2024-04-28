@@ -151,8 +151,8 @@ mod test {
             GROUP_1_NAME,
             devices,
             threshold,
-            KeyType::Decrypt,
-            ProtocolType::ElGamal,
+            KeyType::SignPdf,
+            ProtocolType::Gg18,
         )
         .await?;
 
@@ -163,8 +163,8 @@ mod test {
             GROUP_1_NAME,
             devices,
             threshold,
-            ProtocolType::ElGamal,
-            KeyType::Decrypt,
+            ProtocolType::Gg18,
+            KeyType::SignPdf,
             Some(&GROUP_1_CERT),
         )
         .await?;
@@ -180,9 +180,9 @@ mod test {
             identifier: Vec::from(GROUP_1_IDENTIFIER),
             group_name: GROUP_1_NAME.into(),
             threshold: threshold as i32,
-            protocol: ProtocolType::ElGamal,
+            protocol: ProtocolType::Gg18,
             round: 0,
-            key_type: KeyType::Decrypt,
+            key_type: KeyType::SignPdf,
             group_certificate: Some(GROUP_1_CERT.into()),
         };
 
