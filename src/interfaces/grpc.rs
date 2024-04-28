@@ -17,7 +17,6 @@ use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use crate::error::Error;
 use crate::proto::mpc_server::{Mpc, MpcServer};
 use crate::proto::{KeyType, ProtocolType};
 use crate::state::State;
@@ -224,8 +223,14 @@ impl MeeSign for MeeSignService {
             Ok(_) => Ok(Response::new(msg::Resp {
                 message: "OK".into(),
             })),
-            Err(Error::GeneralProtocolError(e)) => Err(Status::failed_precondition(e)),
-            Err(e) => Err(Status::internal("Internal error occurred")),
+            Err(err) => {
+                error!(
+                    "Couldn't update task with id {} for device {}",
+                    task_id,
+                    utils::hextrunc(&device_id)
+                );
+                return Err(err.into());
+            }
         }
     }
 
@@ -429,8 +434,21 @@ impl MeeSign for MeeSignService {
         let state = self.state.clone();
         tokio::task::spawn(async move {
             let mut state = state.lock().await;
-            state.get_repo().activate_device(&device_id).await;
-            state.decide_task(&task_id, &device_id, accept);
+            if let Err(err) = state.get_repo().activate_device(&device_id).await {
+                error!(
+                    "Couldn't activate device with id {}: {}",
+                    utils::hextrunc(&device_id),
+                    err
+                );
+            }
+            if let Err(err) = state.decide_task(&task_id, &device_id, accept).await {
+                error!(
+                    "Couldn't decide task {} for device {}: {}",
+                    task_id,
+                    utils::hextrunc(&device_id),
+                    err
+                );
+            }
         });
 
         Ok(Response::new(msg::Resp {
