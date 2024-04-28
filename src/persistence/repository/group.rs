@@ -120,8 +120,9 @@ mod test {
     use diesel_async::AsyncPgConnection;
 
     use crate::persistence::{
-        repository::device::add_device,
+        repository::{device::add_device, task::create_task},
         tests::persistency_unit_test_context::PersistencyUnitTestContext,
+        TaskType,
     };
 
     use super::*;
@@ -145,8 +146,22 @@ mod test {
         let threshold = 2;
         add_device(&mut connection, &DEVICE_1_ID, "Device 1", &vec![42; 5]).await?;
         add_device(&mut connection, &DEVICE_2_ID, "Device 2", &vec![42; 5]).await?;
+
+        let group_creation_task = create_task(
+            &mut connection,
+            TaskType::Group,
+            GROUP_1_NAME,
+            None,
+            devices,
+            Some(2),
+            Some(KeyType::Decrypt),
+            Some(ProtocolType::ElGamal),
+        )
+        .await?;
+
         let created_group = add_group(
             &mut connection,
+            &group_creation_task.id,
             &GROUP_1_IDENTIFIER,
             GROUP_1_NAME,
             devices,
@@ -192,8 +207,20 @@ mod test {
         add_device(&mut connection, &DEVICE_2_ID, "Device 2", &vec![42; 5]).await?;
         add_device(&mut connection, &DEVICE_3_ID, "Device 3", &vec![42; 5]).await?;
 
+        let group1_creation_task = create_task(
+            &mut connection,
+            TaskType::Group,
+            GROUP_1_NAME,
+            None,
+            group_1_devices,
+            Some(threshold),
+            Some(KeyType::Decrypt),
+            Some(ProtocolType::ElGamal),
+        )
+        .await?;
         let group_1 = add_group(
             &mut connection,
+            &group1_creation_task.id,
             &GROUP_1_IDENTIFIER,
             GROUP_1_NAME,
             group_1_devices,
@@ -204,8 +231,20 @@ mod test {
         )
         .await?;
 
+        let group2_creation_task = create_task(
+            &mut connection,
+            TaskType::Group,
+            GROUP_2_NAME,
+            None,
+            group_2_devices,
+            Some(threshold),
+            Some(KeyType::SignChallenge),
+            Some(ProtocolType::Frost),
+        )
+        .await?;
         let group_2 = add_group(
             &mut connection,
+            &group2_creation_task.id,
             &GROUP_2_IDENTIFIER,
             GROUP_2_NAME,
             group_2_devices,
