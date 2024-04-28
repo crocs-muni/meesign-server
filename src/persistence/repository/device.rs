@@ -3,6 +3,7 @@ use diesel::{pg::Pg, ExpressionMethods, SelectableHelper};
 use diesel_async::AsyncConnection;
 use diesel_async::RunQueryDsl;
 
+use crate::persistence::schema::device;
 use crate::persistence::{
     error::PersistenceError,
     models::{Device, NewDevice},
@@ -13,7 +14,6 @@ pub async fn get_devices<Conn>(connection: &mut Conn) -> Result<Vec<Device>, Per
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    use crate::persistence::schema::device;
     Ok(device::table.load(connection).await?)
 }
 
@@ -24,10 +24,9 @@ pub async fn activate_device<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    use crate::persistence::schema::device::dsl::*;
-    let activated_device = diesel::update(device)
-        .filter(id.eq(target_identifier))
-        .set(last_active.eq(Local::now()))
+    let activated_device = diesel::update(device::table)
+        .filter(device::id.eq(target_identifier))
+        .set(device::last_active.eq(Local::now()))
         .returning(Device::as_returning())
         .get_result(connection)
         .await?;
@@ -67,7 +66,6 @@ where
         device_name: name,
         device_certificate: &certificate.to_vec(),
     };
-    use crate::persistence::schema::device;
 
     let device: Device = diesel::insert_into(device::table)
         .values(new_device)

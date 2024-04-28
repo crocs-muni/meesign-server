@@ -84,10 +84,8 @@ pub async fn get_group<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    use crate::persistence::schema::signinggroup::dsl::*;
-
-    let group: Option<Group> = match signinggroup
-        .filter(identifier.eq(group_identifier))
+    let group: Option<Group> = match signinggroup::table
+        .filter(signinggroup::identifier.eq(group_identifier))
         .first(connection)
         // .optional() TODO
         .await
@@ -107,13 +105,9 @@ pub async fn get_device_groups<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    use crate::persistence::schema::groupparticipant::device_id;
-    use crate::persistence::schema::groupparticipant::dsl::groupparticipant;
-    use crate::persistence::schema::signinggroup::dsl::signinggroup;
-
-    let groups: Vec<Group> = groupparticipant
-        .inner_join(signinggroup)
-        .filter(device_id.eq(device_identifier))
+    let groups: Vec<Group> = groupparticipant::table
+        .inner_join(signinggroup::table)
+        .filter(groupparticipant::device_id.eq(device_identifier))
         .select(Group::as_select())
         .load(connection)
         .await?;

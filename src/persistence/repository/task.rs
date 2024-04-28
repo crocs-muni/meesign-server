@@ -2,7 +2,6 @@ use diesel::result::Error::NotFound;
 use diesel::ExpressionMethods;
 use diesel::{pg::Pg, QueryDsl, SelectableHelper};
 use diesel_async::{AsyncConnection, RunQueryDsl};
-use log::info;
 use uuid::Uuid;
 
 use super::utils::NameValidator;
@@ -93,8 +92,11 @@ pub async fn get_task<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    use crate::persistence::schema::task::dsl::*;
-    let retrieved_task: Option<Task> = match task.filter(id.eq(task_id)).first(connection).await {
+    let retrieved_task: Option<Task> = match task::table
+        .filter(task::id.eq(task_id))
+        .first(connection)
+        .await
+    {
         Ok(val) => Some(val),
         Err(NotFound) => None,
         Err(err) => return Err(PersistenceError::ExecutionError(err)),
