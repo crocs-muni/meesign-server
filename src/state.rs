@@ -194,6 +194,7 @@ impl State {
                 self.get_repo()
                     .add_group(
                         group.identifier(),
+                        task_id,
                         group.name(),
                         &device_ids[..],
                         group.threshold(),

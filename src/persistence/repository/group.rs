@@ -2,23 +2,27 @@ use std::convert::TryInto;
 
 use diesel::{pg::Pg, result::Error::NotFound, ExpressionMethods, QueryDsl, SelectableHelper};
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use uuid::Uuid;
 
+use crate::persistence::schema::groupparticipant;
+use crate::persistence::schema::signinggroup;
 use crate::persistence::{
     enums::{KeyType, ProtocolType},
     error::PersistenceError,
-    models::{Group, NewGroup, NewGroupParticipant},
+    models::{Group, NewGroup},
+    schema::taskparticipant,
 };
 
 pub async fn get_groups<Conn>(connection: &mut Conn) -> Result<Vec<Group>, PersistenceError>
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    use crate::persistence::schema::signinggroup;
     Ok(signinggroup::table.load(connection).await?)
 }
 
 pub async fn add_group<'a, Conn>(
     connection: &mut Conn,
+    group_task_id: &Uuid,
     identifier: &[u8],
     name: &str,
     devices: &[&[u8]],
@@ -30,9 +34,6 @@ pub async fn add_group<'a, Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    use crate::persistence::schema::groupparticipant;
-    use crate::persistence::schema::signinggroup;
-
     let threshold: i32 = threshold.try_into()?;
     if !(1..=devices.len() as i32).contains(&threshold) {
         return Err(PersistenceError::InvalidArgumentError(format!(
@@ -45,38 +46,32 @@ where
             "Empty identifier"
         )));
     }
-
     let new_group = NewGroup {
         identifier,
         threshold: threshold as i32,
         protocol,
         group_name: name,
-        round: 0, // TODO: check why
+        round: 0,
         group_certificate: certificate,
         key_type,
     };
 
-    let devices: Vec<Vec<u8>> = devices
-        .iter()
-        .map(|identifier| identifier.to_vec())
-        .collect();
     let group = diesel::insert_into(signinggroup::table)
         .values(new_group)
         .returning(Group::as_returning())
         .get_result(connection)
         .await?;
 
-    let group_id = group.id;
-    let group_participants: Vec<NewGroupParticipant> = devices
-        .iter()
-        .map(|device_id| NewGroupParticipant {
-            device_id: &device_id,
-            group_id: Some(group_id),
-        })
-        .collect();
-
-    diesel::insert_into(groupparticipant::table)
-        .values(group_participants)
+    // group participants already exist as they were participating in the task
+    // overwrite null values with the correct group_id
+    let group_participant_alias = diesel::alias!(groupparticipant as group_participant_alias);
+    let group_participant_ids = group_participant_alias
+        .inner_join(taskparticipant::table)
+        .filter(taskparticipant::task_id.eq(Some(&group_task_id)))
+        .select(group_participant_alias.field(groupparticipant::id));
+    diesel::update(groupparticipant::table)
+        .filter(groupparticipant::id.eq_any(group_participant_ids))
+        .set(groupparticipant::group_id.eq(Some(group.id)))
         .execute(connection)
         .await?;
     Ok(group)

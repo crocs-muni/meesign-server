@@ -111,6 +111,7 @@ impl Repository {
     pub async fn add_group(
         &self,
         identifier: &[u8],
+        group_task_id: &Uuid,
         name: &str,
         devices: &[&[u8]],
         threshold: u32,
@@ -124,6 +125,7 @@ impl Repository {
                 async move {
                     add_group(
                         connection,
+                        group_task_id,
                         identifier,
                         name,
                         devices,
