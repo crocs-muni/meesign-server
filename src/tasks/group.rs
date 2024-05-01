@@ -26,6 +26,7 @@ pub struct GroupTask {
     request: Vec<u8>,
     last_update: u64,
     attempts: u32,
+    note: Option<String>,
 }
 
 impl GroupTask {
@@ -35,6 +36,7 @@ impl GroupTask {
         threshold: u32,
         protocol_type: ProtocolType,
         key_type: KeyType,
+        note: &Option<String>,
     ) -> Result<Self, String> {
         let devices_len = devices.len() as u32;
         let protocol: Box<dyn Protocol + Send + Sync> = match (protocol_type, key_type) {
@@ -76,6 +78,7 @@ impl GroupTask {
             threshold,
             protocol: protocol.get_type() as i32,
             key_type: key_type as i32,
+            note: note.to_owned(),
         })
         .encode_to_vec();
 
@@ -90,6 +93,7 @@ impl GroupTask {
             request,
             last_update: get_timestamp(),
             attempts: 0,
+            note: note.to_owned(),
         })
     }
 
@@ -132,6 +136,7 @@ impl GroupTask {
             self.protocol.get_type(),
             self.key_type,
             certificate,
+            self.note.clone(),
         )));
 
         self.communicator.clear_input();
