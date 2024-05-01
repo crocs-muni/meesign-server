@@ -264,6 +264,7 @@ impl MeeSign for MeeSignService {
         let threshold = request.threshold;
         let protocol = ProtocolType::try_from(request.protocol).unwrap();
         let key_type = KeyType::try_from(request.key_type).unwrap();
+        let note = request.note;
 
         info!(
             "GroupRequest name={:?} device_ids={:?} threshold={}",
@@ -277,7 +278,7 @@ impl MeeSign for MeeSignService {
 
         let mut state = self.state.lock().await;
         if let Some(task_id) =
-            state.add_group_task(&name, &device_ids, threshold, protocol, key_type)
+            state.add_group_task(&name, &device_ids, threshold, protocol, key_type, &note)
         {
             let task = state.get_task(&task_id).unwrap();
             Ok(Response::new(format_task(&task_id, task, None, None)))

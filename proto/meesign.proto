@@ -65,6 +65,7 @@ message GroupRequest {
   uint32 threshold = 3;
   ProtocolType protocol = 4;
   KeyType key_type = 5;
+  optional string note = 6;
 }
 
 message Group {
@@ -74,6 +75,7 @@ message Group {
   ProtocolType protocol = 4;
   KeyType key_type = 5;
   repeated bytes device_ids = 6;
+  optional string note = 7;
 }
 
 message DevicesRequest {
