@@ -11,6 +11,7 @@ pub struct Group {
     protocol: ProtocolType,
     key_type: KeyType,
     certificate: Option<Vec<u8>>,
+    note: Option<String>,
 }
 
 impl Group {
@@ -22,6 +23,7 @@ impl Group {
         protocol: ProtocolType,
         key_type: KeyType,
         certificate: Option<Vec<u8>>,
+        note: Option<String>,
     ) -> Self {
         assert!(!identifier.is_empty());
         assert!(threshold >= 1);
@@ -34,6 +36,7 @@ impl Group {
             protocol,
             key_type,
             certificate,
+            note,
         }
     }
 
@@ -74,6 +77,10 @@ impl Group {
     pub fn certificate(&self) -> Option<&Vec<u8>> {
         self.certificate.as_ref()
     }
+
+    pub fn note(&self) -> Option<&String> {
+        self.note.as_ref()
+    }
 }
 
 impl From<&Group> for crate::proto::Group {
@@ -90,6 +97,7 @@ impl From<&Group> for crate::proto::Group {
                 .collect(),
             protocol: group.protocol().into(),
             key_type: group.key_type().into(),
+            note: group.note().map(String::from),
         }
     }
 }
@@ -111,6 +119,7 @@ mod tests {
             ProtocolType::Gg18,
             KeyType::SignPdf,
             None,
+            None,
         );
     }
 
@@ -123,6 +132,7 @@ mod tests {
             2,
             ProtocolType::Gg18,
             KeyType::SignPdf,
+            None,
             None,
         );
         let protobuf = crate::proto::Group::from(&group);
@@ -158,6 +168,7 @@ mod tests {
             threshold,
             protocol_type,
             key_type,
+            None,
             None,
         );
         assert_eq!(group.identifier(), &identifier);

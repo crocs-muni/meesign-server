@@ -75,6 +75,7 @@ impl State {
         threshold: u32,
         protocol: ProtocolType,
         key_type: KeyType,
+        note: &Option<String>,
     ) -> Option<Uuid> {
         if name.chars().count() > 64
             || name
@@ -94,7 +95,7 @@ impl State {
             device_list.push(self.devices.get(device.as_slice()).unwrap().clone());
         }
 
-        let task = GroupTask::try_new(name, &device_list, threshold, protocol, key_type)
+        let task = GroupTask::try_new(name, &device_list, threshold, protocol, key_type, note)
             .ok()
             .map(|task| Box::new(task) as Box<dyn Task + Send + Sync>);
 

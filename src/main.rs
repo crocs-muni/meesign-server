@@ -251,6 +251,7 @@ mod cli {
                             "sign_challenge" => KeyType::SignChallenge,
                             _ => panic!("Incorrect key type"),
                         } as i32,
+                        note: None,
                     });
 
                     let response = client
