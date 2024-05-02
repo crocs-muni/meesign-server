@@ -63,7 +63,7 @@ mod proto {
             let key_type: crate::proto::KeyType = model.key_type.into();
             Self {
                 identifier: model.identifier,
-                name: model.group_name,
+                name: model.name,
                 threshold: model.threshold as u32,
                 protocol: protocol.into(),
                 key_type: key_type.into(),

@@ -39,12 +39,12 @@ diesel::table! {
     group (id) {
         id -> Int4,
         identifier -> Bytea,
-        group_name -> Varchar,
+        name -> Varchar,
         threshold -> Int4,
         protocol -> Protocoltype,
         round -> Int4,
         key_type -> Keytype,
-        group_certificate -> Nullable<Bytea>,
+        certificate -> Nullable<Bytea>,
     }
 }
 

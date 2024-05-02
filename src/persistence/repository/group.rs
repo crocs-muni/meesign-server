@@ -47,9 +47,9 @@ where
         identifier,
         threshold: threshold as i32,
         protocol,
-        group_name: name,
+        name,
         round: 0,
-        group_certificate: certificate,
+        certificate,
         key_type,
     };
 
@@ -183,12 +183,12 @@ mod test {
         let target_group = Group {
             id: retrieved_group.id,
             identifier: Vec::from(GROUP_1_IDENTIFIER),
-            group_name: GROUP_1_NAME.into(),
+            name: GROUP_1_NAME.into(),
             threshold: threshold as i32,
             protocol: ProtocolType::Gg18,
             round: 0,
             key_type: KeyType::SignPdf,
-            group_certificate: Some(GROUP_1_CERT.into()),
+            certificate: Some(GROUP_1_CERT.into()),
         };
 
         assert_eq!(retrieved_group, target_group);

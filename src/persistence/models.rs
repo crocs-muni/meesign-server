@@ -61,24 +61,24 @@ impl From<Device> for crate::proto::Device {
 pub struct Group {
     pub id: i32,
     pub identifier: Vec<u8>,
-    pub group_name: String,
+    pub name: String,
     pub threshold: i32,
     pub protocol: ProtocolType,
     pub round: i32,
     pub key_type: KeyType,
-    pub group_certificate: Option<Vec<u8>>,
+    pub certificate: Option<Vec<u8>>,
 }
 
 #[derive(Insertable)]
 #[diesel(table_name=group)]
 pub struct NewGroup<'a> {
     pub identifier: &'a [u8],
-    pub group_name: &'a str,
+    pub name: &'a str,
     pub threshold: i32,
     pub protocol: ProtocolType,
     pub round: i32,
     pub key_type: KeyType,
-    pub group_certificate: Option<&'a [u8]>,
+    pub certificate: Option<&'a [u8]>,
 }
 
 #[derive(Insertable)]
@@ -147,11 +147,11 @@ impl From<Group> for crate::group::Group {
     fn from(value: Group) -> Self {
         Self::new(
             value.identifier,
-            value.group_name,
+            value.name,
             value.threshold as u32,
             value.protocol.into(),
             value.key_type.into(),
-            value.group_certificate,
+            value.certificate,
         )
     }
 }
