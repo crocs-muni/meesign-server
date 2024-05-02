@@ -290,7 +290,7 @@ impl MeeSign for MeeSignService {
                 |group| async {
                     let device_ids = state
                         .get_repo()
-                        .get_group_device_ids(group.id)
+                        .get_group_device_ids(&group.id)
                         .await
                         .unwrap();
                     Group::from_model(group, device_ids)
@@ -301,7 +301,7 @@ impl MeeSign for MeeSignService {
             future::join_all(state.get_groups().await?.into_iter().map(|group| async {
                 let device_ids = state
                     .get_repo()
-                    .get_group_device_ids(group.id)
+                    .get_group_device_ids(&group.id)
                     .await
                     .unwrap();
                 Group::from_model(group, device_ids)

@@ -34,8 +34,8 @@ diesel::table! {
 diesel::table! {
     groupparticipant (id) {
         id -> Int4,
-        device_id -> Nullable<Bytea>,
-        group_id -> Nullable<Int4>,
+        device_id -> Bytea,
+        group_id -> Int4,
     }
 }
 

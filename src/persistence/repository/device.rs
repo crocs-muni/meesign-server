@@ -1,5 +1,4 @@
 use chrono::Local;
-use diesel::query_dsl::InternalJoinDsl;
 use diesel::QueryDsl;
 use diesel::{pg::Pg, ExpressionMethods, SelectableHelper};
 use diesel_async::AsyncConnection;
@@ -40,18 +39,17 @@ where
 
 pub async fn get_group_device_ids<Conn>(
     connection: &mut Conn,
-    group_id: i32,
+    group_id: &i32,
 ) -> Result<Vec<Vec<u8>>, PersistenceError>
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
     let device_ids: Vec<Vec<u8>> = groupparticipant::table
-        .filter(groupparticipant::group_id.eq(&Some(group_id)))
+        .filter(groupparticipant::group_id.eq(group_id))
         .select(groupparticipant::device_id)
-        .load::<Option<Vec<u8>>>(connection)
+        .load::<Vec<u8>>(connection)
         .await?
         .into_iter()
-        .map(|id| id.expect("Unreachable: Diesel returned something it shouldn't have returned"))
         .collect();
 
     Ok(device_ids)

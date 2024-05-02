@@ -93,8 +93,8 @@ pub struct NewGroupParticipant<'a> {
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct GroupParticipant {
     pub id: i32,
-    pub device_id: Option<Vec<u8>>,
-    pub group_id: Option<i32>,
+    pub device_id: Vec<u8>,
+    pub group_id: i32,
 }
 
 #[derive(Insertable)]
