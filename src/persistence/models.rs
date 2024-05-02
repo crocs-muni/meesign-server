@@ -56,7 +56,7 @@ impl From<Device> for crate::proto::Device {
 
 #[derive(Queryable, Clone, Eq, PartialEq, Selectable)]
 #[cfg_attr(test, derive(PartialOrd, Ord, Debug))]
-#[diesel(table_name=signinggroup)]
+#[diesel(table_name=group)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Group {
     pub id: i32,
@@ -70,7 +70,7 @@ pub struct Group {
 }
 
 #[derive(Insertable)]
-#[diesel(table_name=signinggroup)]
+#[diesel(table_name=group)]
 pub struct NewGroup<'a> {
     pub identifier: &'a [u8],
     pub group_name: &'a str,

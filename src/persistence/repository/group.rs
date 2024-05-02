@@ -6,8 +6,8 @@ use uuid::Uuid;
 
 use crate::persistence::models::NewGroupParticipant;
 use crate::persistence::schema::device;
+use crate::persistence::schema::group;
 use crate::persistence::schema::groupparticipant;
-use crate::persistence::schema::signinggroup;
 use crate::persistence::schema::task;
 use crate::persistence::{
     enums::{KeyType, ProtocolType},
@@ -20,7 +20,7 @@ pub async fn get_groups<Conn>(connection: &mut Conn) -> Result<Vec<Group>, Persi
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    Ok(signinggroup::table.load(connection).await?)
+    Ok(group::table.load(connection).await?)
 }
 
 pub async fn add_group<'a, Conn>(
@@ -53,7 +53,7 @@ where
         key_type,
     };
 
-    let group = diesel::insert_into(signinggroup::table)
+    let group = diesel::insert_into(group::table)
         .values(new_group)
         .returning(Group::as_returning())
         .get_result(connection)
@@ -90,8 +90,8 @@ pub async fn get_group<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    let group: Option<Group> = match signinggroup::table
-        .filter(signinggroup::identifier.eq(group_identifier))
+    let group: Option<Group> = match group::table
+        .filter(group::identifier.eq(group_identifier))
         .first(connection)
         // .optional() TODO
         .await
@@ -112,7 +112,7 @@ where
     Conn: AsyncConnection<Backend = Pg>,
 {
     let groups: Vec<Group> = groupparticipant::table
-        .inner_join(signinggroup::table)
+        .inner_join(group::table)
         .filter(groupparticipant::device_id.eq(device_identifier))
         .select(Group::as_select())
         .load(connection)

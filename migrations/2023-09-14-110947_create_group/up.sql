@@ -1,4 +1,4 @@
-CREATE TABLE SigningGroup (
+CREATE TABLE "group" (
     id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     identifier bytea UNIQUE NOT NULL,
     group_name varchar NOT NULL,

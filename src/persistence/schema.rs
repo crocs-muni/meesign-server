@@ -32,19 +32,11 @@ diesel::table! {
 }
 
 diesel::table! {
-    groupparticipant (id) {
-        id -> Int4,
-        device_id -> Bytea,
-        group_id -> Int4,
-    }
-}
-
-diesel::table! {
     use diesel::sql_types::*;
     use super::sql_types::Protocoltype;
     use super::sql_types::Keytype;
 
-    signinggroup (id) {
+    group (id) {
         id -> Int4,
         identifier -> Bytea,
         group_name -> Varchar,
@@ -53,6 +45,14 @@ diesel::table! {
         round -> Int4,
         key_type -> Keytype,
         group_certificate -> Nullable<Bytea>,
+    }
+}
+
+diesel::table! {
+    groupparticipant (id) {
+        id -> Int4,
+        device_id -> Bytea,
+        group_id -> Int4,
     }
 }
 
@@ -104,16 +104,16 @@ diesel::table! {
 }
 
 diesel::joinable!(groupparticipant -> device (device_id));
-diesel::joinable!(groupparticipant -> signinggroup (group_id));
-diesel::joinable!(task -> signinggroup (group_id));
+diesel::joinable!(groupparticipant -> group (group_id));
+diesel::joinable!(task -> group (group_id));
 diesel::joinable!(taskparticipant -> device (device_id));
 diesel::joinable!(taskparticipant -> task (task_id));
-diesel::joinable!(taskresult -> signinggroup (signing_group_id));
+diesel::joinable!(taskresult -> group (signing_group_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     device,
+    group,
     groupparticipant,
-    signinggroup,
     task,
     taskparticipant,
     taskresult,
