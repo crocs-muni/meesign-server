@@ -1,99 +1,87 @@
 @startuml meesign-erd
 
-entity "Device" as device {
+entity "device" as device {
     * id: integer <<generated>>
     --
     identifier: bytea
-    device_name: varchar
+    name: varchar
     certificate bytea
     last_active: timestamptz
 }
 
-entity "Subscriber" as subscriber {
-    * id: integer <<generated>>
-    --
-    device_id: bigint
-}
-entity "Group Participant" as group_participant {
+entity "group_participant" as group_participant {
     * id: integer <<generated>>
     --
     device_id: bytea
     group_id: bytea
 }
 
-entity "SigningGroup" as group {
+entity "group" as group {
     * id: integer<<generated>>
     --
     identifier: bytea
-    group_name: varchar
+    name: varchar
     threshold: integer
     round: integer
 
 }
 
-enum "ProtocolType" as protocol_type {
-    GG18
+enum "protocol_type" as protocol_type {
+    Gg18
     ElGamal
     Frost
 }
 
-enum "KeyType" as key_type {
-    SignPDF
+enum "key_type" as key_type {
+    SignPdf
     SignChallenge
     Decrypt
 }
 
 
-
-entity "Task" as task {
-    * id: integer <<generated>>
+entity "task" as task {
+    * id: uuid <<generated>>
     --
     round: integer
     attempts: integer
     error_message: varchar
     threshold: integer
-    last_update: bigint
+    last_update: timestamptz
     data: bytea
     preprocessed: bytea
     request: bytea
 }
 
-entity "TaskParticipant" as task_participant{
+entity "task_participant" as task_participant{
     * id: integer <<generated>>
     --
     is_active: boolean
     decision: boolean
     acknowledgement: boolean
-    outgoing_message: bytea
 }
 
-entity "IncomingMessage" as incoming_message {
-    * id: integer <<generated>>
-    --
-    content: bytea
-}
 
-enum "TaskType" as task_type {
+enum "task_type" as task_type {
     Group
     SignPdf
     SignChallenge
     Decrypt
 }
 
-enum "TaskState" as stask_state {
+enum "task_state" as stask_state {
     Created
     Running
     Finished
     Failed
 }
 
-entity "TaskResult" as task_result {
+entity "task_result" as task_result {
     * id: integer <<generated>>
     --
     data: bytea
 }
 
-enum "TaskResultType" as task_result_type {
+enum "task_result_type" as task_result_type {
     GroupEstablished
     Signed
     SignedPdf
@@ -102,15 +90,12 @@ enum "TaskResultType" as task_result_type {
 
 group ||..o{ group_participant: < participates in
 group }o..|| key_type: is using >
-group_participant }o..|| device: < is a participant
+group_participant }o..|| device: < is a
 group }o..|| protocol_type: > is of type
 task }o..|| task_type: > is of type
 group ||..o{ task: > contains
 task }o..|| stask_state: > is in state
-' task_result }o..o| group : > group established
 task_result }o..|| task_result_type: > is of type
 task ||..|{ task_participant
 device ||..o{ task_participant
-task_participant ||..o{ incoming_message: > from
-incoming_message }o..|| task_participant : > to
 @enduml
