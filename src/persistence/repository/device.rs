@@ -101,8 +101,8 @@ where
 
     let new_device = NewDevice {
         id: &identifier.to_vec(),
-        device_name: name,
-        device_certificate: &certificate.to_vec(),
+        name,
+        certificate: &certificate.to_vec(),
     };
 
     let device: Device = diesel::insert_into(device::table)
@@ -141,8 +141,8 @@ mod test {
         assert_eq!(devices.len(), 1);
         let fetched_device = devices.first().unwrap();
         assert_eq!(fetched_device.id, identifier);
-        assert_eq!(fetched_device.device_name, name);
-        assert_eq!(fetched_device.device_certificate, certificate);
+        assert_eq!(fetched_device.name, name);
+        assert_eq!(fetched_device.certificate, certificate);
         Ok(())
     }
 

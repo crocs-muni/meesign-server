@@ -10,8 +10,8 @@ use super::enums::{KeyType, ProtocolType, TaskState, TaskType};
 #[diesel(table_name = device)]
 pub struct NewDevice<'a> {
     pub id: &'a Vec<u8>,
-    pub device_name: &'a str,
-    pub device_certificate: &'a Vec<u8>,
+    pub name: &'a str,
+    pub certificate: &'a Vec<u8>,
 }
 
 #[derive(Queryable, Selectable, Clone)]
@@ -19,8 +19,8 @@ pub struct NewDevice<'a> {
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Device {
     pub id: Vec<u8>,
-    pub device_name: String,
-    pub device_certificate: Vec<u8>,
+    pub name: String,
+    pub certificate: Vec<u8>,
     pub last_active: DateTime<Local>,
 }
 
@@ -29,8 +29,8 @@ impl Device {
     pub fn new(id: Vec<u8>, device_name: String, device_certificate: Vec<u8>) -> Self {
         Self {
             id,
-            device_name,
-            device_certificate,
+            name: device_name,
+            certificate: device_certificate,
             last_active: Local::now(),
         }
     }
@@ -47,8 +47,8 @@ impl From<Device> for crate::proto::Device {
     fn from(device: Device) -> Self {
         crate::proto::Device {
             identifier: device.id,
-            name: device.device_name,
-            certificate: device.device_certificate,
+            name: device.name,
+            certificate: device.certificate,
             last_active: device.last_active.timestamp_millis() as u64,
         }
     }

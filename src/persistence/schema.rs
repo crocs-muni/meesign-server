@@ -25,8 +25,8 @@ pub mod sql_types {
 diesel::table! {
     device (id) {
         id -> Bytea,
-        device_name -> Varchar,
-        device_certificate -> Bytea,
+        name -> Varchar,
+        certificate -> Bytea,
         last_active -> Timestamptz,
     }
 }
