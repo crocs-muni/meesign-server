@@ -1,6 +1,6 @@
-use crate::device::Device;
 use crate::get_timestamp;
 use crate::group::Group;
+use crate::persistence::Device;
 use crate::proto::TaskType;
 use crate::tasks::sign::SignTask;
 use crate::tasks::{Task, TaskResult, TaskStatus};
@@ -8,7 +8,6 @@ use log::{error, info, warn};
 use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};
 use tempfile::NamedTempFile;
-use tonic::codegen::Arc;
 
 pub struct SignPDFTask {
     sign_task: SignTask,
@@ -171,7 +170,7 @@ impl Task for SignPDFTask {
         self.sign_task.has_device(device_id)
     }
 
-    fn get_devices(&self) -> Vec<Arc<Device>> {
+    fn get_devices(&self) -> &Vec<Device> {
         self.sign_task.get_devices()
     }
 
@@ -201,6 +200,16 @@ impl Task for SignPDFTask {
 
     fn get_attempts(&self) -> u32 {
         self.sign_task.get_attempts()
+    }
+
+    fn from_model(
+        model: crate::persistence::Task,
+        devices: Vec<Device>,
+    ) -> Result<Self, crate::error::Error>
+    where
+        Self: Sized,
+    {
+        todo!()
     }
 }
 

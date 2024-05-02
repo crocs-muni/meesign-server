@@ -22,7 +22,7 @@ impl ElgamalGroup {
 
 impl Protocol for ElgamalGroup {
     fn initialize(&mut self, communicator: &mut Communicator, _: &[u8]) {
-        communicator.set_active_devices();
+        communicator.set_active_devices(None);
         let parties = self.parties;
         let threshold = self.threshold;
         communicator.send_all(|idx| {
@@ -76,7 +76,7 @@ impl ElgamalDecrypt {
 
 impl Protocol for ElgamalDecrypt {
     fn initialize(&mut self, communicator: &mut Communicator, data: &[u8]) {
-        communicator.set_active_devices();
+        communicator.set_active_devices(None);
         let participant_indices = communicator.get_protocol_indices();
         communicator.send_all(|idx| {
             (ProtocolInit {

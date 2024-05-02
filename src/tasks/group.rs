@@ -1,6 +1,7 @@
 use crate::communicator::Communicator;
-use crate::device::Device;
+use crate::error::Error;
 use crate::group::Group;
+use crate::persistence::Device;
 use crate::persistence::Task as TaskModel;
 use crate::proto::{KeyType, ProtocolType, TaskType};
 use crate::protocols::elgamal::ElgamalGroup;
@@ -15,13 +16,12 @@ use prost::Message as _;
 use std::collections::HashMap;
 use std::io::Read;
 use std::process::{Command, Stdio};
-use tonic::codegen::Arc;
 
 pub struct GroupTask {
     name: String,
     threshold: u32,
     key_type: KeyType,
-    devices: Vec<Arc<Device>>,
+    devices: Vec<Device>,
     communicator: Communicator,
     result: Option<Result<Group, String>>,
     protocol: Box<dyn Protocol + Send + Sync>,
@@ -35,7 +35,7 @@ pub struct GroupTask {
 impl GroupTask {
     pub fn try_new(
         name: &str,
-        devices: &[Arc<Device>],
+        mut devices: Vec<Device>,
         threshold: u32,
         protocol_type: ProtocolType,
         key_type: KeyType,
@@ -66,17 +66,21 @@ impl GroupTask {
 
         if devices_len < 1 {
             warn!("Invalid number of devices {}", devices_len);
-            // return Err("Invalid input".into());
+            return Err("Invalid input".into());
         }
         if !protocol.get_type().check_threshold(threshold, devices_len) {
             warn!("Invalid group threshold {}-of-{}", threshold, devices_len);
-            // return Err("Invalid input".into());
+            return Err("Invalid input".into());
         }
 
-        let communicator = Communicator::new(&devices, devices.len() as u32, protocol.get_type());
+        devices.sort_by_key(|x| x.identifier().to_vec());
+
+        let threshold = devices.len() as u32;
+        let device_ids = devices.iter().map(|x| x.identifier().to_vec()).collect();
+        let communicator = Communicator::new(devices.clone(), threshold, protocol.get_type());
 
         let request = (crate::proto::GroupRequest {
-            device_ids: devices.iter().map(|x| x.identifier().to_vec()).collect(),
+            device_ids,
             name: String::from(name),
             threshold,
             protocol: protocol.get_type() as i32,
@@ -135,7 +139,6 @@ impl GroupTask {
         self.result = Some(Ok(Group::new(
             identifier,
             self.name.clone(),
-            self.devices.iter().map(Arc::clone).collect(),
             self.threshold,
             self.protocol.get_type(),
             self.key_type,
@@ -197,6 +200,16 @@ impl Task for GroupTask {
                 }
             }
         }
+    }
+
+    fn from_model(model: TaskModel, devices: Vec<Device>) -> Result<Self, Error> {
+        Ok(GroupTask::try_new(
+            "test group",
+            devices,
+            model.threshold as u32,
+            model.protocol_type.unwrap().into(),
+            model.key_type.unwrap().into(),
+        )?)
     }
 
     fn get_type(&self) -> TaskType {
@@ -286,8 +299,8 @@ impl Task for GroupTask {
             .any(|x| x == device_id);
     }
 
-    fn get_devices(&self) -> Vec<Arc<Device>> {
-        self.devices.clone()
+    fn get_devices(&self) -> &Vec<Device> {
+        &self.devices
     }
 
     fn waiting_for(&self, device: &[u8]) -> bool {
@@ -352,17 +365,4 @@ fn issue_certificate(name: &str, public_key: &[u8]) -> Vec<u8> {
         .read_to_end(&mut result)
         .unwrap();
     result
-}
-
-impl From<TaskModel> for GroupTask {
-    fn from(model: TaskModel) -> Self {
-        GroupTask::try_new(
-            "TODO name",
-            &vec![], // TODO
-            model.threshold as u32,
-            model.protocol_type.unwrap().into(),
-            model.key_type.unwrap().into(),
-        )
-        .unwrap()
-    }
 }

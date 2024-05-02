@@ -25,7 +25,6 @@ pub async fn add_group<'a, Conn>(
     group_task_id: &Uuid,
     identifier: &[u8],
     name: &str,
-    devices: &[&[u8]],
     threshold: u32,
     protocol: ProtocolType,
     key_type: KeyType,
@@ -35,11 +34,6 @@ where
     Conn: AsyncConnection<Backend = Pg>,
 {
     let threshold: i32 = threshold.try_into()?;
-    if !(1..=devices.len() as i32).contains(&threshold) {
-        return Err(PersistenceError::InvalidArgumentError(format!(
-            "Invalid threshold {threshold}"
-        )));
-    }
 
     if identifier.is_empty() {
         return Err(PersistenceError::InvalidArgumentError(format!(
@@ -161,7 +155,6 @@ mod test {
             &group_creation_task.id,
             &GROUP_1_IDENTIFIER,
             GROUP_1_NAME,
-            devices,
             threshold,
             ProtocolType::Gg18,
             KeyType::SignPdf,
@@ -218,7 +211,6 @@ mod test {
             &group1_creation_task.id,
             &GROUP_1_IDENTIFIER,
             GROUP_1_NAME,
-            group_1_devices,
             threshold,
             ProtocolType::ElGamal,
             KeyType::Decrypt,
@@ -240,7 +232,6 @@ mod test {
             &group2_creation_task.id,
             &GROUP_2_IDENTIFIER,
             GROUP_2_NAME,
-            group_2_devices,
             threshold,
             ProtocolType::Frost,
             KeyType::SignChallenge,

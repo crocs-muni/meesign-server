@@ -14,7 +14,7 @@ pub struct NewDevice<'a> {
     pub device_certificate: &'a Vec<u8>,
 }
 
-#[derive(Queryable, Selectable)]
+#[derive(Queryable, Selectable, Clone)]
 #[diesel(table_name = device)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Device {
@@ -22,6 +22,25 @@ pub struct Device {
     pub device_name: String,
     pub device_certificate: Vec<u8>,
     pub last_active: DateTime<Local>,
+}
+
+impl Device {
+    #[cfg(test)]
+    pub fn new(id: Vec<u8>, device_name: String, device_certificate: Vec<u8>) -> Self {
+        Self {
+            id,
+            device_name,
+            device_certificate,
+            last_active: Local::now(),
+        }
+    }
+    pub fn identifier(&self) -> &Vec<u8> {
+        &self.id
+    }
+
+    pub fn last_active(&self) -> &DateTime<Local> {
+        &self.last_active
+    }
 }
 
 impl From<Device> for crate::proto::Device {
@@ -124,27 +143,11 @@ pub struct NewTask<'a> {
     pub protocol_type: Option<ProtocolType>,
 }
 
-impl From<Group> for crate::proto::Group {
-    fn from(value: Group) -> Self {
-        let protocol: crate::proto::ProtocolType = value.protocol.into();
-        let key_type: crate::proto::KeyType = value.key_type.into();
-        Self {
-            identifier: value.identifier,
-            name: value.group_name,
-            threshold: value.threshold as u32,
-            protocol: protocol.into(),
-            key_type: key_type.into(),
-            device_ids: vec![], // TODO
-        }
-    }
-}
-
 impl From<Group> for crate::group::Group {
     fn from(value: Group) -> Self {
         Self::new(
             value.identifier,
             value.group_name,
-            vec![], /* TODO */
             value.threshold as u32,
             value.protocol.into(),
             value.key_type.into(),

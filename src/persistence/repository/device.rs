@@ -1,9 +1,13 @@
 use chrono::Local;
+use diesel::query_dsl::InternalJoinDsl;
+use diesel::QueryDsl;
 use diesel::{pg::Pg, ExpressionMethods, SelectableHelper};
 use diesel_async::AsyncConnection;
 use diesel_async::RunQueryDsl;
+use uuid::Uuid;
 
-use crate::persistence::schema::device;
+use crate::persistence::schema::{device, taskparticipant};
+use crate::persistence::schema::{groupparticipant, task};
 use crate::persistence::{
     error::PersistenceError,
     models::{Device, NewDevice},
@@ -15,6 +19,43 @@ where
     Conn: AsyncConnection<Backend = Pg>,
 {
     Ok(device::table.load(connection).await?)
+}
+
+pub async fn get_task_devices<Conn>(
+    connection: &mut Conn,
+    task_id: &Uuid,
+) -> Result<Vec<Device>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    // TODO: link taskparticipant with device directly
+    let devices: Vec<Device> = taskparticipant::table
+        .inner_join(groupparticipant::table.inner_join(device::table))
+        .inner_join(task::table)
+        .filter(task::id.eq(task_id))
+        .select(Device::as_returning())
+        .load(connection)
+        .await?;
+    Ok(devices)
+}
+
+pub async fn get_group_device_ids<Conn>(
+    connection: &mut Conn,
+    group_id: i32,
+) -> Result<Vec<Vec<u8>>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    let device_ids: Vec<Vec<u8>> = groupparticipant::table
+        .filter(groupparticipant::group_id.eq(&Some(group_id)))
+        .select(groupparticipant::device_id)
+        .load::<Option<Vec<u8>>>(connection)
+        .await?
+        .into_iter()
+        .map(|id| id.expect("Unreachable: Diesel returned something it shouldn't have returned"))
+        .collect();
+
+    Ok(device_ids)
 }
 
 pub async fn activate_device<Conn>(

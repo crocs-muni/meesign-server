@@ -102,6 +102,12 @@ where
         )));
     }
 
+    if !(1..=devices.len() as u32).contains(&threshold) {
+        return Err(PersistenceError::InvalidArgumentError(format!(
+            "Invalid threshold {threshold}"
+        )));
+    }
+
     let threshold: i32 = threshold.try_into()?;
     let task = NewTask {
         protocol_round: 0,

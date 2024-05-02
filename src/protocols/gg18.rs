@@ -22,7 +22,7 @@ impl GG18Group {
 
 impl Protocol for GG18Group {
     fn initialize(&mut self, communicator: &mut Communicator, _: &[u8]) {
-        communicator.set_active_devices();
+        communicator.set_active_devices(None);
         let parties = self.parties;
         let threshold = self.threshold;
         communicator.send_all(|idx| {
@@ -76,7 +76,7 @@ impl GG18Sign {
 
 impl Protocol for GG18Sign {
     fn initialize(&mut self, communicator: &mut Communicator, data: &[u8]) {
-        communicator.set_active_devices();
+        communicator.set_active_devices(None);
         let participant_indices = communicator.get_protocol_indices();
         communicator.send_all(|idx| {
             (ProtocolInit {

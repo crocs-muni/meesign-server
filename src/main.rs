@@ -26,9 +26,7 @@ mod utils;
 mod proto {
     #![allow(clippy::derive_partial_eq_without_eq)]
     tonic::include_proto!("meesign");
-    pub(crate) use mee_sign_client::MeeSignClient;
-    pub(crate) use mee_sign_server::MeeSign;
-    pub(crate) use mee_sign_server::MeeSignServer;
+    use crate::persistence::Group as GroupModel;
 
     impl From<meesign_crypto::proto::ProtocolType> for ProtocolType {
         fn from(proto: meesign_crypto::proto::ProtocolType) -> Self {
@@ -55,6 +53,21 @@ mod proto {
             match self {
                 ProtocolType::Gg18 | ProtocolType::Elgamal => 0,
                 ProtocolType::Frost => 1,
+            }
+        }
+    }
+
+    impl Group {
+        pub fn from_model(model: GroupModel, device_ids: Vec<Vec<u8>>) -> Self {
+            let protocol: crate::proto::ProtocolType = model.protocol.into();
+            let key_type: crate::proto::KeyType = model.key_type.into();
+            Self {
+                identifier: model.identifier,
+                name: model.group_name,
+                threshold: model.threshold as u32,
+                protocol: protocol.into(),
+                key_type: key_type.into(),
+                device_ids,
             }
         }
     }

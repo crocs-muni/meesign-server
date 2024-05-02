@@ -1,6 +1,8 @@
 use crate::communicator::Communicator;
-use crate::device::Device;
+use crate::error::Error;
 use crate::group::Group;
+use crate::persistence::Device;
+use crate::persistence::Task as TaskModel;
 use crate::proto::{DecryptRequest, ProtocolType, TaskType};
 use crate::protocols::elgamal::ElgamalDecrypt;
 use crate::protocols::Protocol;
@@ -9,7 +11,6 @@ use crate::{get_timestamp, utils};
 use log::info;
 use meesign_crypto::proto::{ClientMessage, Message as _};
 use prost::Message as _;
-use tonic::codegen::Arc;
 
 pub struct DecryptTask {
     group: Group,
@@ -24,8 +25,11 @@ pub struct DecryptTask {
 
 impl DecryptTask {
     pub fn new(group: Group, name: String, data: Vec<u8>, data_type: String) -> Self {
-        let communicator =
-            Communicator::new(group.devices(), group.threshold(), ProtocolType::Elgamal);
+        // let mut devices: Vec<Arc<Device>> = group.devices().to_vec();
+        let mut devices: Vec<Device> = todo!();
+        devices.sort_by_key(|x| x.identifier().to_vec());
+
+        let communicator = Communicator::new(devices, group.threshold(), ProtocolType::Elgamal);
 
         let request = (DecryptRequest {
             group_id: group.identifier().to_vec(),
@@ -128,6 +132,10 @@ impl DecryptTask {
 }
 
 impl Task for DecryptTask {
+    fn from_model(model: TaskModel, devices: Vec<Device>) -> Result<Self, Error> {
+        todo!()
+    }
+
     fn get_status(&self) -> TaskStatus {
         match &self.result {
             Some(Err(e)) => TaskStatus::Failed(e.clone()),
@@ -201,11 +209,13 @@ impl Task for DecryptTask {
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
-        self.group.contains(device_id)
+        // self.group.contains(device_id)
+        todo!();
     }
 
-    fn get_devices(&self) -> Vec<Arc<Device>> {
-        self.group.devices().to_vec()
+    fn get_devices(&self) -> &Vec<Device> {
+        // self.group.devices().to_vec()
+        todo!();
     }
 
     fn waiting_for(&self, device: &[u8]) -> bool {

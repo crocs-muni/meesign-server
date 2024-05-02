@@ -3,9 +3,10 @@ pub(crate) mod group;
 pub(crate) mod sign;
 pub(crate) mod sign_pdf;
 
-use crate::device::Device;
+use crate::error::Error;
 use crate::group::Group;
-use tonic::codegen::Arc;
+use crate::persistence::Device;
+use crate::persistence::Task as TaskModel;
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum TaskStatus {
@@ -60,7 +61,7 @@ pub trait Task {
     fn is_approved(&self) -> bool;
 
     fn has_device(&self, device_id: &[u8]) -> bool;
-    fn get_devices(&self) -> Vec<Arc<Device>>;
+    fn get_devices(&self) -> &Vec<Device>;
     fn waiting_for(&self, device_id: &[u8]) -> bool;
 
     /// Store `decision` by `device_id`
@@ -76,4 +77,7 @@ pub trait Task {
     fn get_request(&self) -> &[u8];
 
     fn get_attempts(&self) -> u32;
+    fn from_model(model: TaskModel, devices: Vec<Device>) -> Result<Self, Error>
+    where
+        Self: Sized;
 }

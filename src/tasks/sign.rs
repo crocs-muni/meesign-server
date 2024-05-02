@@ -1,6 +1,6 @@
 use crate::communicator::Communicator;
-use crate::device::Device;
 use crate::group::Group;
+use crate::persistence::Device;
 use crate::proto::{ProtocolType, SignRequest, TaskType};
 use crate::protocols::frost::FROSTSign;
 use crate::protocols::gg18::GG18Sign;
@@ -10,7 +10,6 @@ use crate::{get_timestamp, utils};
 use log::{info, warn};
 use meesign_crypto::proto::{ClientMessage, Message as _};
 use prost::Message as _;
-use tonic::codegen::Arc;
 
 pub struct SignTask {
     group: Group,
@@ -26,9 +25,12 @@ pub struct SignTask {
 
 impl SignTask {
     pub fn try_new(group: Group, name: String, data: Vec<u8>) -> Result<Self, String> {
+        // let mut devices: Vec<Arc<Device>> = group.devices().to_vec();
+        let mut devices: Vec<Device> = todo!();
+        devices.sort_by_key(|x| x.identifier().to_vec());
         let protocol_type = group.protocol();
 
-        let communicator = Communicator::new(&group.devices(), group.threshold(), protocol_type);
+        let communicator = Communicator::new(devices, group.threshold(), protocol_type);
 
         let request = (SignRequest {
             group_id: group.identifier().to_vec(),
@@ -223,11 +225,13 @@ impl Task for SignTask {
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
-        self.group.contains(device_id)
+        // self.group.contains(device_id)
+        todo!()
     }
 
-    fn get_devices(&self) -> Vec<Arc<Device>> {
-        self.group.devices().to_vec()
+    fn get_devices(&self) -> &Vec<Device> {
+        // &self.group.devices()
+        todo!()
     }
 
     fn waiting_for(&self, device: &[u8]) -> bool {
@@ -262,5 +266,15 @@ impl Task for SignTask {
 
     fn get_attempts(&self) -> u32 {
         self.attempts
+    }
+
+    fn from_model(
+        model: crate::persistence::Task,
+        devices: Vec<Device>,
+    ) -> Result<Self, crate::error::Error>
+    where
+        Self: Sized,
+    {
+        todo!()
     }
 }

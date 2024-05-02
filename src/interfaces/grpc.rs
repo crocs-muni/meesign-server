@@ -1,3 +1,4 @@
+use futures::future;
 use log::{debug, error, info};
 use openssl::asn1::{Asn1Integer, Asn1Time};
 use openssl::bn::BigNum;
@@ -18,7 +19,7 @@ use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use crate::proto::mpc_server::{Mpc, MpcServer};
-use crate::proto::{KeyType, ProtocolType};
+use crate::proto::{Group, KeyType, ProtocolType};
 use crate::state::State;
 use crate::tasks::group::GroupTask;
 use crate::tasks::{Task, TaskStatus};
@@ -282,21 +283,30 @@ impl MeeSign for MeeSignService {
         debug!("GroupsRequest device_id={}", device_str);
 
         let state = self.state.lock().await;
+        // TODO: refactor, consider storing device IDS in the group model directly
         let groups = if let Some(device_id) = device_id {
             state.get_repo().activate_device(&device_id).await?;
-            state
-                .get_device_groups(&device_id)
-                .await?
-                .into_iter()
-                .map(|group| group.into())
-                .collect()
+            future::join_all(state.get_device_groups(&device_id).await?.into_iter().map(
+                |group| async {
+                    let device_ids = state
+                        .get_repo()
+                        .get_group_device_ids(group.id)
+                        .await
+                        .unwrap();
+                    Group::from_model(group, device_ids)
+                },
+            ))
+            .await
         } else {
-            state
-                .get_groups()
-                .await?
-                .into_iter()
-                .map(|group| group.into())
-                .collect()
+            future::join_all(state.get_groups().await?.into_iter().map(|group| async {
+                let device_ids = state
+                    .get_repo()
+                    .get_group_device_ids(group.id)
+                    .await
+                    .unwrap();
+                Group::from_model(group, device_ids)
+            }))
+            .await
         };
 
         Ok(Response::new(msg::Groups { groups }))

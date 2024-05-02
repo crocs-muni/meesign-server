@@ -186,17 +186,11 @@ impl State {
         if previous_status != TaskStatus::Finished && task.get_status() == TaskStatus::Finished {
             // TODO join if statements once #![feature(let_chains)] gets stabilized
             if let TaskResult::GroupEstablished(group) = task.get_result().unwrap() {
-                let device_ids: Vec<&[u8]> = group
-                    .devices()
-                    .iter()
-                    .map(|device| device.identifier())
-                    .collect();
                 self.get_repo()
                     .add_group(
                         group.identifier(),
                         task_id,
                         group.name(),
-                        &device_ids[..],
                         group.threshold(),
                         group.protocol().into(),
                         group.key_type().into(),

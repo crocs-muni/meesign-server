@@ -8,10 +8,13 @@ use super::{
     models::{Device, Group, Task},
 };
 
-use self::task::{create_group_task, create_task};
 use self::{
     device::{activate_device, add_device, get_devices},
     group::get_group,
+};
+use self::{
+    device::{get_group_device_ids, get_task_devices},
+    task::{create_group_task, create_task},
 };
 use self::{
     group::{add_group, get_device_groups, get_groups},
@@ -42,7 +45,7 @@ pub struct Repository {
     pg_pool: Arc<PgPool>,
 }
 
-type PgPool = Pool<AsyncPgConnection>;
+pub type PgPool = Pool<AsyncPgConnection>;
 type DeadpoolPgConnection = Object<AsyncPgConnection>;
 
 impl Repository {
@@ -96,7 +99,16 @@ impl Repository {
     }
 
     pub async fn get_task_devices(&self, task_id: &Uuid) -> Result<Vec<Device>, PersistenceError> {
-        todo!()
+        let connection = &mut self.get_async_connection().await?;
+        get_task_devices(connection, task_id).await
+    }
+
+    pub async fn get_group_device_ids(
+        &self,
+        group_id: i32,
+    ) -> Result<Vec<Vec<u8>>, PersistenceError> {
+        let connection = &mut self.get_async_connection().await?;
+        get_group_device_ids(connection, group_id).await
     }
 
     pub async fn activate_device(
@@ -113,7 +125,6 @@ impl Repository {
         identifier: &[u8],
         group_task_id: &Uuid,
         name: &str,
-        devices: &[&[u8]],
         threshold: u32,
         protocol: ProtocolType,
         key_type: KeyType,
@@ -128,7 +139,6 @@ impl Repository {
                         group_task_id,
                         identifier,
                         name,
-                        devices,
                         threshold,
                         protocol,
                         key_type,
@@ -254,11 +264,12 @@ impl Repository {
 
     pub async fn get_task<T>(&self, task_id: &Uuid) -> Result<Option<T>, PersistenceError>
     where
-        T: TaskTrait + From<Task>,
+        T: TaskTrait,
     {
         let connection = &mut self.get_async_connection().await?;
         let task = get_task(connection, task_id).await?;
-        let task: Option<T> = task.map(|task| task.into());
+        let device_ids = self.get_task_devices(task_id).await?;
+        let task: Option<T> = task.map(|task| T::from_model(task, device_ids).unwrap());
         Ok(task)
     }
 
