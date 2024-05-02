@@ -28,9 +28,8 @@ pub async fn get_task_devices<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    // TODO: link taskparticipant with device directly
     let devices: Vec<Device> = taskparticipant::table
-        .inner_join(groupparticipant::table.inner_join(device::table))
+        .inner_join(device::table)
         .inner_join(task::table)
         .filter(task::id.eq(task_id))
         .select(Device::as_returning())

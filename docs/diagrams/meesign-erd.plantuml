@@ -110,7 +110,7 @@ task }o..|| stask_state: > is in state
 ' task_result }o..o| group : > group established
 task_result }o..|| task_result_type: > is of type
 task ||..|{ task_participant
-group_participant ||..o{ task_participant
+device ||..o{ task_participant
 task_participant ||..o{ incoming_message: > from
 incoming_message }o..|| task_participant : > to
 @enduml

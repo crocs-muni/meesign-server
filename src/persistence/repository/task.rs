@@ -8,8 +8,8 @@ use super::utils::NameValidator;
 use crate::persistence::{
     enums::{KeyType, ProtocolType, TaskState, TaskType},
     error::PersistenceError,
-    models::{GroupParticipant, NewGroupParticipant, NewTask, NewTaskParticipant, Task},
-    schema::{groupparticipant, task, taskparticipant},
+    models::{NewTask, NewTaskParticipant, Task},
+    schema::{task, taskparticipant},
 };
 
 pub async fn create_task<Conn>(
@@ -47,31 +47,16 @@ where
         protocol_type,
     };
 
-    // TODO: either use this function just for group tasks, or fetch group participants from the DB by default.
-    let group_participants: Vec<NewGroupParticipant> = devices
-        .into_iter()
-        .map(|device_id| NewGroupParticipant {
-            device_id,
-            group_id: None,
-        })
-        .collect();
-
-    let group_participants: Vec<GroupParticipant> = diesel::insert_into(groupparticipant::table)
-        .values(group_participants)
-        .returning(GroupParticipant::as_returning())
-        .load(connection)
-        .await?;
-
     let task: Task = diesel::insert_into(task::table)
         .values(task)
         .returning(Task::as_returning())
         .get_result(connection)
         .await?;
 
-    let new_task_participants: Vec<NewTaskParticipant> = group_participants
+    let new_task_participants: Vec<NewTaskParticipant> = devices
         .into_iter()
-        .map(|group_participant| NewTaskParticipant {
-            group_participant_id: group_participant.id,
+        .map(|device_id| NewTaskParticipant {
+            device_id,
             task_id: &task.id,
             decision: None,
             acknowledgment: None,
@@ -85,6 +70,7 @@ where
     Ok(task)
 }
 
+// TODO: join with create_task
 pub async fn create_group_task<Conn>(
     connection: &mut Conn,
     name: &str,
@@ -130,24 +116,10 @@ where
         .get_result(connection)
         .await?;
 
-    let group_participants: Vec<NewGroupParticipant> = devices
+    let new_task_participants: Vec<NewTaskParticipant> = devices
         .into_iter()
-        .map(|device_id| NewGroupParticipant {
+        .map(|device_id| NewTaskParticipant {
             device_id,
-            group_id: None,
-        })
-        .collect();
-
-    let group_participants: Vec<GroupParticipant> = diesel::insert_into(groupparticipant::table)
-        .values(group_participants)
-        .returning(GroupParticipant::as_returning())
-        .load(connection)
-        .await?;
-
-    let new_task_participants: Vec<NewTaskParticipant> = group_participants
-        .into_iter()
-        .map(|group_participant| NewTaskParticipant {
-            group_participant_id: group_participant.id,
             task_id: &task.id,
             decision: None,
             acknowledgment: None,

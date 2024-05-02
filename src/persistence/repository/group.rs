@@ -4,8 +4,11 @@ use diesel::{pg::Pg, result::Error::NotFound, ExpressionMethods, QueryDsl, Selec
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use uuid::Uuid;
 
+use crate::persistence::models::NewGroupParticipant;
+use crate::persistence::schema::device;
 use crate::persistence::schema::groupparticipant;
 use crate::persistence::schema::signinggroup;
+use crate::persistence::schema::task;
 use crate::persistence::{
     enums::{KeyType, ProtocolType},
     error::PersistenceError,
@@ -56,18 +59,27 @@ where
         .get_result(connection)
         .await?;
 
-    // group participants already exist as they were participating in the task
-    // overwrite null values with the correct group_id
-    let group_participant_alias = diesel::alias!(groupparticipant as group_participant_alias);
-    let group_participant_ids = group_participant_alias
-        .inner_join(taskparticipant::table)
-        .filter(taskparticipant::task_id.eq(Some(&group_task_id)))
-        .select(group_participant_alias.field(groupparticipant::id));
-    diesel::update(groupparticipant::table)
-        .filter(groupparticipant::id.eq_any(group_participant_ids))
-        .set(groupparticipant::group_id.eq(Some(group.id)))
+    let device_ids: Vec<Vec<u8>> = taskparticipant::table
+        .inner_join(task::table)
+        .filter(task::id.eq(group_task_id))
+        .inner_join(device::table)
+        .select(device::id)
+        .load(connection)
+        .await?;
+    let group_participants: Vec<NewGroupParticipant> = device_ids
+        .iter()
+        .map(|device_id| NewGroupParticipant {
+            device_id,
+            group_id: group.id,
+        })
+        .collect();
+    let expected_affected_row_count = group_participants.len();
+    let affected_row_count = diesel::insert_into(groupparticipant::table)
+        .values(group_participants)
         .execute(connection)
         .await?;
+    // TODO: consider propagating the check into the prod build: assert -> Err(...)
+    assert_eq!(affected_row_count, expected_affected_row_count);
     Ok(group)
 }
 

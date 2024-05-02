@@ -84,8 +84,8 @@ diesel::table! {
 diesel::table! {
     taskparticipant (id) {
         id -> Int4,
-        group_participant_id -> Nullable<Int4>,
-        task_id -> Nullable<Uuid>,
+        device_id -> Bytea,
+        task_id -> Uuid,
         decision -> Nullable<Bool>,
         acknowledgment -> Nullable<Bool>,
     }
@@ -106,7 +106,7 @@ diesel::table! {
 diesel::joinable!(groupparticipant -> device (device_id));
 diesel::joinable!(groupparticipant -> signinggroup (group_id));
 diesel::joinable!(task -> signinggroup (group_id));
-diesel::joinable!(taskparticipant -> groupparticipant (group_participant_id));
+diesel::joinable!(taskparticipant -> device (device_id));
 diesel::joinable!(taskparticipant -> task (task_id));
 diesel::joinable!(taskresult -> signinggroup (signing_group_id));
 
