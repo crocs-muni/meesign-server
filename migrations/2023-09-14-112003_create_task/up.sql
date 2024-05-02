@@ -1,5 +1,5 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE TABLE Task (
+CREATE TABLE task (
     id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
     protocol_round integer NOT NULL CHECK (protocol_round >= 0),
     attempt_count integer NOT NULL CHECK (attempt_count >= 0),
@@ -10,8 +10,8 @@ CREATE TABLE Task (
     preprocessed bytea,
     request bytea,
     group_id INT REFERENCES "group"(id),
-    task_type TaskType NOT NULL,
-    task_state TaskState NOT NULL,
-    key_type KeyType,
-    protocol_type ProtocolType
+    task_type task_type NOT NULL,
+    task_state task_state NOT NULL,
+    key_type key_type,
+    protocol_type protocol_type
 );

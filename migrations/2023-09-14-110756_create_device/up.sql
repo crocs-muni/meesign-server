@@ -1,4 +1,4 @@
-CREATE TABLE Device (
+CREATE TABLE device (
     "id" bytea PRIMARY KEY,
     "name" varchar UNIQUE NOT NULL,
     "certificate" bytea NOT NULL,

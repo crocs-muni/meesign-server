@@ -7,13 +7,13 @@ use uuid::Uuid;
 use crate::persistence::models::NewGroupParticipant;
 use crate::persistence::schema::device;
 use crate::persistence::schema::group;
-use crate::persistence::schema::groupparticipant;
+use crate::persistence::schema::group_participant;
 use crate::persistence::schema::task;
+use crate::persistence::schema::task_participant;
 use crate::persistence::{
     enums::{KeyType, ProtocolType},
     error::PersistenceError,
     models::{Group, NewGroup},
-    schema::taskparticipant,
 };
 
 pub async fn get_groups<Conn>(connection: &mut Conn) -> Result<Vec<Group>, PersistenceError>
@@ -59,7 +59,7 @@ where
         .get_result(connection)
         .await?;
 
-    let device_ids: Vec<Vec<u8>> = taskparticipant::table
+    let device_ids: Vec<Vec<u8>> = task_participant::table
         .inner_join(task::table)
         .filter(task::id.eq(group_task_id))
         .inner_join(device::table)
@@ -74,7 +74,7 @@ where
         })
         .collect();
     let expected_affected_row_count = group_participants.len();
-    let affected_row_count = diesel::insert_into(groupparticipant::table)
+    let affected_row_count = diesel::insert_into(group_participant::table)
         .values(group_participants)
         .execute(connection)
         .await?;
@@ -111,9 +111,9 @@ pub async fn get_device_groups<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    let groups: Vec<Group> = groupparticipant::table
+    let groups: Vec<Group> = group_participant::table
         .inner_join(group::table)
-        .filter(groupparticipant::device_id.eq(device_identifier))
+        .filter(group_participant::device_id.eq(device_identifier))
         .select(Group::as_select())
         .load(connection)
         .await?;

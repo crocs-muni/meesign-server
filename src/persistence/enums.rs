@@ -3,7 +3,7 @@ use diesel_derive_enum::DbEnum;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, DbEnum)]
 #[cfg_attr(test, derive(PartialOrd, Ord))]
-#[ExistingTypePath = "crate::persistence::schema::sql_types::Protocoltype"]
+#[ExistingTypePath = "crate::persistence::schema::sql_types::ProtocolType"]
 #[DbValueStyle = "PascalCase"]
 pub enum ProtocolType {
     Gg18,
@@ -22,7 +22,7 @@ impl From<proto::ProtocolType> for ProtocolType {
 }
 
 #[derive(Debug, DbEnum, Clone, PartialEq, Eq)]
-#[ExistingTypePath = "crate::persistence::schema::sql_types::Tasktype"]
+#[ExistingTypePath = "crate::persistence::schema::sql_types::TaskType"]
 #[DbValueStyle = "PascalCase"]
 pub enum TaskType {
     Group,
@@ -32,7 +32,7 @@ pub enum TaskType {
 }
 
 #[derive(Debug, DbEnum)]
-#[ExistingTypePath = "crate::persistence::schema::sql_types::Taskresulttype"]
+#[ExistingTypePath = "crate::persistence::schema::sql_types::TaskResultType"]
 #[DbValueStyle = "PascalCase"]
 pub enum TaskResultType {
     GroupEstablished,
@@ -42,7 +42,7 @@ pub enum TaskResultType {
 }
 
 #[derive(Debug, DbEnum, Clone, PartialEq, Eq)]
-#[ExistingTypePath = "crate::persistence::schema::sql_types::Taskstate"]
+#[ExistingTypePath = "crate::persistence::schema::sql_types::TaskState"]
 #[DbValueStyle = "PascalCase"]
 pub enum TaskState {
     Created,
@@ -53,7 +53,7 @@ pub enum TaskState {
 
 #[derive(Debug, Clone, PartialEq, Eq, DbEnum)]
 #[cfg_attr(test, derive(PartialOrd, Ord))]
-#[ExistingTypePath = "crate::persistence::schema::sql_types::Keytype"]
+#[ExistingTypePath = "crate::persistence::schema::sql_types::KeyType"]
 #[DbValueStyle = "PascalCase"]
 pub enum KeyType {
     SignPdf,

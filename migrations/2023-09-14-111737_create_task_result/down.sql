@@ -1,1 +1,1 @@
-DROP TABLE TaskResult;
+DROP TABLE task_result;

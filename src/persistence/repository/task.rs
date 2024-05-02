@@ -5,11 +5,12 @@ use diesel_async::{AsyncConnection, RunQueryDsl};
 use uuid::Uuid;
 
 use super::utils::NameValidator;
+use crate::persistence::schema::task_participant;
 use crate::persistence::{
     enums::{KeyType, ProtocolType, TaskState, TaskType},
     error::PersistenceError,
     models::{NewTask, NewTaskParticipant, Task},
-    schema::{task, taskparticipant},
+    schema::task,
 };
 
 pub async fn create_task<Conn>(
@@ -63,7 +64,7 @@ where
         })
         .collect();
 
-    diesel::insert_into(taskparticipant::table)
+    diesel::insert_into(task_participant::table)
         .values(new_task_participants)
         .execute(connection)
         .await?;
@@ -126,7 +127,7 @@ where
         })
         .collect();
 
-    diesel::insert_into(taskparticipant::table)
+    diesel::insert_into(task_participant::table)
         .values(new_task_participants)
         .execute(connection)
         .await?;

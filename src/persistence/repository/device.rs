@@ -5,8 +5,8 @@ use diesel_async::AsyncConnection;
 use diesel_async::RunQueryDsl;
 use uuid::Uuid;
 
-use crate::persistence::schema::{device, taskparticipant};
-use crate::persistence::schema::{groupparticipant, task};
+use crate::persistence::schema::{device, task_participant};
+use crate::persistence::schema::{group_participant, task};
 use crate::persistence::{
     error::PersistenceError,
     models::{Device, NewDevice},
@@ -27,7 +27,7 @@ pub async fn get_task_devices<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    let devices: Vec<Device> = taskparticipant::table
+    let devices: Vec<Device> = task_participant::table
         .inner_join(device::table)
         .inner_join(task::table)
         .filter(task::id.eq(task_id))
@@ -44,9 +44,9 @@ pub async fn get_group_device_ids<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    let device_ids: Vec<Vec<u8>> = groupparticipant::table
-        .filter(groupparticipant::group_id.eq(group_id))
-        .select(groupparticipant::device_id)
+    let device_ids: Vec<Vec<u8>> = group_participant::table
+        .filter(group_participant::group_id.eq(group_id))
+        .select(group_participant::device_id)
         .load::<Vec<u8>>(connection)
         .await?
         .into_iter()

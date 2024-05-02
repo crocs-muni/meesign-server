@@ -3,8 +3,8 @@ CREATE TABLE "group" (
     "identifier" bytea UNIQUE NOT NULL,
     "name" varchar NOT NULL,
     "threshold" integer NOT NULL CHECK (threshold > 0),
-    "protocol" ProtocolType NOT NULL,
+    "protocol" protocol_type NOT NULL,
     "round" integer NOT NULL CHECK(round >= 0),
-    "key_type" KeyType NOT NULL,
+    "key_type" key_type NOT NULL,
     "certificate" bytea
 );
