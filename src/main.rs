@@ -13,7 +13,6 @@ use tokio::{sync::Mutex, try_join};
 use tonic::codegen::Arc;
 
 mod communicator;
-mod device;
 mod error;
 mod group;
 mod interfaces;
