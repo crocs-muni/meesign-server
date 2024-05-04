@@ -81,6 +81,7 @@ pub async fn create_group_task<Conn>(
     threshold: u32,
     key_type: KeyType,
     protocol_type: ProtocolType,
+    request: &[u8],
 ) -> Result<Task, PersistenceError>
 where
     Conn: AsyncConnection<Backend = Pg>,
@@ -101,7 +102,7 @@ where
         last_update: None,
         task_data: None,
         preprocessed: None,
-        request: None,
+        request: Some(request),
         task_type: TaskType::Group,
         key_type: Some(key_type),
         task_state: TaskState::Created,

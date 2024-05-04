@@ -3,13 +3,13 @@ use std::sync::RwLock;
 
 use dashmap::DashMap;
 use futures::future;
-use log::{debug, warn};
+use log::{debug, error, warn};
 use uuid::Uuid;
 
 use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::interfaces::grpc::format_task;
-use crate::persistence::{Group, Repository};
+use crate::persistence::{Group, NameValidator, Repository};
 use crate::proto::{KeyType, ProtocolType};
 use crate::tasks::decrypt::DecryptTask;
 use crate::tasks::group::GroupTask;
@@ -36,6 +36,32 @@ impl State {
             repo,
             communicators: DashMap::default(),
         }
+    }
+
+    pub async fn add_group_task(
+        &mut self,
+        name: &str,
+        device_ids: &[&[u8]],
+        threshold: u32,
+        protocol: ProtocolType,
+        key_type: KeyType,
+    ) -> Result<Uuid, Error> {
+        if !name.is_name_valid() {
+            error!("Group request with invalid group name {}", name);
+            return Err(Error::GeneralProtocolError(format!(
+                "Invalid group name {name}"
+            )));
+        }
+        let devices = self.get_repo().get_devices_with_ids(device_ids).await?;
+        let task = Box::new(GroupTask::try_new(
+            name, devices, threshold, protocol, key_type,
+        )?) as Box<dyn Task + Sync + Send>;
+
+        // TODO: group ID?
+        let task_id = self.add_task(task, &[], key_type, protocol).await?;
+
+        self.send_updates(&task_id).await?;
+        Ok(task_id)
     }
 
     pub async fn add_sign_task(
@@ -140,7 +166,7 @@ impl State {
         key_type: KeyType,
         protocol_type: ProtocolType,
     ) -> Result<Uuid, Error> {
-        let task = match task.get_type() {
+        let created_task = match task.get_type() {
             crate::proto::TaskType::Group => {
                 let task_devices = task.get_devices();
                 let device_ids: Vec<&[u8]> = task_devices
@@ -154,6 +180,7 @@ impl State {
                         2,
                         protocol_type.into(),
                         key_type.into(),
+                        task.get_request(),
                     )
                     .await?
             }
@@ -161,7 +188,18 @@ impl State {
                 todo!()
             }
         };
-        Ok(task.id)
+        if let Some(_communicator) = self
+            .communicators
+            .insert(created_task.id, task.get_communicator())
+        {
+            // TODO: create a new "internal error" error variant
+            error!(
+                "A communicator for task with id {} already exists!",
+                created_task.id
+            );
+            return Err(Error::GeneralProtocolError("Data inconsistency".into()));
+        };
+        Ok(created_task.id)
     }
 
     pub fn get_device_tasks(&self, device: &[u8]) -> Vec<(Uuid, &dyn Task)> {

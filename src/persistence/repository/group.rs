@@ -159,6 +159,7 @@ mod test {
             threshold,
             KeyType::SignPdf,
             ProtocolType::Gg18,
+            &[],
         )
         .await?;
 
@@ -216,6 +217,7 @@ mod test {
             threshold,
             KeyType::Decrypt,
             ProtocolType::ElGamal,
+            &[],
         )
         .await?;
         let group_1 = add_group(
@@ -237,6 +239,7 @@ mod test {
             threshold,
             KeyType::SignChallenge,
             ProtocolType::Frost,
+            &[],
         )
         .await?;
         let group_2 = add_group(

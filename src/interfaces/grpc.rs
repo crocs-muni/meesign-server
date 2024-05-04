@@ -330,21 +330,15 @@ impl MeeSign for MeeSignService {
                 .collect::<Vec<String>>(),
             threshold
         );
-        if !name.is_name_valid() {
-            error!("Group request with invalid group name {}", name);
-            return Err(Status::failed_precondition(format!(
-                "Invalid group name {name}"
-            )));
-        }
+
         let device_id_references: Vec<&[u8]> = device_ids
             .iter()
             .map(|device_id| device_id.as_ref())
             .collect();
         let mut state = self.state.lock().await;
         match state
-            .get_repo()
-            .create_group_task(
-                None,
+            .add_group_task(
+                &name,
                 &device_id_references,
                 threshold,
                 protocol.into(),
@@ -352,8 +346,7 @@ impl MeeSign for MeeSignService {
             )
             .await
         {
-            Ok(group_task) => {
-                let task_id = group_task.id;
+            Ok(task_id) => {
                 state.send_updates(&task_id).await?;
                 // TODO: use group task
                 let Some(task) = state.get_task(&task_id).await? else {

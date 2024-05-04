@@ -91,4 +91,5 @@ pub trait Task {
     where
         Self: Sized;
     fn get_id(&self) -> &Uuid;
+    fn get_communicator(&self) -> Arc<RwLock<Communicator>>;
 }

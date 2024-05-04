@@ -219,6 +219,10 @@ impl Task for SignPDFTask {
     fn get_id(&self) -> &Uuid {
         self.sign_task.get_id()
     }
+
+    fn get_communicator(&self) -> Arc<RwLock<Communicator>> {
+        todo!()
+    }
 }
 
 fn request_hash(process: &mut Child, certificate: &[u8]) -> Vec<u8> {

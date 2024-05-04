@@ -287,4 +287,8 @@ impl Task for SignTask {
     fn get_id(&self) -> &Uuid {
         &self.id
     }
+
+    fn get_communicator(&self) -> Arc<RwLock<Communicator>> {
+        todo!()
+    }
 }

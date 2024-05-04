@@ -391,6 +391,10 @@ impl Task for GroupTask {
     fn get_id(&self) -> &Uuid {
         &self.id
     }
+
+    fn get_communicator(&self) -> Arc<RwLock<Communicator>> {
+        self.communicator.clone()
+    }
 }
 
 fn issue_certificate(name: &str, public_key: &[u8]) -> Vec<u8> {

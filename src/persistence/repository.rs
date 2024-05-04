@@ -12,7 +12,7 @@ use super::{
 };
 
 use self::{
-    device::{activate_device, add_device, get_devices},
+    device::{activate_device, add_device, get_devices, get_devices_with_ids},
     group::get_group,
     task::get_tasks,
 };
@@ -100,6 +100,14 @@ impl Repository {
     pub async fn get_devices(&self) -> Result<Vec<Device>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         get_devices(connection).await
+    }
+
+    pub async fn get_devices_with_ids(
+        &self,
+        device_ids: &[&[u8]],
+    ) -> Result<Vec<Device>, PersistenceError> {
+        let connection = &mut self.get_async_connection().await?;
+        get_devices_with_ids(connection, device_ids).await
     }
 
     pub async fn get_task_devices(&self, task_id: &Uuid) -> Result<Vec<Device>, PersistenceError> {
@@ -192,13 +200,22 @@ impl Repository {
         threshold: u32,
         protocol_type: ProtocolType,
         key_type: KeyType,
+        request: &[u8],
     ) -> Result<Task, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         connection
             .transaction(|connection| {
                 async move {
-                    create_group_task(connection, id, devices, threshold, key_type, protocol_type)
-                        .await
+                    create_group_task(
+                        connection,
+                        id,
+                        devices,
+                        threshold,
+                        key_type,
+                        protocol_type,
+                        request,
+                    )
+                    .await
                 }
                 .scope_boxed()
             })

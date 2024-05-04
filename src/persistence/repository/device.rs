@@ -20,6 +20,20 @@ where
     Ok(device::table.load(connection).await?)
 }
 
+pub async fn get_devices_with_ids<Conn>(
+    connection: &mut Conn,
+    device_ids: &[&[u8]],
+) -> Result<Vec<Device>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    let devices = device::table
+        .filter(device::id.eq_any(device_ids))
+        .load(connection)
+        .await?;
+    Ok(devices)
+}
+
 pub async fn get_task_devices<Conn>(
     connection: &mut Conn,
     task_id: &Uuid,
