@@ -8,7 +8,7 @@ use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::interfaces::grpc::format_task;
 use crate::persistence::{Group, Repository};
-use crate::proto::KeyType;
+use crate::proto::{KeyType, ProtocolType};
 use crate::tasks::decrypt::DecryptTask;
 use crate::tasks::group::GroupTask;
 use crate::tasks::sign::SignTask;
@@ -41,7 +41,7 @@ impl State {
         group_id: &[u8],
         name: &str,
         data: &[u8],
-    ) -> Result<Option<Uuid>, Error> {
+    ) -> Result<Uuid, Error> {
         let group: Option<crate::group::Group> = self
             .get_repo()
             .get_group(group_id)
@@ -52,33 +52,34 @@ impl State {
                 "Signing requested from an unknown group group_id={}",
                 utils::hextrunc(group_id)
             );
-            return Ok(None);
+            return Err(Error::GeneralProtocolError("Invalid group_id".into()));
         }
         let group = group.unwrap();
         let task = match group.key_type() {
             KeyType::SignPdf => {
-                SignPDFTask::try_new(group.clone(), name.to_string(), data.to_vec())
-                    .ok()
-                    .map(|task| Box::new(task) as Box<dyn Task + Sync + Send>)
+                let task = SignPDFTask::try_new(group.clone(), name.to_string(), data.to_vec())?;
+                Box::new(task) as Box<dyn Task + Sync + Send>
             }
             KeyType::SignChallenge => {
-                SignTask::try_new(group.clone(), name.to_string(), data.to_vec())
-                    .ok()
-                    .map(|task| Box::new(task) as Box<dyn Task + Sync + Send>)
+                let task = SignTask::try_new(group.clone(), name.to_string(), data.to_vec())?;
+                Box::new(task) as Box<dyn Task + Sync + Send>
             }
             KeyType::Decrypt => {
                 warn!(
                     "Signing request made for decryption group group_id={}",
                     utils::hextrunc(group_id)
                 );
-                return Ok(None);
+                return Err(Error::GeneralProtocolError(
+                    "Decryption groups can't accept signing requests".into(),
+                ));
             }
         };
 
-        let task_id = task.map(|task| self.add_task(task));
-        if let Some(task_id) = &task_id {
-            self.send_updates(task_id).await?;
-        }
+        let task_id = self
+            .add_task(task, group.identifier(), group.key_type(), group.protocol())
+            .await?;
+        self.send_updates(&task_id).await?;
+
         Ok(task_id)
     }
 
@@ -88,7 +89,7 @@ impl State {
         name: &str,
         data: &[u8],
         data_type: &str,
-    ) -> Result<Option<Uuid>, Error> {
+    ) -> Result<Uuid, Error> {
         let group: Option<crate::group::Group> = self
             .get_repo()
             .get_group(group_id)
@@ -99,37 +100,60 @@ impl State {
                 "Decryption requested from an unknown group group_id={}",
                 utils::hextrunc(group_id)
             );
-            return Ok(None);
+            return Err(Error::GeneralProtocolError("Invalid group_id".into()));
         }
         let group = group.unwrap();
         let task = match group.key_type() {
-            KeyType::Decrypt => Some(DecryptTask::new(
-                group.clone(),
-                name.to_string(),
-                data.to_vec(),
-                data_type.to_string(),
-            ))
-            .map(|task| Box::new(task) as Box<dyn Task + Sync + Send>),
+            KeyType::Decrypt => {
+                let task = DecryptTask::new(
+                    group.clone(),
+                    name.to_string(),
+                    data.to_vec(),
+                    data_type.to_string(),
+                );
+                Box::new(task) as Box<dyn Task + Sync + Send>
+            }
             KeyType::SignPdf | KeyType::SignChallenge => {
                 warn!(
                     "Decryption request made for a signing group group_id={}",
                     utils::hextrunc(group_id)
                 );
-                return Ok(None);
+                return Err(Error::GeneralProtocolError(
+                    "Signing group can't accept decryption requests".into(),
+                ));
             }
         };
 
-        let task_id = task.map(|task| self.add_task(task));
-        if let Some(task_id) = &task_id {
-            self.send_updates(task_id).await?;
-        }
+        let task_id = self
+            .add_task(task, group.identifier(), group.key_type(), group.protocol())
+            .await?;
+        self.send_updates(&task_id).await?;
         Ok(task_id)
     }
 
-    fn add_task(&mut self, task: Box<dyn Task + Sync + Send>) -> Uuid {
-        let uuid = Uuid::new_v4();
-        self.tasks.insert(uuid, task);
-        uuid
+    async fn add_task(
+        &mut self,
+        task: Box<dyn Task + Sync + Send>,
+        group_id: &[u8],
+        key_type: KeyType,
+        protocol_type: ProtocolType,
+    ) -> Result<Uuid, Error> {
+        let task = match task.get_type() {
+            crate::proto::TaskType::Group => {
+                let task_devices = task.get_devices();
+                let task_ids: Vec<&[u8]> = task_devices
+                    .iter()
+                    .map(|device| device.id.as_slice())
+                    .collect();
+                self.get_repo()
+                    .create_group_task(&task_ids, 2, protocol_type.into(), key_type.into())
+                    .await?
+            }
+            _ => {
+                todo!()
+            }
+        };
+        Ok(task.id)
     }
 
     pub fn get_device_tasks(&self, device: &[u8]) -> Vec<(Uuid, &dyn Task)> {

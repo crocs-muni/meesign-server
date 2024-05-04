@@ -74,7 +74,6 @@ where
 // TODO: join with create_task
 pub async fn create_group_task<Conn>(
     connection: &mut Conn,
-    name: &str,
     devices: &[&[u8]],
     threshold: u32,
     key_type: KeyType,
@@ -83,12 +82,6 @@ pub async fn create_group_task<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    if !name.is_name_valid() {
-        return Err(PersistenceError::InvalidArgumentError(format!(
-            "Invalid group name {name}"
-        )));
-    }
-
     if !(1..=devices.len() as u32).contains(&threshold) {
         return Err(PersistenceError::InvalidArgumentError(format!(
             "Invalid threshold {threshold}"

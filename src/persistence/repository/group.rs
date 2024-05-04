@@ -154,7 +154,6 @@ mod test {
 
         let group_creation_task = create_group_task(
             &mut connection,
-            GROUP_1_NAME,
             devices,
             threshold,
             KeyType::SignPdf,
@@ -211,7 +210,6 @@ mod test {
 
         let group1_creation_task = create_group_task(
             &mut connection,
-            GROUP_1_NAME,
             group_1_devices,
             threshold,
             KeyType::Decrypt,
@@ -232,7 +230,6 @@ mod test {
 
         let group2_creation_task = create_group_task(
             &mut connection,
-            GROUP_2_NAME,
             group_2_devices,
             threshold,
             KeyType::SignChallenge,

@@ -37,7 +37,7 @@ use std::sync::Arc;
 mod device;
 mod group;
 mod task;
-mod utils;
+pub mod utils;
 
 pub(crate) const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 
@@ -183,7 +183,6 @@ impl Repository {
     /* Tasks */
     pub async fn create_group_task<'a>(
         &self,
-        name: &str,
         devices: &[&[u8]],
         threshold: u32,
         protocol_type: ProtocolType,
@@ -193,15 +192,7 @@ impl Repository {
         connection
             .transaction(|connection| {
                 async move {
-                    create_group_task(
-                        connection,
-                        name,
-                        devices,
-                        threshold,
-                        key_type,
-                        protocol_type,
-                    )
-                    .await
+                    create_group_task(connection, devices, threshold, key_type, protocol_type).await
                 }
                 .scope_boxed()
             })
@@ -210,7 +201,7 @@ impl Repository {
 
     pub async fn create_sign_task<'a>(
         &self,
-        group_identifier: &Vec<u8>,
+        group_identifier: &[u8],
         name: &str,
         data: &Vec<u8>,
     ) -> Result<Task, PersistenceError> {
@@ -237,7 +228,7 @@ impl Repository {
 
     pub async fn create_decrypt_task(
         &self,
-        group_identifier: &Vec<u8>,
+        group_identifier: &[u8],
         name: &str,
         data: &Vec<u8>,
     ) -> Result<Task, PersistenceError> {
