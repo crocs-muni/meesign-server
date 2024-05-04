@@ -141,12 +141,18 @@ impl State {
         let task = match task.get_type() {
             crate::proto::TaskType::Group => {
                 let task_devices = task.get_devices();
-                let task_ids: Vec<&[u8]> = task_devices
+                let device_ids: Vec<&[u8]> = task_devices
                     .iter()
                     .map(|device| device.id.as_slice())
                     .collect();
                 self.get_repo()
-                    .create_group_task(&task_ids, 2, protocol_type.into(), key_type.into())
+                    .create_group_task(
+                        Some(task.get_id()),
+                        &device_ids,
+                        2,
+                        protocol_type.into(),
+                        key_type.into(),
+                    )
                     .await?
             }
             _ => {
@@ -179,8 +185,8 @@ impl State {
         Ok(self.get_repo().get_groups().await?)
     }
 
-    pub fn get_tasks(&self) -> &HashMap<Uuid, Box<dyn Task + Send + Sync>> {
-        &self.tasks
+    pub async fn get_tasks(&self) -> Result<Vec<Box<dyn Task + Send + Sync>>, Error> {
+        Ok(self.get_repo().get_tasks().await?)
     }
 
     pub fn get_task(&self, task: &Uuid) -> Option<&dyn Task> {

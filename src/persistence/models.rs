@@ -129,6 +129,7 @@ pub struct Task {
 #[derive(Insertable)]
 #[diesel(table_name=task)]
 pub struct NewTask<'a> {
+    pub id: Option<&'a Uuid>,
     pub protocol_round: i32,
     pub attempt_count: i32,
     pub error_message: Option<&'a str>,

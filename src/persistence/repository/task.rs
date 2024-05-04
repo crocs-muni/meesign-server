@@ -15,6 +15,7 @@ use crate::persistence::{
 
 pub async fn create_task<Conn>(
     connection: &mut Conn,
+    id: Option<&Uuid>,
     task_type: TaskType,
     name: &str,
     data: Option<&Vec<u8>>,
@@ -34,6 +35,7 @@ where
 
     // let threshold: i32 = threshold.try_into()?;
     let task = NewTask {
+        id,
         protocol_round: 0,
         attempt_count: 0,
         error_message: None,
@@ -74,6 +76,7 @@ where
 // TODO: join with create_task
 pub async fn create_group_task<Conn>(
     connection: &mut Conn,
+    id: Option<&Uuid>,
     devices: &[&[u8]],
     threshold: u32,
     key_type: KeyType,
@@ -90,6 +93,7 @@ where
 
     let threshold: i32 = threshold.try_into()?;
     let task = NewTask {
+        id,
         protocol_round: 0,
         attempt_count: 0,
         error_message: None,
@@ -144,4 +148,12 @@ where
         Err(err) => return Err(PersistenceError::ExecutionError(err)),
     };
     Ok(retrieved_task)
+}
+
+pub async fn get_tasks<Conn>(connection: &mut Conn) -> Result<Vec<Task>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    let tasks = task::table.load(connection).await?;
+    Ok(tasks)
 }

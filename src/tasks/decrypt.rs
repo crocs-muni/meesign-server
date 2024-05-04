@@ -11,8 +11,10 @@ use crate::{get_timestamp, utils};
 use log::info;
 use meesign_crypto::proto::{ClientMessage, Message as _};
 use prost::Message as _;
+use uuid::Uuid;
 
 pub struct DecryptTask {
+    id: Uuid,
     group: Group,
     communicator: Communicator,
     result: Option<Result<Vec<u8>, String>>,
@@ -40,6 +42,7 @@ impl DecryptTask {
         .encode_to_vec();
 
         DecryptTask {
+            id: Uuid::new_v4(),
             group,
             communicator,
             result: None,
@@ -250,5 +253,9 @@ impl Task for DecryptTask {
 
     fn get_attempts(&self) -> u32 {
         self.attempts
+    }
+
+    fn get_id(&self) -> &Uuid {
+        &self.id
     }
 }

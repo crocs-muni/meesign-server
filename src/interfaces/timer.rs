@@ -22,7 +22,8 @@ pub async fn run_timer(state: Arc<Mutex<State>>) -> Result<(), String> {
 async fn check_tasks(state: &mut MutexGuard<'_, State>) -> Result<(), Error> {
     let mut restarts = Vec::new();
     let timestamp = get_timestamp();
-    for (task_id, task) in state.get_tasks() {
+    for task in state.get_tasks().await? {
+        let task_id = task.get_id();
         if task.get_status() != TaskStatus::Finished
             && task.is_approved()
             && timestamp - task.last_update() > 30

@@ -16,9 +16,11 @@ use prost::Message as _;
 use std::collections::HashMap;
 use std::io::Read;
 use std::process::{Command, Stdio};
+use uuid::Uuid;
 
 pub struct GroupTask {
     name: String,
+    id: Uuid,
     threshold: u32,
     key_type: KeyType,
     devices: Vec<Device>,
@@ -91,6 +93,7 @@ impl GroupTask {
 
         Ok(GroupTask {
             name: name.into(),
+            id: Uuid::new_v4(),
             threshold,
             devices: devices.to_vec(),
             key_type,
@@ -202,6 +205,7 @@ impl Task for GroupTask {
         }
     }
 
+    // TODO: don't use try_new, also accept communicator that is stored in the state
     fn from_model(model: TaskModel, devices: Vec<Device>) -> Result<Self, Error> {
         Ok(GroupTask::try_new(
             "test group",
@@ -342,6 +346,10 @@ impl Task for GroupTask {
 
     fn get_attempts(&self) -> u32 {
         self.attempts
+    }
+
+    fn get_id(&self) -> &Uuid {
+        &self.id
     }
 }
 

@@ -11,6 +11,7 @@ use super::{
 use self::{
     device::{activate_device, add_device, get_devices},
     group::get_group,
+    task::get_tasks,
 };
 use self::{
     device::{get_group_device_ids, get_task_devices},
@@ -31,8 +32,8 @@ use diesel_async::{
     pooled_connection::AsyncDieselConnectionManager, scoped_futures::ScopedFutureExt,
 };
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
-use std::env;
 use std::sync::Arc;
+use std::{env, rc::Rc};
 
 mod device;
 mod group;
@@ -183,6 +184,7 @@ impl Repository {
     /* Tasks */
     pub async fn create_group_task<'a>(
         &self,
+        id: Option<&Uuid>,
         devices: &[&[u8]],
         threshold: u32,
         protocol_type: ProtocolType,
@@ -192,7 +194,8 @@ impl Repository {
         connection
             .transaction(|connection| {
                 async move {
-                    create_group_task(connection, devices, threshold, key_type, protocol_type).await
+                    create_group_task(connection, id, devices, threshold, key_type, protocol_type)
+                        .await
                 }
                 .scope_boxed()
             })
@@ -201,6 +204,7 @@ impl Repository {
 
     pub async fn create_sign_task<'a>(
         &self,
+        id: Option<&Uuid>,
         group_identifier: &[u8],
         name: &str,
         data: &Vec<u8>,
@@ -211,6 +215,7 @@ impl Repository {
                 async move {
                     create_task(
                         connection,
+                        id,
                         TaskType::SignChallenge, // TODO: based on data
                         name,
                         Some(data),
@@ -228,6 +233,7 @@ impl Repository {
 
     pub async fn create_decrypt_task(
         &self,
+        id: Option<&Uuid>,
         group_identifier: &[u8],
         name: &str,
         data: &Vec<u8>,
@@ -238,6 +244,7 @@ impl Repository {
                 async move {
                     create_task(
                         connection,
+                        id,
                         TaskType::Decrypt,
                         name,
                         Some(data),
@@ -264,8 +271,19 @@ impl Repository {
         Ok(task)
     }
 
-    pub async fn get_tasks(&self) -> Result<Vec<Task>, PersistenceError> {
-        todo!()
+    pub async fn get_tasks(
+        &self,
+    ) -> Result<Vec<Box<dyn TaskTrait + Send + Sync>>, PersistenceError> {
+        let connection = &mut self.get_async_connection().await?;
+        let tasks = get_tasks(connection).await?;
+        Ok(tasks
+            .into_iter()
+            .map(|task| {
+                // TODO: for other task types as well
+                Box::new(GroupTask::from_model(task, vec![]).unwrap())
+                    as Box<dyn TaskTrait + Send + Sync>
+            })
+            .collect())
     }
 
     pub async fn get_tasks_for_restart(&self) -> Result<Vec<Task>, PersistenceError> {

@@ -8,6 +8,7 @@ use log::{error, info, warn};
 use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};
 use tempfile::NamedTempFile;
+use uuid::Uuid;
 
 pub struct SignPDFTask {
     sign_task: SignTask,
@@ -210,6 +211,10 @@ impl Task for SignPDFTask {
         Self: Sized,
     {
         todo!()
+    }
+
+    fn get_id(&self) -> &Uuid {
+        self.sign_task.get_id()
     }
 }
 

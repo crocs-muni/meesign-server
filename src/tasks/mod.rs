@@ -3,6 +3,8 @@ pub(crate) mod group;
 pub(crate) mod sign;
 pub(crate) mod sign_pdf;
 
+use uuid::Uuid;
+
 use crate::error::Error;
 use crate::group::Group;
 use crate::persistence::Device;
@@ -80,4 +82,5 @@ pub trait Task {
     fn from_model(model: TaskModel, devices: Vec<Device>) -> Result<Self, Error>
     where
         Self: Sized;
+    fn get_id(&self) -> &Uuid;
 }
