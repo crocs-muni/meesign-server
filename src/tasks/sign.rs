@@ -1,3 +1,5 @@
+use std::sync::{Arc, RwLock};
+
 use crate::communicator::Communicator;
 use crate::group::Group;
 use crate::persistence::Device;
@@ -274,6 +276,7 @@ impl Task for SignTask {
     fn from_model(
         model: crate::persistence::Task,
         devices: Vec<Device>,
+        communicator: Arc<RwLock<Communicator>>,
     ) -> Result<Self, crate::error::Error>
     where
         Self: Sized,

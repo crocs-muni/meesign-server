@@ -1,3 +1,6 @@
+use std::sync::Arc;
+use std::sync::RwLock;
+
 use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::group::Group;
@@ -135,7 +138,11 @@ impl DecryptTask {
 }
 
 impl Task for DecryptTask {
-    fn from_model(model: TaskModel, devices: Vec<Device>) -> Result<Self, Error> {
+    fn from_model(
+        model: TaskModel,
+        devices: Vec<Device>,
+        communicator: Arc<RwLock<Communicator>>,
+    ) -> Result<Self, Error> {
         todo!()
     }
 

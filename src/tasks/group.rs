@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::group::Group;
 use crate::persistence::Device;
 use crate::persistence::Task as TaskModel;
+use crate::proto;
 use crate::proto::{KeyType, ProtocolType, TaskType};
 use crate::protocols::elgamal::ElgamalGroup;
 use crate::protocols::frost::FROSTGroup;
@@ -16,6 +17,8 @@ use prost::Message as _;
 use std::collections::HashMap;
 use std::io::Read;
 use std::process::{Command, Stdio};
+use std::sync::Arc;
+use std::sync::RwLock;
 use uuid::Uuid;
 
 pub struct GroupTask {
@@ -24,7 +27,7 @@ pub struct GroupTask {
     threshold: u32,
     key_type: KeyType,
     devices: Vec<Device>,
-    communicator: Communicator,
+    communicator: Arc<RwLock<Communicator>>, // TODO: consider using tokio RwLock for async
     result: Option<Result<Group, String>>,
     protocol: Box<dyn Protocol + Send + Sync>,
     request: Vec<u8>,
@@ -44,27 +47,8 @@ impl GroupTask {
         note: &Option<String>,
     ) -> Result<Self, String> {
         let devices_len = devices.len() as u32;
-        let protocol: Box<dyn Protocol + Send + Sync> = match (protocol_type, key_type) {
-            (ProtocolType::Gg18, KeyType::SignPdf) => {
-                Box::new(GG18Group::new(devices_len, threshold))
-            }
-            (ProtocolType::Gg18, KeyType::SignChallenge) => {
-                Box::new(GG18Group::new(devices_len, threshold))
-            }
-            (ProtocolType::Frost, KeyType::SignChallenge) => {
-                Box::new(FROSTGroup::new(devices_len, threshold))
-            }
-            (ProtocolType::Elgamal, KeyType::Decrypt) => {
-                Box::new(ElgamalGroup::new(devices_len, threshold))
-            }
-            _ => {
-                warn!(
-                    "Protocol {:?} does not support {:?} key type",
-                    protocol_type, key_type
-                );
-                return Err("Unsupported protocol type and key type combination".into());
-            }
-        };
+        let protocol: Box<dyn Protocol + Send + Sync> =
+            create_protocol(protocol_type, key_type, devices_len, threshold)?;
 
         if devices_len < 1 {
             warn!("Invalid number of devices {}", devices_len);
@@ -80,6 +64,7 @@ impl GroupTask {
         let threshold = devices.len() as u32;
         let device_ids = devices.iter().map(|x| x.identifier().to_vec()).collect();
         let communicator = Communicator::new(devices.clone(), threshold, protocol.get_type());
+        let communicator = Arc::new(RwLock::new(communicator));
 
         let request = (crate::proto::GroupRequest {
             device_ids,
@@ -109,15 +94,19 @@ impl GroupTask {
     }
 
     fn start_task(&mut self) {
-        self.protocol.initialize(&mut self.communicator, &[]);
+        self.protocol
+            .initialize(&mut self.communicator.write().unwrap(), &[]);
     }
 
     fn advance_task(&mut self) {
-        self.protocol.advance(&mut self.communicator);
+        self.protocol
+            .advance(&mut self.communicator.write().unwrap());
     }
 
     fn finalize_task(&mut self) {
-        let identifier = self.protocol.finalize(&mut self.communicator);
+        let identifier = self
+            .protocol
+            .finalize(&mut self.communicator.write().unwrap());
         if identifier.is_none() {
             self.result = Some(Err("Task failed (group key not output)".to_string()));
             return;
@@ -149,7 +138,7 @@ impl GroupTask {
             self.note.clone(),
         )));
 
-        self.communicator.clear_input();
+        self.communicator.write().unwrap().clear_input();
     }
 
     fn next_round(&mut self) {
@@ -190,6 +179,33 @@ impl GroupTask {
     }
 }
 
+fn create_protocol(
+    protocol_type: proto::ProtocolType,
+    key_type: proto::KeyType,
+    devices_len: u32,
+    threshold: u32,
+) -> Result<Box<dyn Protocol + Send + Sync>, String> {
+    let protocol: Box<dyn Protocol + Send + Sync> = match (protocol_type, key_type) {
+        (ProtocolType::Gg18, KeyType::SignPdf) => Box::new(GG18Group::new(devices_len, threshold)),
+        (ProtocolType::Gg18, KeyType::SignChallenge) => {
+            Box::new(GG18Group::new(devices_len, threshold))
+        }
+        (ProtocolType::Frost, KeyType::SignChallenge) => {
+            Box::new(FROSTGroup::new(devices_len, threshold))
+        }
+        (ProtocolType::Elgamal, KeyType::Decrypt) => {
+            Box::new(ElgamalGroup::new(devices_len, threshold))
+        }
+        _ => {
+            warn!(
+                "Protocol {:?} does not support {:?} key type",
+                protocol_type, key_type
+            );
+            return Err("Unsupported protocol type and key type combination".into());
+        }
+    };
+    Ok(protocol)
+}
 impl Task for GroupTask {
     fn get_status(&self) -> TaskStatus {
         match &self.result {
@@ -205,15 +221,31 @@ impl Task for GroupTask {
         }
     }
 
-    // TODO: don't use try_new, also accept communicator that is stored in the state
-    fn from_model(model: TaskModel, devices: Vec<Device>) -> Result<Self, Error> {
-        Ok(GroupTask::try_new(
-            "test group",
-            devices,
-            model.threshold as u32,
+    // TODO: unwraps
+    fn from_model(
+        model: TaskModel,
+        devices: Vec<Device>,
+        communicator: Arc<RwLock<Communicator>>,
+    ) -> Result<Self, Error> {
+        let protocol = create_protocol(
             model.protocol_type.unwrap().into(),
-            model.key_type.unwrap().into(),
-        )?)
+            model.key_type.clone().unwrap().into(),
+            devices.len() as u32,
+            model.threshold as u32,
+        )?;
+        Ok(Self {
+            name: "test group".into(), // TODO: name
+            id: model.id,
+            threshold: model.threshold as u32,
+            key_type: model.key_type.unwrap().into(),
+            devices,
+            communicator,
+            result: None, // TODO: we may need to propagate the created group here
+            protocol,
+            request: model.request.unwrap(),
+            last_update: model.last_update.timestamp_millis() as u64,
+            attempts: model.attempt_count as u32,
+        })
     }
 
     fn get_type(&self) -> TaskType {
@@ -225,7 +257,10 @@ impl Task for GroupTask {
             return Vec::new();
         }
 
-        self.communicator.get_messages(device_id.unwrap())
+        self.communicator
+            .read()
+            .unwrap()
+            .get_message(device_id.unwrap())
     }
 
     fn get_result(&self) -> Option<TaskResult> {
@@ -237,14 +272,13 @@ impl Task for GroupTask {
     }
 
     fn get_decisions(&self) -> (u32, u32) {
-        (
-            self.communicator.accept_count(),
-            self.communicator.reject_count(),
-        )
+        let communicator = self.communicator.read().unwrap();
+        (communicator.accept_count(), communicator.reject_count())
     }
 
     fn update(&mut self, device_id: &[u8], data: &Vec<Vec<u8>>) -> Result<bool, String> {
-        if self.communicator.accept_count() != self.devices.len() as u32 {
+        let mut communicator = self.communicator.write().unwrap();
+        if communicator.accept_count() != self.devices.len() as u32 {
             return Err("Not enough agreements to proceed with the protocol.".to_string());
         }
 
@@ -260,11 +294,11 @@ impl Task for GroupTask {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| "Failed to decode messages".to_string())?;
 
-        self.communicator.receive_messages(device_id, messages);
+        communicator.receive_messages(device_id, messages);
         self.last_update = get_timestamp();
 
-        if self.communicator.round_received() && self.protocol.round() <= self.protocol.last_round()
-        {
+        if communicator.round_received() && self.protocol.round() <= self.protocol.last_round() {
+            drop(communicator);
             self.next_round();
             return Ok(true);
         }
@@ -292,7 +326,7 @@ impl Task for GroupTask {
     }
 
     fn is_approved(&self) -> bool {
-        self.communicator.accept_count() == self.devices.len() as u32
+        self.communicator.read().unwrap().accept_count() == self.devices.len() as u32
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
@@ -308,23 +342,26 @@ impl Task for GroupTask {
     }
 
     fn waiting_for(&self, device: &[u8]) -> bool {
+        let mut communicator = self.communicator.write().unwrap();
         if !self.certificates_sent && self.protocol.round() == 0 {
-            return !self.communicator.device_decided(device);
+            return !communicator.device_decided(device);
         } else if self.protocol.round() >= self.protocol.last_round() {
-            return !self.communicator.device_acknowledged(device);
+            return !communicator.device_acknowledged(device);
         }
 
-        self.communicator.waiting_for(device)
+        communicator.waiting_for(device)
     }
 
     fn decide(&mut self, device_id: &[u8], decision: bool) -> Option<bool> {
-        self.communicator.decide(device_id, decision);
+        let mut communicator = self.communicator.write().unwrap();
+        communicator.decide(device_id, decision);
         self.last_update = get_timestamp();
         if self.result.is_none() && self.protocol.round() == 0 {
-            if self.communicator.reject_count() > 0 {
+            if communicator.reject_count() > 0 {
                 self.result = Some(Err("Task declined".to_string()));
                 return Some(false);
-            } else if self.communicator.accept_count() == self.devices.len() as u32 {
+            } else if communicator.accept_count() == self.devices.len() as u32 {
+                drop(communicator);
                 self.next_round();
                 return Some(true);
             }
@@ -333,11 +370,14 @@ impl Task for GroupTask {
     }
 
     fn acknowledge(&mut self, device_id: &[u8]) {
-        self.communicator.acknowledge(device_id);
+        self.communicator.write().unwrap().acknowledge(device_id);
     }
 
     fn device_acknowledged(&self, device_id: &[u8]) -> bool {
-        self.communicator.device_acknowledged(device_id)
+        self.communicator
+            .read()
+            .unwrap()
+            .device_acknowledged(device_id)
     }
 
     fn get_request(&self) -> &[u8] {

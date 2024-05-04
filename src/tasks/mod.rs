@@ -3,8 +3,12 @@ pub(crate) mod group;
 pub(crate) mod sign;
 pub(crate) mod sign_pdf;
 
+use std::sync::Arc;
+use std::sync::RwLock;
+
 use uuid::Uuid;
 
+use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::group::Group;
 use crate::persistence::Device;
@@ -79,7 +83,11 @@ pub trait Task {
     fn get_request(&self) -> &[u8];
 
     fn get_attempts(&self) -> u32;
-    fn from_model(model: TaskModel, devices: Vec<Device>) -> Result<Self, Error>
+    fn from_model(
+        model: TaskModel,
+        devices: Vec<Device>,
+        communicator: Arc<RwLock<Communicator>>,
+    ) -> Result<Self, Error>
     where
         Self: Sized;
     fn get_id(&self) -> &Uuid;

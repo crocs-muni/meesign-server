@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::sync::RwLock;
 
 use dashmap::DashMap;
+use futures::future;
 use log::{debug, warn};
 use uuid::Uuid;
 
@@ -23,7 +25,7 @@ pub struct State {
     tasks: HashMap<Uuid, Box<dyn Task + Send + Sync>>,
     subscribers: DashMap<Vec<u8>, Sender<Result<crate::proto::Task, Status>>>,
     repo: Arc<Repository>,
-    communicators: DashMap<Uuid, Communicator>,
+    communicators: DashMap<Uuid, Arc<RwLock<Communicator>>>, // TODO: at this point, we may as well use a regular hashmap with an rwlock
 }
 
 impl State {
@@ -186,11 +188,28 @@ impl State {
     }
 
     pub async fn get_tasks(&self) -> Result<Vec<Box<dyn Task + Send + Sync>>, Error> {
-        Ok(self.get_repo().get_tasks().await?)
+        let task_models = self.get_repo().get_tasks().await?;
+        // TODO: do the grouping in DB
+        let tasks = future::join_all(task_models.into_iter().map(|task| async {
+            let devices = self.get_repo().get_task_devices(&task.id).await?;
+            // TODO: for other task types as well
+            let communicator = self.communicators.get(&task.id).expect("TODO");
+            let task = GroupTask::from_model(task, devices, communicator.clone())?;
+            Ok(Box::new(task) as Box<dyn Task + Send + Sync>)
+        }))
+        .await
+        .into_iter()
+        .collect();
+        tasks
     }
 
-    pub fn get_task(&self, task: &Uuid) -> Option<&dyn Task> {
-        self.tasks.get(task).map(|task| task.as_ref() as &dyn Task)
+    pub async fn get_task(&self, task_id: &Uuid) -> Result<Option<Box<dyn Task>>, Error> {
+        let communicator = self.communicators.get(task_id).unwrap();
+        let task = self
+            .get_repo()
+            .get_task(task_id, communicator.clone())
+            .await?;
+        Ok(task)
     }
 
     pub async fn update_task(
@@ -301,7 +320,12 @@ impl State {
     }
 
     pub async fn send_updates(&mut self, task_id: &Uuid) -> Result<(), Error> {
-        let Some(task): Option<GroupTask> = self.get_repo().get_task(task_id).await? else {
+        let communicator = self.communicators.get(task_id).unwrap(); // TODO
+        let Some(task) = self
+            .get_repo()
+            .get_task(task_id, communicator.clone())
+            .await?
+        else {
             return Err(Error::GeneralProtocolError(format!(
                 "Couldn't find task with id {}",
                 task_id
@@ -311,7 +335,7 @@ impl State {
 
         for device_id in task.get_devices().iter().map(|device| device.identifier()) {
             if let Some(tx) = self.subscribers.get(device_id) {
-                let result = tx.try_send(Ok(format_task(task_id, &task, Some(device_id), None)));
+                let result = tx.try_send(Ok(format_task(task_id, &*task, Some(device_id), None)));
 
                 if result.is_err() {
                     debug!(
@@ -323,6 +347,7 @@ impl State {
             }
         }
 
+        drop(communicator); // so we can have a mutable borrow of self
         for device_id in remove {
             self.remove_subscriber(&device_id);
         }

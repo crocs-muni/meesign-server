@@ -1,6 +1,9 @@
 use uuid::Uuid;
 
-use crate::tasks::{group::GroupTask, Task as TaskTrait};
+use crate::{
+    communicator::{self, Communicator},
+    tasks::{group::GroupTask, Task as TaskTrait},
+};
 
 use super::{
     enums::{KeyType, ProtocolType, TaskType},
@@ -32,7 +35,7 @@ use diesel_async::{
     pooled_connection::AsyncDieselConnectionManager, scoped_futures::ScopedFutureExt,
 };
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::{env, rc::Rc};
 
 mod device;
@@ -260,30 +263,26 @@ impl Repository {
             .await
     }
 
-    pub async fn get_task<T>(&self, task_id: &Uuid) -> Result<Option<T>, PersistenceError>
-    where
-        T: TaskTrait,
-    {
+    pub async fn get_task(
+        &self,
+        task_id: &Uuid,
+        communicator: Arc<RwLock<Communicator>>,
+    ) -> Result<Option<Box<dyn TaskTrait>>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         let task = get_task(connection, task_id).await?;
         let device_ids = self.get_task_devices(task_id).await?;
-        let task: Option<T> = task.map(|task| T::from_model(task, device_ids).unwrap());
+        // TODO: also for other task types
+        let task: Option<Box<dyn TaskTrait>> = task.map(|task| {
+            Box::new(GroupTask::from_model(task, device_ids, communicator).unwrap())
+                as Box<dyn TaskTrait>
+        });
         Ok(task)
     }
 
-    pub async fn get_tasks(
-        &self,
-    ) -> Result<Vec<Box<dyn TaskTrait + Send + Sync>>, PersistenceError> {
+    pub async fn get_tasks(&self) -> Result<Vec<Task>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         let tasks = get_tasks(connection).await?;
-        Ok(tasks
-            .into_iter()
-            .map(|task| {
-                // TODO: for other task types as well
-                Box::new(GroupTask::from_model(task, vec![]).unwrap())
-                    as Box<dyn TaskTrait + Send + Sync>
-            })
-            .collect())
+        Ok(tasks)
     }
 
     pub async fn get_tasks_for_restart(&self) -> Result<Vec<Task>, PersistenceError> {
