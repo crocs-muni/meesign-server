@@ -288,11 +288,13 @@ impl State {
         &self.devices
     }
 
-    pub fn device_activated(&self, device_id: &[u8]) {
+    pub fn device_activated(&self, device_id: &[u8]) -> bool {
         if let Some(device) = self.devices.get(device_id) {
             device.activated();
+            true
         } else {
             error!("Unknown Device ID {}", utils::hextrunc(device_id));
+            false
         }
     }
 

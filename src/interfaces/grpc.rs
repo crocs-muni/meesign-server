@@ -41,9 +41,15 @@ impl MeeSign for MeeSignService {
 
     async fn get_server_info(
         &self,
-        _request: Request<msg::ServerInfoRequest>,
+        request: Request<msg::ServerInfoRequest>,
     ) -> Result<Response<msg::ServerInfo>, Status> {
         debug!("ServerInfoRequest");
+        if let Some(certs) = request.peer_certs() {
+            let device_id = certs.get(0).map(cert_to_id).unwrap_or(vec![]);
+            if !self.state.lock().await.device_activated(&device_id) {
+                return Err(Status::unauthenticated("Unknown device certificate"));
+            }
+        }
         Ok(Response::new(msg::ServerInfo {
             version: crate::VERSION.unwrap_or("unknown").to_string(),
         }))
