@@ -203,7 +203,7 @@ impl Task for DecryptTask {
         result
     }
 
-    async fn restart(&mut self) -> Result<bool, String> {
+    async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, String> {
         self.last_update = get_timestamp();
         if self.result.is_some() {
             return Ok(false);

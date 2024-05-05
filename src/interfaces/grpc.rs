@@ -119,7 +119,7 @@ impl MeeSign for MeeSignService {
 
         let mut state = self.state.lock().await;
         let task_id = state.add_sign_task(&group_id, &name, &data).await?;
-        let task = state.get_task(&task_id).await?.unwrap();
+        let task = state.get_task(&task_id).await?;
         Ok(Response::new(
             format_task(&task_id, &*task, None, None).await,
         ))
@@ -142,7 +142,7 @@ impl MeeSign for MeeSignService {
         let task_id = state
             .add_decrypt_task(&group_id, &name, &data, &data_type)
             .await?;
-        let task = state.get_task(&task_id).await?.unwrap();
+        let task = state.get_task(&task_id).await?;
         Ok(Response::new(
             format_task(&task_id, &*task, None, None).await,
         ))
@@ -172,7 +172,7 @@ impl MeeSign for MeeSignService {
         if device_id.is_some() {
             state.get_repo().activate_device(device_id.unwrap()).await?;
         }
-        let task = state.get_task(&task_id).await?.unwrap();
+        let task = state.get_task(&task_id).await?;
         let request = Some(task.get_request());
 
         let resp = format_task(&task_id, &*task, device_id, request).await;
@@ -250,10 +250,10 @@ impl MeeSign for MeeSignService {
             state.get_repo().activate_device(&device_id).await?;
             future::join_all(
                 state
-                    .get_device_tasks(&device_id)
-                    .await
+                    .get_active_device_tasks(&device_id)
+                    .await?
                     .iter()
-                    .map(|(task_id, task)| format_task(task_id, *task, Some(&device_id), None)),
+                    .map(|task| format_task(task.get_id(), task.as_ref(), Some(&device_id), None)),
             )
             .await
         } else {
@@ -356,9 +356,7 @@ impl MeeSign for MeeSignService {
             Ok(task_id) => {
                 state.send_updates(&task_id).await?;
                 // TODO: use group task
-                let Some(task) = state.get_task(&task_id).await? else {
-                    return Err(Status::internal("Internal error"));
-                };
+                let task = state.get_task(&task_id).await?;
                 Ok(Response::new(
                     format_task(&task_id, &*task, None, None).await,
                 ))
@@ -489,7 +487,9 @@ impl MeeSign for MeeSignService {
 
         let mut state = self.state.lock().await;
         state.get_repo().activate_device(&device_id).await?;
-        state.acknowledge_task(&Uuid::from_slice(&task_id).unwrap(), &device_id);
+        state
+            .acknowledge_task(&Uuid::from_slice(&task_id).unwrap(), &device_id)
+            .await;
 
         Ok(Response::new(msg::Resp {
             message: "OK".into(),

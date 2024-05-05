@@ -150,7 +150,7 @@ impl Task for SignPDFTask {
         result
     }
 
-    async fn restart(&mut self) -> Result<bool, String> {
+    async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, String> {
         self.sign_task.last_update = get_timestamp();
         if self.result.is_some() {
             return Ok(false);
@@ -203,7 +203,7 @@ impl Task for SignPDFTask {
     }
 
     async fn acknowledge(&mut self, device_id: &[u8]) {
-        self.sign_task.acknowledge(device_id);
+        self.sign_task.acknowledge(device_id).await;
     }
 
     async fn device_acknowledged(&self, device_id: &[u8]) -> bool {

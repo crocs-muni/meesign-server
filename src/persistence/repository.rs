@@ -16,7 +16,7 @@ use super::{
 use self::{
     device::{activate_device, add_device, get_devices, get_devices_with_ids},
     group::get_group,
-    task::{get_tasks, increment_round, set_task_last_update},
+    task::{get_device_tasks, get_tasks, increment_round, set_task_last_update, set_task_result},
 };
 use self::{
     device::{get_group_device_ids, get_task_devices},
@@ -308,8 +308,12 @@ impl Repository {
         todo!()
     }
 
-    pub async fn get_device_tasks(&self, identifier: &[u8]) -> Result<Vec<Task>, PersistenceError> {
-        todo!()
+    pub async fn get_active_device_tasks(
+        &self,
+        identifier: &[u8],
+    ) -> Result<Vec<Task>, PersistenceError> {
+        let connection = &mut self.get_async_connection().await?;
+        get_device_tasks(connection, identifier).await
     }
 
     pub async fn increment_round(&self, task_id: &Uuid) -> Result<u32, PersistenceError> {
@@ -323,5 +327,14 @@ impl Repository {
     ) -> Result<DateTime<Local>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         set_task_last_update(connection, task_id).await
+    }
+
+    pub async fn set_task_result(
+        &self,
+        task_id: &Uuid,
+        result: Result<Vec<u8>, String>,
+    ) -> Result<(), PersistenceError> {
+        let connection = &mut self.get_async_connection().await?;
+        set_task_result(connection, task_id, result).await
     }
 }

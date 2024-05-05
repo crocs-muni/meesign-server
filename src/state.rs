@@ -6,10 +6,10 @@ use log::{debug, error, warn};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::communicator::Communicator;
+use crate::communicator::{self, Communicator};
 use crate::error::Error;
 use crate::interfaces::grpc::format_task;
-use crate::persistence::{Group, NameValidator, Repository};
+use crate::persistence::{Group, NameValidator, Repository, Task as TaskModel};
 use crate::proto::{KeyType, ProtocolType};
 use crate::tasks::decrypt::DecryptTask;
 use crate::tasks::group::GroupTask;
@@ -22,7 +22,7 @@ use tonic::codegen::Arc;
 use tonic::Status;
 
 pub struct State {
-    tasks: HashMap<Uuid, Box<dyn Task + Send + Sync>>,
+    // tasks: HashMap<Uuid, Box<dyn Task + Send + Sync>>,
     subscribers: DashMap<Vec<u8>, Sender<Result<crate::proto::Task, Status>>>,
     repo: Arc<Repository>,
     communicators: DashMap<Uuid, Arc<RwLock<Communicator>>>,
@@ -31,7 +31,7 @@ pub struct State {
 impl State {
     pub fn new(repo: Arc<Repository>) -> Self {
         State {
-            tasks: HashMap::new(),
+            // tasks: HashMap::new(),
             subscribers: DashMap::new(),
             repo,
             communicators: DashMap::default(),
@@ -202,19 +202,24 @@ impl State {
         Ok(created_task.id)
     }
 
-    pub async fn get_device_tasks(&self, device: &[u8]) -> Vec<(Uuid, &dyn Task)> {
-        let mut tasks = Vec::new();
-        for (uuid, task) in self.tasks.iter() {
-            // TODO refactor
+    pub async fn get_active_device_tasks(
+        &self,
+        device: &[u8],
+    ) -> Result<Vec<Box<dyn Task>>, Error> {
+        let task_models = self.get_repo().get_active_device_tasks(device).await?;
+        let tasks = self.tasks_from_task_models(task_models).await?;
+        let mut filtered_tasks = Vec::new();
+        // TODO: can we simplify the condition so that we can filter it in DB? Maybe store task acknowledgements in task_participant
+        for task in tasks.into_iter() {
             if task.has_device(device)
                 && (task.get_status() != TaskStatus::Finished
                     || (task.get_status() == TaskStatus::Finished
                         && !task.device_acknowledged(device).await))
             {
-                tasks.push((*uuid, task.as_ref() as &dyn Task));
+                filtered_tasks.push(task as Box<dyn Task>);
             }
         }
-        tasks
+        Ok(filtered_tasks)
     }
 
     pub async fn get_device_groups(&self, device: &[u8]) -> Result<Vec<Group>, Error> {
@@ -227,26 +232,21 @@ impl State {
 
     pub async fn get_tasks(&self) -> Result<Vec<Box<dyn Task + Send + Sync>>, Error> {
         let task_models = self.get_repo().get_tasks().await?;
-        // TODO: do the grouping in DB
-        let tasks = future::join_all(task_models.into_iter().map(|task| async {
-            let devices = self.get_repo().get_task_devices(&task.id).await?;
-            // TODO: for other task types as well
-            let communicator = self.communicators.get(&task.id).expect("TODO");
-            let task = GroupTask::from_model(task, devices, communicator.clone())?;
-            Ok(Box::new(task) as Box<dyn Task + Send + Sync>)
-        }))
-        .await
-        .into_iter()
-        .collect();
-        tasks
+        self.tasks_from_task_models(task_models).await
     }
 
-    pub async fn get_task(&self, task_id: &Uuid) -> Result<Option<Box<dyn Task>>, Error> {
-        let communicator = self.communicators.get(task_id).unwrap();
-        let task = self
+    pub async fn get_task(&self, task_id: &Uuid) -> Result<Box<dyn Task>, Error> {
+        let Some(communicator) = self.communicators.get(task_id) else {
+            return Err(Error::GeneralProtocolError("Invalid task id".into()));
+        };
+        let Some(task) = self
             .get_repo()
             .get_task(task_id, communicator.clone())
-            .await?;
+            .await?
+        else {
+            return Err(Error::GeneralProtocolError("Invalid task id".into()));
+        };
+
         Ok(task)
     }
 
@@ -257,7 +257,7 @@ impl State {
         data: &Vec<Vec<u8>>,
         attempt: u32,
     ) -> Result<bool, Error> {
-        let task = self.tasks.get_mut(task_id).unwrap();
+        let mut task = self.get_task(task_id).await?;
         if attempt != task.get_attempts() {
             warn!(
                 "Stale update discarded task_id={} device_id={} attempt={}",
@@ -299,7 +299,17 @@ impl State {
         decision: bool,
     ) -> Result<bool, Error> {
         let repo = self.repo.clone();
-        let task = self.tasks.get_mut(task_id).unwrap();
+        let Some(communicator) = self.communicators.get(task_id) else {
+            return Err(Error::GeneralProtocolError("Invalid task id".into()));
+        };
+        let Some(mut task) = self
+            .get_repo()
+            .get_task(task_id, communicator.clone())
+            .await?
+        else {
+            return Err(Error::GeneralProtocolError("Invalid task id".into()));
+        };
+        drop(communicator);
         let change = task.decide(device, decision, repo).await;
         if change.is_some() {
             self.send_updates(task_id).await?;
@@ -319,19 +329,15 @@ impl State {
         Ok(false)
     }
 
-    pub fn acknowledge_task(&mut self, task: &Uuid, device: &[u8]) {
-        let task = self.tasks.get_mut(task).unwrap();
-        task.acknowledge(device);
+    pub async fn acknowledge_task(&mut self, task_id: &Uuid, device: &[u8]) {
+        let mut task = self.get_task(task_id).await.unwrap();
+        task.acknowledge(device).await;
     }
 
     pub async fn restart_task(&mut self, task_id: &Uuid) -> Result<bool, Error> {
-        let Some(task) = self.tasks.get_mut(task_id) else {
-            return Err(Error::GeneralProtocolError(format!(
-                "Nonexistent task with id={}",
-                task_id
-            )));
-        };
-        if task.restart().await? {
+        let mut task = self.get_task(task_id).await?;
+
+        if task.restart(self.repo.clone()).await? {
             self.send_updates(task_id).await?;
             Ok(true)
         } else {
@@ -398,5 +404,23 @@ impl State {
 
     pub fn get_repo(&self) -> &Arc<Repository> {
         &self.repo
+    }
+
+    async fn tasks_from_task_models(
+        &self,
+        task_models: Vec<TaskModel>,
+    ) -> Result<Vec<Box<dyn Task + Send + Sync>>, Error> {
+        // TODO: do the grouping in DB
+        let tasks = future::join_all(task_models.into_iter().map(|task| async {
+            let devices = self.get_repo().get_task_devices(&task.id).await?;
+            // TODO: for other task types as well
+            let communicator = self.communicators.get(&task.id).expect("TODO");
+            let task = GroupTask::from_model(task, devices, communicator.clone())?;
+            Ok(Box::new(task) as Box<dyn Task + Send + Sync>)
+        }))
+        .await
+        .into_iter()
+        .collect();
+        tasks
     }
 }

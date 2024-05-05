@@ -6,7 +6,6 @@ use diesel_async::{AsyncConnection, RunQueryDsl};
 use uuid::Uuid;
 
 use super::utils::NameValidator;
-use crate::persistence::schema::device::last_active;
 use crate::persistence::schema::task_participant;
 use crate::persistence::{
     enums::{KeyType, ProtocolType, TaskState, TaskType},
@@ -164,11 +163,31 @@ where
 pub async fn set_task_result<Conn>(
     connection: &mut Conn,
     task_id: &Uuid,
+    result: Result<Vec<u8>, String>,
 ) -> Result<(), PersistenceError>
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
     todo!()
+}
+
+pub async fn get_device_tasks<Conn>(
+    connection: &mut Conn,
+    identifier: &[u8],
+) -> Result<Vec<Task>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    let tasks = task::table
+        .inner_join(task_participant::table)
+        .filter(
+            // not(task::task_state.eq(TaskState::Finished))
+            task_participant::device_id.eq(identifier),
+        )
+        .select(Task::as_select())
+        .load(connection)
+        .await?;
+    Ok(tasks)
 }
 
 pub async fn increment_round<Conn>(

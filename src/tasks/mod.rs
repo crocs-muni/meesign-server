@@ -66,7 +66,7 @@ pub trait Task: Send + Sync {
     ///
     /// # Returns
     /// Ok(true) if task restarted successfully; Ok(false) otherwise.
-    async fn restart(&mut self) -> Result<bool, String>;
+    async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, String>;
 
     /// Get timestamp of the most recent task update
     fn last_update(&self) -> u64;
