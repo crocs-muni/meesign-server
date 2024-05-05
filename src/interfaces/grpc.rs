@@ -18,11 +18,9 @@ use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use crate::persistence::NameValidator;
 use crate::proto::mpc_server::{Mpc, MpcServer};
 use crate::proto::{Group, KeyType, ProtocolType};
 use crate::state::State;
-use crate::tasks::group::GroupTask;
 use crate::tasks::{Task, TaskStatus};
 use crate::{proto as msg, utils, CA_CERT, CA_KEY};
 
@@ -122,7 +120,9 @@ impl MeeSign for MeeSignService {
         let mut state = self.state.lock().await;
         let task_id = state.add_sign_task(&group_id, &name, &data).await?;
         let task = state.get_task(&task_id).await?.unwrap();
-        Ok(Response::new(format_task(&task_id, &*task, None, None)))
+        Ok(Response::new(
+            format_task(&task_id, &*task, None, None).await,
+        ))
     }
 
     async fn decrypt(
@@ -143,7 +143,9 @@ impl MeeSign for MeeSignService {
             .add_decrypt_task(&group_id, &name, &data, &data_type)
             .await?;
         let task = state.get_task(&task_id).await?.unwrap();
-        Ok(Response::new(format_task(&task_id, &*task, None, None)))
+        Ok(Response::new(
+            format_task(&task_id, &*task, None, None).await,
+        ))
     }
 
     async fn get_task(
@@ -173,7 +175,7 @@ impl MeeSign for MeeSignService {
         let task = state.get_task(&task_id).await?.unwrap();
         let request = Some(task.get_request());
 
-        let resp = format_task(&task_id, &*task, device_id, request);
+        let resp = format_task(&task_id, &*task, device_id, request).await;
         Ok(Response::new(resp))
     }
 
@@ -246,18 +248,23 @@ impl MeeSign for MeeSignService {
         let state = self.state.lock().await;
         let tasks = if let Some(device_id) = device_id {
             state.get_repo().activate_device(&device_id).await?;
-            state
-                .get_device_tasks(&device_id)
-                .iter()
-                .map(|(task_id, task)| format_task(task_id, *task, Some(&device_id), None))
-                .collect()
+            future::join_all(
+                state
+                    .get_device_tasks(&device_id)
+                    .await
+                    .iter()
+                    .map(|(task_id, task)| format_task(task_id, *task, Some(&device_id), None)),
+            )
+            .await
         } else {
-            state
-                .get_tasks()
-                .await?
-                .iter()
-                .map(|task| format_task(task.get_id(), task.as_ref(), None, None))
-                .collect()
+            future::join_all(
+                state
+                    .get_tasks()
+                    .await?
+                    .iter()
+                    .map(|task| format_task(task.get_id(), task.as_ref(), None, None)),
+            )
+            .await
         };
 
         Ok(Response::new(msg::Tasks { tasks }))
@@ -352,7 +359,9 @@ impl MeeSign for MeeSignService {
                 let Some(task) = state.get_task(&task_id).await? else {
                     return Err(Status::internal("Internal error"));
                 };
-                Ok(Response::new(format_task(&task_id, &*task, None, None)))
+                Ok(Response::new(
+                    format_task(&task_id, &*task, None, None).await,
+                ))
             }
             Err(err) => {
                 error!("{}", err);
@@ -506,7 +515,7 @@ impl MeeSign for MeeSignService {
     }
 }
 
-pub fn format_task(
+pub async fn format_task(
     task_id: &Uuid,
     task: &dyn Task,
     device_id: Option<&[u8]>,
@@ -515,11 +524,15 @@ pub fn format_task(
     let task_status = task.get_status();
 
     let (task_status, round, data) = match task_status {
-        TaskStatus::Created => (msg::task::TaskState::Created, 0, task.get_work(device_id)),
+        TaskStatus::Created => (
+            msg::task::TaskState::Created,
+            0,
+            task.get_work(device_id).await,
+        ),
         TaskStatus::Running(round) => (
             msg::task::TaskState::Running,
             round,
-            task.get_work(device_id),
+            task.get_work(device_id).await,
         ),
         TaskStatus::Finished => (
             msg::task::TaskState::Finished,
@@ -533,7 +546,7 @@ pub fn format_task(
         ),
     };
 
-    let (accept, reject) = task.get_decisions();
+    let (accept, reject) = task.get_decisions().await;
 
     msg::Task {
         id: task_id.as_bytes().to_vec(),

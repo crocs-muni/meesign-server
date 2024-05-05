@@ -1,3 +1,4 @@
+use chrono::{DateTime, Local};
 use diesel::result::Error::NotFound;
 use diesel::ExpressionMethods;
 use diesel::{pg::Pg, QueryDsl, SelectableHelper};
@@ -5,6 +6,7 @@ use diesel_async::{AsyncConnection, RunQueryDsl};
 use uuid::Uuid;
 
 use super::utils::NameValidator;
+use crate::persistence::schema::device::last_active;
 use crate::persistence::schema::task_participant;
 use crate::persistence::{
     enums::{KeyType, ProtocolType, TaskState, TaskType},
@@ -157,4 +159,46 @@ where
 {
     let tasks = task::table.load(connection).await?;
     Ok(tasks)
+}
+
+pub async fn set_task_result<Conn>(
+    connection: &mut Conn,
+    task_id: &Uuid,
+) -> Result<(), PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    todo!()
+}
+
+pub async fn increment_round<Conn>(
+    connection: &mut Conn,
+    task_id: &Uuid,
+) -> Result<u32, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    let new_round: i32 = diesel::update(task::table.filter(task::id.eq(task_id)))
+        .set(task::protocol_round.eq(task::protocol_round + 1))
+        .returning(task::protocol_round)
+        .get_result(connection)
+        .await?;
+    Ok(new_round as u32)
+}
+
+pub async fn set_task_last_update<Conn>(
+    connection: &mut Conn,
+    task_id: &Uuid,
+) -> Result<DateTime<Local>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    let now = Local::now();
+    let updated_time = diesel::update(task::table.filter(task::id.eq(task_id)))
+        .set(task::last_update.eq(now))
+        .returning(task::last_update)
+        .get_result(connection)
+        .await?;
+    assert_eq!(now, updated_time);
+    Ok(updated_time)
 }

@@ -1,15 +1,17 @@
 use crate::communicator::Communicator;
 use crate::get_timestamp;
 use crate::group::Group;
-use crate::persistence::Device;
+use crate::persistence::{Device, Repository};
 use crate::proto::TaskType;
 use crate::tasks::sign::SignTask;
 use crate::tasks::{Task, TaskResult, TaskStatus};
+use async_trait::async_trait;
 use log::{error, info, warn};
 use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use tempfile::NamedTempFile;
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 pub struct SignPDFTask {
@@ -109,6 +111,7 @@ impl SignPDFTask {
     }
 }
 
+#[async_trait]
 impl Task for SignPDFTask {
     fn get_status(&self) -> TaskStatus {
         self.sign_task.get_status()
@@ -118,8 +121,8 @@ impl Task for SignPDFTask {
         TaskType::SignPdf
     }
 
-    fn get_work(&self, device_id: Option<&[u8]>) -> Vec<Vec<u8>> {
-        self.sign_task.get_work(device_id)
+    async fn get_work(&self, device_id: Option<&[u8]>) -> Option<Vec<Vec<u8>>> {
+        self.sign_task.get_work(device_id).await
     }
 
     fn get_result(&self) -> Option<TaskResult> {
@@ -130,25 +133,30 @@ impl Task for SignPDFTask {
         }
     }
 
-    fn get_decisions(&self) -> (u32, u32) {
-        self.sign_task.get_decisions()
+    async fn get_decisions(&self) -> (u32, u32) {
+        self.sign_task.get_decisions().await
     }
 
-    fn update(&mut self, device_id: &[u8], data: &Vec<Vec<u8>>) -> Result<bool, String> {
-        let result = self.sign_task.update_internal(device_id, data);
+    async fn update(
+        &mut self,
+        device_id: &[u8],
+        data: &Vec<Vec<u8>>,
+        repository: Arc<Repository>,
+    ) -> Result<bool, String> {
+        let result = self.sign_task.update_internal(device_id, data).await;
         if let Ok(true) = result {
             self.next_round();
         };
         result
     }
 
-    fn restart(&mut self) -> Result<bool, String> {
+    async fn restart(&mut self) -> Result<bool, String> {
         self.sign_task.last_update = get_timestamp();
         if self.result.is_some() {
             return Ok(false);
         }
 
-        if self.is_approved() {
+        if self.is_approved().await {
             if let Some(pdfhelper) = self.pdfhelper.as_mut() {
                 pdfhelper.kill().unwrap();
                 self.pdfhelper = None;
@@ -165,8 +173,8 @@ impl Task for SignPDFTask {
         self.sign_task.last_update()
     }
 
-    fn is_approved(&self) -> bool {
-        self.sign_task.is_approved()
+    async fn is_approved(&self) -> bool {
+        self.sign_task.is_approved().await
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
@@ -177,11 +185,16 @@ impl Task for SignPDFTask {
         self.sign_task.get_devices()
     }
 
-    fn waiting_for(&self, device: &[u8]) -> bool {
-        self.sign_task.waiting_for(device)
+    async fn waiting_for(&self, device: &[u8]) -> bool {
+        self.sign_task.waiting_for(device).await
     }
 
-    fn decide(&mut self, device_id: &[u8], decision: bool) -> Option<bool> {
+    async fn decide(
+        &mut self,
+        device_id: &[u8],
+        decision: bool,
+        repository: Arc<Repository>,
+    ) -> Option<bool> {
         let result = self.sign_task.decide_internal(device_id, decision);
         if let Some(true) = result {
             self.next_round();
@@ -189,12 +202,12 @@ impl Task for SignPDFTask {
         result
     }
 
-    fn acknowledge(&mut self, device_id: &[u8]) {
+    async fn acknowledge(&mut self, device_id: &[u8]) {
         self.sign_task.acknowledge(device_id);
     }
 
-    fn device_acknowledged(&self, device_id: &[u8]) -> bool {
-        self.sign_task.device_acknowledged(device_id)
+    async fn device_acknowledged(&self, device_id: &[u8]) -> bool {
+        self.sign_task.device_acknowledged(device_id).await
     }
 
     fn get_request(&self) -> &[u8] {

@@ -1500,6 +1500,7 @@ dependencies = [
 name = "meesign-server"
 version = "0.5.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "clap 3.2.25",
  "dashmap",

@@ -1,3 +1,5 @@
+use chrono::{DateTime, Local};
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::{
@@ -14,7 +16,7 @@ use super::{
 use self::{
     device::{activate_device, add_device, get_devices, get_devices_with_ids},
     group::get_group,
-    task::get_tasks,
+    task::{get_tasks, increment_round, set_task_last_update},
 };
 use self::{
     device::{get_group_device_ids, get_task_devices},
@@ -35,8 +37,8 @@ use diesel_async::{
     pooled_connection::AsyncDieselConnectionManager, scoped_futures::ScopedFutureExt,
 };
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
-use std::sync::{Arc, RwLock};
-use std::{env, rc::Rc};
+use std::env;
+use std::sync::Arc;
 
 mod device;
 mod group;
@@ -308,5 +310,18 @@ impl Repository {
 
     pub async fn get_device_tasks(&self, identifier: &[u8]) -> Result<Vec<Task>, PersistenceError> {
         todo!()
+    }
+
+    pub async fn increment_round(&self, task_id: &Uuid) -> Result<u32, PersistenceError> {
+        let connection = &mut self.get_async_connection().await?;
+        increment_round(connection, task_id).await
+    }
+
+    pub async fn set_task_last_update(
+        &self,
+        task_id: &Uuid,
+    ) -> Result<DateTime<Local>, PersistenceError> {
+        let connection = &mut self.get_async_connection().await?;
+        set_task_last_update(connection, task_id).await
     }
 }

@@ -1,3 +1,5 @@
+use tokio::sync::RwLockWriteGuard;
+
 use crate::communicator::Communicator;
 use crate::proto::ProtocolType;
 
@@ -16,9 +18,9 @@ impl ProtocolType {
 }
 
 pub trait Protocol {
-    fn initialize(&mut self, communicator: &mut Communicator, data: &[u8]);
-    fn advance(&mut self, communicator: &mut Communicator);
-    fn finalize(&mut self, communicator: &mut Communicator) -> Option<Vec<u8>>;
+    fn initialize(&mut self, communicator: RwLockWriteGuard<'_, Communicator>, data: &[u8]);
+    fn advance(&mut self, communicator: RwLockWriteGuard<'_, Communicator>);
+    fn finalize(&mut self, communicator: RwLockWriteGuard<'_, Communicator>) -> Option<Vec<u8>>;
     fn round(&self) -> u16;
     fn last_round(&self) -> u16;
     fn get_type(&self) -> ProtocolType;

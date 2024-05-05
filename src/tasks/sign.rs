@@ -1,17 +1,19 @@
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use crate::communicator::Communicator;
 use crate::group::Group;
-use crate::persistence::Device;
+use crate::persistence::{Device, Repository};
 use crate::proto::{ProtocolType, SignRequest, TaskType};
 use crate::protocols::frost::FROSTSign;
 use crate::protocols::gg18::GG18Sign;
 use crate::protocols::Protocol;
 use crate::tasks::{Task, TaskResult, TaskStatus};
 use crate::{get_timestamp, utils};
+use async_trait::async_trait;
 use log::{info, warn};
 use meesign_crypto::proto::{ClientMessage, Message as _};
 use prost::Message as _;
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 pub struct SignTask {
@@ -76,17 +78,18 @@ impl SignTask {
     pub(super) fn start_task(&mut self) {
         assert!(self.communicator.accept_count() >= self.group.threshold());
         self.protocol.initialize(
-            &mut self.communicator,
+            // &mut self.communicator,
+            todo!(),
             self.preprocessed.as_ref().unwrap_or(&self.data),
         );
     }
 
     pub(super) fn advance_task(&mut self) {
-        self.protocol.advance(&mut self.communicator)
+        self.protocol.advance(todo!())
     }
 
     pub(super) fn finalize_task(&mut self) {
-        let signature = self.protocol.finalize(&mut self.communicator);
+        let signature = self.protocol.finalize(todo!());
         if signature.is_none() {
             self.result = Some(Err("Task failed (signature not output)".to_string()));
             return;
@@ -112,7 +115,7 @@ impl SignTask {
         }
     }
 
-    pub(super) fn update_internal(
+    pub(super) async fn update_internal(
         &mut self,
         device_id: &[u8],
         data: &Vec<Vec<u8>>,
@@ -121,7 +124,7 @@ impl SignTask {
             return Err("Not enough agreements to proceed with the protocol.".to_string());
         }
 
-        if !self.waiting_for(device_id) {
+        if !self.waiting_for(device_id).await {
             return Err("Wasn't waiting for a message from this ID.".to_string());
         }
 
@@ -156,6 +159,7 @@ impl SignTask {
     }
 }
 
+#[async_trait]
 impl Task for SignTask {
     fn get_status(&self) -> TaskStatus {
         match &self.result {
@@ -175,9 +179,9 @@ impl Task for SignTask {
         TaskType::SignChallenge
     }
 
-    fn get_work(&self, device_id: Option<&[u8]>) -> Vec<Vec<u8>> {
-        if device_id.is_none() || !self.waiting_for(device_id.unwrap()) {
-            return Vec::new();
+    async fn get_work(&self, device_id: Option<&[u8]>) -> Option<Vec<Vec<u8>>> {
+        if device_id.is_none() || !self.waiting_for(device_id.unwrap()).await {
+            return None;
         }
 
         self.communicator.get_messages(device_id.unwrap())
@@ -191,28 +195,33 @@ impl Task for SignTask {
         }
     }
 
-    fn get_decisions(&self) -> (u32, u32) {
+    async fn get_decisions(&self) -> (u32, u32) {
         (
             self.communicator.accept_count(),
             self.communicator.reject_count(),
         )
     }
 
-    fn update(&mut self, device_id: &[u8], data: &Vec<Vec<u8>>) -> Result<bool, String> {
-        let result = self.update_internal(device_id, data);
+    async fn update(
+        &mut self,
+        device_id: &[u8],
+        data: &Vec<Vec<u8>>,
+        repository: Arc<Repository>,
+    ) -> Result<bool, String> {
+        let result = self.update_internal(device_id, data).await;
         if let Ok(true) = result {
             self.next_round();
         };
         result
     }
 
-    fn restart(&mut self) -> Result<bool, String> {
+    async fn restart(&mut self) -> Result<bool, String> {
         self.last_update = get_timestamp();
         if self.result.is_some() {
             return Ok(false);
         }
 
-        if self.is_approved() {
+        if self.is_approved().await {
             self.attempts += 1;
             self.start_task();
             Ok(true)
@@ -225,7 +234,7 @@ impl Task for SignTask {
         self.last_update
     }
 
-    fn is_approved(&self) -> bool {
+    async fn is_approved(&self) -> bool {
         self.communicator.accept_count() >= self.group.threshold()
     }
 
@@ -239,7 +248,7 @@ impl Task for SignTask {
         todo!()
     }
 
-    fn waiting_for(&self, device: &[u8]) -> bool {
+    async fn waiting_for(&self, device: &[u8]) -> bool {
         if self.protocol.round() == 0 {
             return !self.communicator.device_decided(device);
         } else if self.protocol.round() >= self.protocol.last_round() {
@@ -249,7 +258,12 @@ impl Task for SignTask {
         self.communicator.waiting_for(device)
     }
 
-    fn decide(&mut self, device_id: &[u8], decision: bool) -> Option<bool> {
+    async fn decide(
+        &mut self,
+        device_id: &[u8],
+        decision: bool,
+        repository: Arc<Repository>,
+    ) -> Option<bool> {
         let result = self.decide_internal(device_id, decision);
         if let Some(true) = result {
             self.next_round();
@@ -257,11 +271,11 @@ impl Task for SignTask {
         result
     }
 
-    fn acknowledge(&mut self, device_id: &[u8]) {
+    async fn acknowledge(&mut self, device_id: &[u8]) {
         self.communicator.acknowledge(device_id);
     }
 
-    fn device_acknowledged(&self, device_id: &[u8]) -> bool {
+    async fn device_acknowledged(&self, device_id: &[u8]) -> bool {
         self.communicator.device_acknowledged(device_id)
     }
 

@@ -1,9 +1,9 @@
 use std::collections::HashMap;
-use std::sync::RwLock;
 
 use dashmap::DashMap;
 use futures::future;
 use log::{debug, error, warn};
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::communicator::Communicator;
@@ -25,7 +25,7 @@ pub struct State {
     tasks: HashMap<Uuid, Box<dyn Task + Send + Sync>>,
     subscribers: DashMap<Vec<u8>, Sender<Result<crate::proto::Task, Status>>>,
     repo: Arc<Repository>,
-    communicators: DashMap<Uuid, Arc<RwLock<Communicator>>>, // TODO: at this point, we may as well use a regular hashmap with an rwlock
+    communicators: DashMap<Uuid, Arc<RwLock<Communicator>>>,
 }
 
 impl State {
@@ -202,14 +202,14 @@ impl State {
         Ok(created_task.id)
     }
 
-    pub fn get_device_tasks(&self, device: &[u8]) -> Vec<(Uuid, &dyn Task)> {
+    pub async fn get_device_tasks(&self, device: &[u8]) -> Vec<(Uuid, &dyn Task)> {
         let mut tasks = Vec::new();
         for (uuid, task) in self.tasks.iter() {
             // TODO refactor
             if task.has_device(device)
                 && (task.get_status() != TaskStatus::Finished
                     || (task.get_status() == TaskStatus::Finished
-                        && !task.device_acknowledged(device)))
+                        && !task.device_acknowledged(device).await))
             {
                 tasks.push((*uuid, task.as_ref() as &dyn Task));
             }
@@ -269,7 +269,7 @@ impl State {
         }
 
         let previous_status = task.get_status();
-        let update_result = task.update(device, data);
+        let update_result = task.update(device, data, self.repo.clone()).await;
         if previous_status != TaskStatus::Finished && task.get_status() == TaskStatus::Finished {
             // TODO join if statements once #![feature(let_chains)] gets stabilized
             if let TaskResult::GroupEstablished(group) = task.get_result().unwrap() {
@@ -298,8 +298,9 @@ impl State {
         device: &[u8],
         decision: bool,
     ) -> Result<bool, Error> {
+        let repo = self.repo.clone();
         let task = self.tasks.get_mut(task_id).unwrap();
-        let change = task.decide(device, decision);
+        let change = task.decide(device, decision, repo).await;
         if change.is_some() {
             self.send_updates(task_id).await?;
             if change.unwrap() {
@@ -324,16 +325,17 @@ impl State {
     }
 
     pub async fn restart_task(&mut self, task_id: &Uuid) -> Result<bool, Error> {
-        if self
-            .tasks
-            .get_mut(task_id)
-            .and_then(|task| task.restart().ok())
-            .unwrap_or(false)
-        {
+        let Some(task) = self.tasks.get_mut(task_id) else {
+            return Err(Error::GeneralProtocolError(format!(
+                "Nonexistent task with id={}",
+                task_id
+            )));
+        };
+        if task.restart().await? {
             self.send_updates(task_id).await?;
             Ok(true)
         } else {
-            Ok(false)
+            Ok(false) // TODO: can we change this to Err? How will clients handle the change?
         }
     }
 
@@ -373,7 +375,8 @@ impl State {
 
         for device_id in task.get_devices().iter().map(|device| device.identifier()) {
             if let Some(tx) = self.subscribers.get(device_id) {
-                let result = tx.try_send(Ok(format_task(task_id, &*task, Some(device_id), None)));
+                let result =
+                    tx.try_send(Ok(format_task(task_id, &*task, Some(device_id), None).await));
 
                 if result.is_err() {
                     debug!(
