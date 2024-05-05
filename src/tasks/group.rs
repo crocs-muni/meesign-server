@@ -248,7 +248,7 @@ impl Task for GroupTask {
             result: None, // TODO: we may need to propagate the created group here
             protocol,
             request: model.request.unwrap(),
-            last_update: model.last_update.timestamp_millis() as u64,
+            last_update: model.last_update.timestamp() as u64,
             attempts: model.attempt_count as u32,
         })
     }

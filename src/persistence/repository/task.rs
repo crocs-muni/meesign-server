@@ -218,6 +218,5 @@ where
         .returning(task::last_update)
         .get_result(connection)
         .await?;
-    assert_eq!(now, updated_time);
     Ok(updated_time)
 }

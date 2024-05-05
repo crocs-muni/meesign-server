@@ -49,7 +49,7 @@ impl From<Device> for crate::proto::Device {
             identifier: device.id,
             name: device.name,
             certificate: device.certificate,
-            last_active: device.last_active.timestamp_millis() as u64,
+            last_active: device.last_active.timestamp() as u64,
         }
     }
 }
