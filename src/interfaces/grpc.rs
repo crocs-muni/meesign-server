@@ -321,7 +321,7 @@ impl MeeSign for MeeSignService {
             .as_ref()
             .map(utils::hextrunc)
             .unwrap_or_else(|| "unknown".to_string());
-        let message = request.into_inner().message;
+        let message = request.into_inner().message.replace('\n', "\\n");
         debug!("LogRequest device_id={} message={}", device_str, message);
 
         if device_id.is_some() {
