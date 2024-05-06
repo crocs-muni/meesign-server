@@ -49,7 +49,7 @@ async fn check_subscribers(state: &mut MutexGuard<'_, State>) {
             );
             remove.push(device_id.clone());
         } else {
-            if let Err(err) = state.get_repo().activate_device(&device_id).await {
+            if let Err(err) = state.activate_device(&device_id).await {
                 error!(
                     "Couldn't activate device {}: {}",
                     device_id.encode_hex::<String>(),

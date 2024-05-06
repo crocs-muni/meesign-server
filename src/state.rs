@@ -1,3 +1,4 @@
+use chrono::{DateTime, Local};
 use dashmap::DashMap;
 use futures::future;
 use log::{debug, error, warn};
@@ -7,7 +8,7 @@ use uuid::Uuid;
 use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::interfaces::grpc::format_task;
-use crate::persistence::{Group, NameValidator, Repository, Task as TaskModel};
+use crate::persistence::{Device, DeviceKind, Group, NameValidator, Repository, Task as TaskModel};
 use crate::proto::{KeyType, ProtocolType};
 use crate::tasks::decrypt::DecryptTask;
 use crate::tasks::group::GroupTask;
@@ -36,6 +37,18 @@ impl State {
         }
     }
 
+    pub async fn add_device(
+        &self,
+        identifier: &[u8],
+        name: &str,
+        kind: &DeviceKind,
+        certificate: &[u8],
+    ) -> Result<Device, Error> {
+        Ok(self
+            .get_repo()
+            .add_device(identifier, name, kind, certificate)
+            .await?)
+    }
     pub async fn add_group_task(
         &mut self,
         name: &str,
@@ -228,12 +241,24 @@ impl State {
         Ok(filtered_tasks)
     }
 
+    pub async fn activate_device(&self, device_id: &[u8]) -> Result<DateTime<Local>, Error> {
+        Ok(self.get_repo().activate_device(device_id).await?)
+    }
+
+    pub async fn get_devices(&self) -> Result<Vec<Device>, Error> {
+        Ok(self.get_repo().get_devices().await?)
+    }
+
     pub async fn get_device_groups(&self, device: &[u8]) -> Result<Vec<Group>, Error> {
         Ok(self.get_repo().get_device_groups(device).await?)
     }
 
     pub async fn get_groups(&self) -> Result<Vec<Group>, Error> {
         Ok(self.get_repo().get_groups().await?)
+    }
+
+    pub async fn get_group_device_ids(&self, group_id: &i32) -> Result<Vec<Vec<u8>>, Error> {
+        Ok(self.get_repo().get_group_device_ids(group_id).await?)
     }
 
     pub async fn get_tasks(&self) -> Result<Vec<Box<dyn Task + Send + Sync>>, Error> {
@@ -409,7 +434,7 @@ impl State {
         Ok(())
     }
 
-    pub fn get_repo(&self) -> &Arc<Repository> {
+    fn get_repo(&self) -> &Arc<Repository> {
         &self.repo
     }
 

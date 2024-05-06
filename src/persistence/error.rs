@@ -23,9 +23,3 @@ pub enum PersistenceError {
     #[error("DataInconsistencyError: {0}")]
     DataInconsistencyError(String),
 }
-
-impl From<PersistenceError> for tonic::Status {
-    fn from(_value: PersistenceError) -> Self {
-        Self::internal("Internal error occurred")
-    }
-}

@@ -132,7 +132,7 @@ impl Repository {
     pub async fn activate_device(
         &self,
         target_identifier: &[u8],
-    ) -> Result<Option<Device>, PersistenceError> {
+    ) -> Result<DateTime<Local>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         activate_device(connection, target_identifier).await
     }

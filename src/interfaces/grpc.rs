@@ -88,7 +88,6 @@ impl MeeSign for MeeSignService {
         if let Ok(certificate) = issue_certificate(&name, &csr) {
             let identifier = cert_to_id(&certificate);
             match state
-                .get_repo()
                 .add_device(&identifier, &name, &kind, &certificate)
                 .await
             {
@@ -172,7 +171,7 @@ impl MeeSign for MeeSignService {
 
         let state = self.state.lock().await;
         if device_id.is_some() {
-            state.get_repo().activate_device(device_id.unwrap()).await?;
+            state.activate_device(device_id.unwrap()).await?;
         }
         let task = state.get_task(&task_id).await?;
         let request = Some(task.get_request());
@@ -213,7 +212,7 @@ impl MeeSign for MeeSignService {
         );
 
         let mut state = self.state.lock().await;
-        state.get_repo().activate_device(&device_id).await?;
+        state.activate_device(&device_id).await?;
         let result = state
             .update_task(&task_id, &device_id, &data, attempt)
             .await;
@@ -249,7 +248,7 @@ impl MeeSign for MeeSignService {
 
         let state = self.state.lock().await;
         let tasks = if let Some(device_id) = device_id {
-            state.get_repo().activate_device(&device_id).await?;
+            state.activate_device(&device_id).await?;
             future::join_all(
                 state
                     .get_active_device_tasks(&device_id)
@@ -289,25 +288,17 @@ impl MeeSign for MeeSignService {
         let state = self.state.lock().await;
         // TODO: refactor, consider storing device IDS in the group model directly
         let groups = if let Some(device_id) = device_id {
-            state.get_repo().activate_device(&device_id).await?;
+            state.activate_device(&device_id).await?;
             future::join_all(state.get_device_groups(&device_id).await?.into_iter().map(
                 |group| async {
-                    let device_ids = state
-                        .get_repo()
-                        .get_group_device_ids(&group.id)
-                        .await
-                        .unwrap();
+                    let device_ids = state.get_group_device_ids(&group.id).await.unwrap();
                     Group::from_model(group, device_ids)
                 },
             ))
             .await
         } else {
             future::join_all(state.get_groups().await?.into_iter().map(|group| async {
-                let device_ids = state
-                    .get_repo()
-                    .get_group_device_ids(&group.id)
-                    .await
-                    .unwrap();
+                let device_ids = state.get_group_device_ids(&group.id).await.unwrap();
                 Group::from_model(group, device_ids)
             }))
             .await
@@ -384,7 +375,6 @@ impl MeeSign for MeeSignService {
                 .state
                 .lock()
                 .await
-                .get_repo()
                 .get_devices()
                 .await?
                 .into_iter()
@@ -412,7 +402,6 @@ impl MeeSign for MeeSignService {
             self.state
                 .lock()
                 .await
-                .get_repo()
                 .activate_device(device_id.as_ref().unwrap())
                 .await?;
         }
@@ -447,7 +436,7 @@ impl MeeSign for MeeSignService {
         let state = self.state.clone();
         tokio::task::spawn(async move {
             let mut state = state.lock().await;
-            if let Err(err) = state.get_repo().activate_device(&device_id).await {
+            if let Err(err) = state.activate_device(&device_id).await {
                 error!(
                     "Couldn't activate device with id {}: {}",
                     utils::hextrunc(&device_id),
@@ -489,7 +478,7 @@ impl MeeSign for MeeSignService {
         );
 
         let mut state = self.state.lock().await;
-        state.get_repo().activate_device(&device_id).await?;
+        state.activate_device(&device_id).await?;
         state
             .acknowledge_task(&Uuid::from_slice(&task_id).unwrap(), &device_id)
             .await;

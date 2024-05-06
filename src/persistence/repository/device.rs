@@ -1,4 +1,4 @@
-use chrono::Local;
+use chrono::{DateTime, Local};
 use diesel::QueryDsl;
 use diesel::{pg::Pg, ExpressionMethods, SelectableHelper};
 use diesel_async::AsyncConnection;
@@ -74,18 +74,18 @@ where
 pub async fn activate_device<Conn>(
     connection: &mut Conn,
     target_identifier: &[u8],
-) -> Result<Option<Device>, PersistenceError>
+) -> Result<DateTime<Local>, PersistenceError>
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    let activated_device = diesel::update(device::table)
+    let last_active = diesel::update(device::table)
         .filter(device::id.eq(target_identifier))
         .set(device::last_active.eq(Local::now()))
-        .returning(Device::as_returning())
+        .returning(device::last_active)
         .get_result(connection)
         .await?;
 
-    Ok(Some(activated_device))
+    Ok(last_active)
 }
 
 pub async fn add_device<Conn>(
@@ -254,17 +254,24 @@ mod test {
             &vec![1; 400],
         )
         .await?;
-        let fst_device_activation = activate_device(&mut connection, &device_identifier)
-            .await?
-            .unwrap();
+        let fst_device_activation = activate_device(&mut connection, &device_identifier).await?;
         sleep(timeout).await;
-        let snd_device_activation = activate_device(&mut connection, &device_identifier)
-            .await?
-            .unwrap();
+        let snd_device_activation = activate_device(&mut connection, &device_identifier).await?;
+        assert!(fst_device_activation.add(timeout) <= snd_device_activation);
 
-        assert!(
-            fst_device_activation.last_active.add(timeout) <= snd_device_activation.last_active
-        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn given_nonexistent_device_id_activate_device_returns_error(
+    ) -> Result<(), PersistenceError> {
+        let ctx = PersistencyUnitTestContext::new();
+        let mut connection = ctx.get_test_connection().await?;
+
+        let device_identifier = vec![3; 32];
+        assert!(activate_device(&mut connection, &device_identifier)
+            .await
+            .is_err());
 
         Ok(())
     }
