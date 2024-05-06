@@ -294,14 +294,18 @@ impl Repository {
         let connection = &mut self.get_async_connection().await?;
         let task = get_task(connection, task_id).await?;
         let device_ids = self.get_task_devices(task_id).await?;
+        if task.is_none() {
+            return Ok(None);
+        }
+        let task = task.unwrap();
         // TODO: also for other task types
-        let task: Option<Box<dyn TaskTrait>> = task.map(|task| {
-            Box::new(
-                GroupTask::from_model(task, device_ids, communicator, repository, *task_id)
-                    .unwrap(),
-            ) as Box<dyn TaskTrait>
-        });
-        Ok(task)
+
+        let task = Box::new(
+            GroupTask::from_model(task, device_ids, communicator, repository)
+                .await
+                .unwrap(),
+        ) as Box<dyn TaskTrait>;
+        Ok(Some(task))
     }
 
     pub async fn get_tasks(&self) -> Result<Vec<Task>, PersistenceError> {

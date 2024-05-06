@@ -418,14 +418,9 @@ impl State {
             let devices = self.get_repo().get_task_devices(&task.id).await?;
             // TODO: for other task types as well
             let communicator = self.communicators.get(&task.id).expect("TODO");
-            let task_id = task.id;
-            let task = GroupTask::from_model(
-                task,
-                devices,
-                communicator.clone(),
-                self.repo.clone(),
-                task_id,
-            )?;
+            let task =
+                GroupTask::from_model(task, devices, communicator.clone(), self.repo.clone())
+                    .await?;
             Ok(Box::new(task) as Box<dyn Task + Send + Sync>)
         }))
         .await

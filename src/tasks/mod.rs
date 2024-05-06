@@ -96,12 +96,11 @@ pub trait Task: Send + Sync {
     fn get_request(&self) -> &[u8];
 
     fn get_attempts(&self) -> u32;
-    fn from_model(
+    async fn from_model(
         model: TaskModel,
         devices: Vec<Device>,
         communicator: Arc<RwLock<Communicator>>,
         repository: Arc<Repository>,
-        task_id: Uuid,
     ) -> Result<Self, Error>
     where
         Self: Sized;

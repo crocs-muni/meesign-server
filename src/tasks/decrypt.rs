@@ -141,12 +141,11 @@ impl DecryptTask {
 
 #[async_trait]
 impl Task for DecryptTask {
-    fn from_model(
+    async fn from_model(
         model: TaskModel,
         devices: Vec<Device>,
         communicator: Arc<RwLock<Communicator>>,
         repository: Arc<Repository>,
-        task_id: Uuid,
     ) -> Result<Self, Error> {
         todo!()
     }

@@ -2,6 +2,7 @@ use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::group::Group;
 use crate::persistence::Device;
+use crate::persistence::PersistenceError;
 use crate::persistence::Repository;
 use crate::persistence::Task as TaskModel;
 use crate::proto;
@@ -275,29 +276,55 @@ impl Task for GroupTask {
     }
 
     // TODO: unwraps
-    fn from_model(
+    async fn from_model(
         model: TaskModel,
         devices: Vec<Device>,
         communicator: Arc<RwLock<Communicator>>,
         repository: Arc<Repository>,
-        task_id: Uuid,
     ) -> Result<Self, Error> {
         // TODO: make this universal
         let protocol = Box::new(GG18Group::from_model(
             devices.len() as u32,
             model.threshold as u32,
-            repository,
-            task_id,
+            repository.clone(),
+            model.id,
             model.protocol_round as u16,
         ));
+        // TODO: refactor
+        let result: Option<Result<Group, String>> = match model.result {
+            Some(Ok(group_id)) => {
+                let Some(resulting_group) = repository.get_group(&group_id).await? else {
+                    return Err(Error::PersistenceError(
+                        PersistenceError::DataInconsistencyError(
+                            "Established group is missing".into(),
+                        ),
+                    ));
+                };
+                Some(Ok(crate::group::Group::new(
+                    resulting_group.identifier,
+                    resulting_group.name,
+                    resulting_group.threshold as u32,
+                    resulting_group.protocol.into(),
+                    resulting_group.key_type.into(),
+                    resulting_group.certificate,
+                )))
+            }
+            Some(Err(err)) => Some(Err(err)),
+            None => None,
+        };
+        let name = if let Some(Ok(group)) = &result {
+            group.name().into()
+        } else {
+            "".into() // TODO add field to the task table
+        };
         Ok(Self {
-            name: "test group".into(), // TODO: name
+            name,
             id: model.id,
             threshold: model.threshold as u32,
             key_type: model.key_type.unwrap().into(),
             devices,
             communicator,
-            result: None, // TODO: we may need to propagate the created group here
+            result,
             protocol,
             request: model.request.unwrap(),
             last_update: model.last_update.timestamp() as u64,
