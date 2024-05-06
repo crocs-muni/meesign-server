@@ -417,7 +417,15 @@ impl State {
         let tasks = future::join_all(task_models.into_iter().map(|task| async {
             let devices = self.get_repo().get_task_devices(&task.id).await?;
             // TODO: for other task types as well
-            let communicator = self.communicators.get(&task.id).expect("TODO");
+            let communicator = self.communicators.entry(task.id).or_insert_with(|| {
+                // TODO: decide what to do when the server has restarted and the task communicator is not present
+                Arc::new(RwLock::new(Communicator::new(
+                    devices.clone(),
+                    task.threshold as u32,
+                    task.protocol_type.unwrap().into(),
+                )))
+            });
+
             let task =
                 GroupTask::from_model(task, devices, communicator.clone(), self.repo.clone())
                     .await?;
