@@ -128,6 +128,7 @@ mod test {
     use crate::persistence::{
         repository::{device::add_device, task::create_group_task},
         tests::persistency_unit_test_context::PersistencyUnitTestContext,
+        DeviceKind,
     };
 
     use super::*;
@@ -149,8 +150,22 @@ mod test {
 
         let devices = &vec![&DEVICE_1_ID[..], &DEVICE_2_ID[..]];
         let threshold = 2;
-        add_device(&mut connection, &DEVICE_1_ID, "Device 1", &vec![42; 5]).await?;
-        add_device(&mut connection, &DEVICE_2_ID, "Device 2", &vec![42; 5]).await?;
+        add_device(
+            &mut connection,
+            &DEVICE_1_ID,
+            "Device 1",
+            &DeviceKind::User,
+            &vec![42; 5],
+        )
+        .await?;
+        add_device(
+            &mut connection,
+            &DEVICE_2_ID,
+            "Device 2",
+            &DeviceKind::Bot,
+            &vec![42; 5],
+        )
+        .await?;
 
         let group_creation_task = create_group_task(
             &mut connection,
@@ -206,9 +221,30 @@ mod test {
         let group_2_devices = &vec![&DEVICE_2_ID[..], &DEVICE_3_ID[..]];
         let threshold = 2;
 
-        add_device(&mut connection, &DEVICE_1_ID, "Device 1", &vec![42; 5]).await?;
-        add_device(&mut connection, &DEVICE_2_ID, "Device 2", &vec![42; 5]).await?;
-        add_device(&mut connection, &DEVICE_3_ID, "Device 3", &vec![42; 5]).await?;
+        add_device(
+            &mut connection,
+            &DEVICE_1_ID,
+            "Device 1",
+            &DeviceKind::User,
+            &vec![42; 5],
+        )
+        .await?;
+        add_device(
+            &mut connection,
+            &DEVICE_2_ID,
+            "Device 2",
+            &DeviceKind::User,
+            &vec![42; 5],
+        )
+        .await?;
+        add_device(
+            &mut connection,
+            &DEVICE_3_ID,
+            "Device 3",
+            &DeviceKind::User,
+            &vec![42; 5],
+        )
+        .await?;
 
         let group1_creation_task = create_group_task(
             &mut connection,

@@ -17,3 +17,7 @@ CREATE TYPE task_state AS ENUM (
 CREATE TYPE task_result_type AS ENUM (
     'GroupEstablished', 'Signed', 'SignedPdf', 'Decrypted'
 );
+
+CREATE TYPE device_kind as ENUM (
+    'User', 'Bot'
+)

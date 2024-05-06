@@ -5,6 +5,7 @@ use diesel_async::AsyncConnection;
 use diesel_async::RunQueryDsl;
 use uuid::Uuid;
 
+use crate::persistence::enums::DeviceKind;
 use crate::persistence::schema::{device, task_participant};
 use crate::persistence::schema::{group_participant, task};
 use crate::persistence::{
@@ -91,6 +92,7 @@ pub async fn add_device<Conn>(
     connection: &mut Conn,
     identifier: &[u8],
     name: &str,
+    kind: &DeviceKind,
     certificate: &[u8],
 ) -> Result<Device, PersistenceError>
 where
@@ -117,6 +119,7 @@ where
     let new_device = NewDevice {
         id: &identifier.to_vec(),
         name,
+        kind,
         certificate: &certificate.to_vec(),
     };
 
@@ -137,6 +140,7 @@ mod test {
     use tokio::time::sleep;
 
     use crate::persistence::{
+        enums::DeviceKind,
         error::PersistenceError,
         repository::device::{activate_device, add_device, get_devices},
         tests::persistency_unit_test_context::PersistencyUnitTestContext,
@@ -150,7 +154,14 @@ mod test {
         let certificate = vec![2];
         let mut connection: AsyncPgConnection = ctx.get_test_connection().await?;
 
-        add_device(&mut connection, &identifier, name, &certificate).await?;
+        add_device(
+            &mut connection,
+            &identifier,
+            name,
+            &DeviceKind::User,
+            &certificate,
+        )
+        .await?;
 
         let devices = get_devices(&mut connection).await?;
         assert_eq!(devices.len(), 1);
@@ -173,10 +184,19 @@ mod test {
             &mut connection,
             &identifier,
             first_device_name,
+            &DeviceKind::User,
             &vec![1, 2, 3],
         )
         .await?;
-        let Err(_) = add_device(&mut connection, &identifier, "user2", &vec![3, 2, 1]).await else {
+        let Err(_) = add_device(
+            &mut connection,
+            &identifier,
+            "user2",
+            &DeviceKind::User,
+            &vec![3, 2, 1],
+        )
+        .await
+        else {
             panic!("DB shoudln't have allowed to insert 2 devices with the same identifier");
         };
 
@@ -190,17 +210,31 @@ mod test {
         let nonempty: Vec<u8> = vec![1];
         let mut connection: AsyncPgConnection = ctx.get_test_connection().await?;
 
-        assert!(add_device(&mut connection, &empty, "Non-empty", &nonempty)
-            .await
-            .is_err());
+        assert!(add_device(
+            &mut connection,
+            &empty,
+            "Non-empty",
+            &DeviceKind::User,
+            &nonempty
+        )
+        .await
+        .is_err());
 
-        assert!(add_device(&mut connection, &nonempty, "", &nonempty)
-            .await
-            .is_err());
+        assert!(
+            add_device(&mut connection, &nonempty, "", &DeviceKind::User, &nonempty)
+                .await
+                .is_err()
+        );
 
-        assert!(add_device(&mut connection, &nonempty, "Non-empty", &empty)
-            .await
-            .is_err());
+        assert!(add_device(
+            &mut connection,
+            &nonempty,
+            "Non-empty",
+            &DeviceKind::User,
+            &empty
+        )
+        .await
+        .is_err());
 
         Ok(())
     }
@@ -212,7 +246,14 @@ mod test {
         let timeout = Duration::from_millis(10);
 
         let device_identifier = vec![3; 32];
-        add_device(&mut connection, &device_identifier, "user1", &vec![1; 400]).await?;
+        add_device(
+            &mut connection,
+            &device_identifier,
+            "user1",
+            &DeviceKind::User,
+            &vec![1; 400],
+        )
+        .await?;
         let fst_device_activation = activate_device(&mut connection, &device_identifier)
             .await?
             .unwrap();

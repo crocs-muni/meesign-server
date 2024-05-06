@@ -18,6 +18,7 @@ use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
+use crate::persistence::DeviceKind;
 use crate::proto::mpc_server::{Mpc, MpcServer};
 use crate::proto::{Group, KeyType, ProtocolType};
 use crate::state::State;
@@ -79,7 +80,8 @@ impl MeeSign for MeeSignService {
         let name = request.name;
         let kind = DeviceKind::try_from(request.kind).unwrap();
         let csr = request.csr;
-        info!("RegistrationRequest name={:?} kind={:?}", name, kind);
+        let kind = DeviceKind::User; // TODO
+        info!("RegistrationRequest name={:?}", name);
 
         let state = self.state.lock().await;
 
@@ -87,7 +89,7 @@ impl MeeSign for MeeSignService {
             let identifier = cert_to_id(&certificate);
             match state
                 .get_repo()
-                .add_device(&identifier, &name, &certificate)
+                .add_device(&identifier, &name, &kind, &certificate)
                 .await
             {
                 Ok(_) => Ok(Response::new(msg::RegistrationResponse {

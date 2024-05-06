@@ -2,6 +2,10 @@
 
 pub mod sql_types {
     #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "device_kind"))]
+    pub struct DeviceKind;
+
+    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "key_type"))]
     pub struct KeyType;
 
@@ -19,9 +23,13 @@ pub mod sql_types {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use super::sql_types::DeviceKind;
+
     device (id) {
         id -> Bytea,
         name -> Varchar,
+        kind -> DeviceKind,
         certificate -> Bytea,
         last_active -> Timestamptz,
     }

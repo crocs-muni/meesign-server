@@ -8,7 +8,7 @@ use crate::{
 };
 
 use super::{
-    enums::{KeyType, ProtocolType, TaskType},
+    enums::{DeviceKind, KeyType, ProtocolType, TaskType},
     error::PersistenceError,
     models::{Device, Group, Task},
 };
@@ -96,10 +96,11 @@ impl Repository {
         &self,
         identifier: &[u8],
         name: &str,
+        kind: &DeviceKind,
         certificate: &[u8],
     ) -> Result<Device, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
-        add_device(connection, identifier, name, certificate).await
+        add_device(connection, identifier, name, kind, certificate).await
     }
 
     pub async fn get_devices(&self) -> Result<Vec<Device>, PersistenceError> {

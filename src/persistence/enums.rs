@@ -42,6 +42,14 @@ pub enum TaskType {
 // }
 
 #[derive(Debug, DbEnum, Clone, PartialEq, Eq)]
+#[ExistingTypePath = "crate::persistence::schema::sql_types::DeviceKind"]
+#[DbValueStyle = "PascalCase"]
+pub enum DeviceKind {
+    User,
+    Bot,
+}
+
+#[derive(Debug, DbEnum, Clone, PartialEq, Eq)]
 #[ExistingTypePath = "crate::persistence::schema::sql_types::TaskState"]
 #[DbValueStyle = "PascalCase"]
 pub enum TaskState {

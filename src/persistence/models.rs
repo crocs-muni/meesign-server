@@ -1,15 +1,13 @@
 use chrono::{DateTime, Local};
 use diesel::{
-    associations::{Associations, Identifiable},
-    query_builder::AsChangeset,
-    Insertable, Queryable, Selectable,
+    associations::Identifiable, query_builder::AsChangeset, Insertable, Queryable, Selectable,
 };
 use uuid::Uuid;
 
 use crate::persistence::schema::*;
 
 use super::{
-    enums::{KeyType, ProtocolType, TaskState, TaskType},
+    enums::{DeviceKind, KeyType, ProtocolType, TaskState, TaskType},
     PersistenceError,
 };
 
@@ -18,6 +16,7 @@ use super::{
 pub struct NewDevice<'a> {
     pub id: &'a Vec<u8>,
     pub name: &'a str,
+    pub kind: &'a DeviceKind,
     pub certificate: &'a Vec<u8>,
 }
 
@@ -27,17 +26,19 @@ pub struct NewDevice<'a> {
 pub struct Device {
     pub id: Vec<u8>,
     pub name: String,
+    pub kind: DeviceKind,
     pub certificate: Vec<u8>,
     pub last_active: DateTime<Local>,
 }
 
 impl Device {
     #[cfg(test)]
-    pub fn new(id: Vec<u8>, device_name: String, device_certificate: Vec<u8>) -> Self {
+    pub fn new(id: Vec<u8>, name: String, kind: DeviceKind, certificate: Vec<u8>) -> Self {
         Self {
             id,
-            name: device_name,
-            certificate: device_certificate,
+            name,
+            kind,
+            certificate,
             last_active: Local::now(),
         }
     }
