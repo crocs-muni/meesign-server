@@ -147,6 +147,7 @@ impl Repository {
         protocol: ProtocolType,
         key_type: KeyType,
         certificate: Option<&[u8]>,
+        note: Option<&str>,
     ) -> Result<Group, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         connection
@@ -161,6 +162,7 @@ impl Repository {
                         protocol,
                         key_type,
                         certificate,
+                        note,
                     )
                     .await
                 }
@@ -207,6 +209,7 @@ impl Repository {
         protocol_type: ProtocolType,
         key_type: KeyType,
         request: &[u8],
+        note: Option<&str>,
     ) -> Result<Task, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         connection
@@ -220,6 +223,7 @@ impl Repository {
                         key_type,
                         protocol_type,
                         request,
+                        note,
                     )
                     .await
                 }

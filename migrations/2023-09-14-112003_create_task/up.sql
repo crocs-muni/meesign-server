@@ -13,5 +13,6 @@ CREATE TABLE task (
     task_type task_type NOT NULL,
     task_state task_state NOT NULL,
     key_type key_type,
-    protocol_type protocol_type
+    protocol_type protocol_type,
+    note VARCHAR
 );

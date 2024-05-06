@@ -49,6 +49,7 @@ diesel::table! {
         round -> Int4,
         key_type -> KeyType,
         certificate -> Nullable<Bytea>,
+        note -> Nullable<Varchar>,
     }
 }
 
@@ -82,6 +83,7 @@ diesel::table! {
         task_state -> TaskState,
         key_type -> Nullable<KeyType>,
         protocol_type -> Nullable<ProtocolType>,
+        note -> Nullable<Varchar>,
     }
 }
 

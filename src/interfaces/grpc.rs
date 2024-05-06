@@ -328,7 +328,7 @@ impl MeeSign for MeeSignService {
         let threshold = request.threshold;
         let protocol = ProtocolType::try_from(request.protocol).unwrap();
         let key_type = KeyType::try_from(request.key_type).unwrap();
-        let note = request.note;
+        let note = None; // TODO
 
         info!(
             "GroupRequest name={:?} device_ids={:?} threshold={}",
@@ -352,6 +352,7 @@ impl MeeSign for MeeSignService {
                 threshold,
                 protocol.into(),
                 key_type.into(),
+                note,
             )
             .await
         {

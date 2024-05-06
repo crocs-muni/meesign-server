@@ -47,6 +47,7 @@ impl GroupTask {
         threshold: u32,
         protocol_type: ProtocolType,
         key_type: KeyType,
+        note: Option<String>,
         repository: Arc<Repository>,
     ) -> Result<Self, String> {
         let id = Uuid::new_v4();
@@ -99,7 +100,7 @@ impl GroupTask {
             request,
             last_update: get_timestamp(),
             attempts: 0,
-            note: note.to_owned(),
+            note,
             certificates_sent: false,
         })
     }
@@ -176,6 +177,7 @@ impl GroupTask {
                 self.protocol.get_type(),
                 self.key_type,
                 certificate,
+                self.note.clone(),
             )),
             repository.clone(),
         )
@@ -307,6 +309,7 @@ impl Task for GroupTask {
                     resulting_group.protocol.into(),
                     resulting_group.key_type.into(),
                     resulting_group.certificate,
+                    resulting_group.note,
                 )))
             }
             Some(Err(err)) => Some(Err(err)),
@@ -329,6 +332,7 @@ impl Task for GroupTask {
             request: model.request.unwrap(),
             last_update: model.last_update.timestamp() as u64,
             attempts: model.attempt_count as u32,
+            note: model.note,
         })
     }
 

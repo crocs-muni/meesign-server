@@ -50,6 +50,7 @@ where
         key_type,
         task_state: TaskState::Created,
         protocol_type,
+        note: None,
     };
 
     let task: PartialTask = diesel::insert_into(task::table)
@@ -84,6 +85,7 @@ pub async fn create_group_task<Conn>(
     key_type: KeyType,
     protocol_type: ProtocolType,
     request: &[u8],
+    note: Option<&str>,
 ) -> Result<Task, PersistenceError>
 where
     Conn: AsyncConnection<Backend = Pg>,
@@ -109,6 +111,7 @@ where
         key_type: Some(key_type),
         task_state: TaskState::Created,
         protocol_type: Some(protocol_type),
+        note,
     };
 
     let task: PartialTask = diesel::insert_into(task::table)

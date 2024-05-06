@@ -1,7 +1,5 @@
 use chrono::{DateTime, Local};
-use diesel::{
-    associations::Identifiable, query_builder::AsChangeset, Insertable, Queryable, Selectable,
-};
+use diesel::{query_builder::AsChangeset, Insertable, Queryable, Selectable};
 use uuid::Uuid;
 
 use crate::persistence::schema::*;
@@ -75,6 +73,7 @@ pub struct Group {
     pub round: i32,
     pub key_type: KeyType,
     pub certificate: Option<Vec<u8>>,
+    pub note: Option<String>,
 }
 
 #[derive(Insertable)]
@@ -87,6 +86,7 @@ pub struct NewGroup<'a> {
     pub round: i32,
     pub key_type: KeyType,
     pub certificate: Option<&'a [u8]>,
+    pub note: Option<&'a str>,
 }
 
 #[derive(Insertable)]
@@ -132,6 +132,7 @@ pub struct PartialTask {
     pub task_state: TaskState,
     pub key_type: Option<KeyType>,
     pub protocol_type: Option<ProtocolType>,
+    pub note: Option<String>,
 }
 
 // TODO: attempt to write a diesel query that will serialize this.
@@ -151,6 +152,7 @@ pub struct Task {
     pub task_state: TaskState,
     pub key_type: Option<KeyType>,
     pub protocol_type: Option<ProtocolType>,
+    pub note: Option<String>,
     pub result: Option<Result<Vec<u8>, String>>,
 }
 impl Task {
@@ -177,6 +179,7 @@ impl Task {
             task_state: task.task_state,
             key_type: task.key_type,
             protocol_type: task.protocol_type,
+            note: task.note,
             result,
         })
     }
@@ -198,6 +201,7 @@ pub struct NewTask<'a> {
     pub task_state: TaskState,
     pub key_type: Option<KeyType>,
     pub protocol_type: Option<ProtocolType>,
+    pub note: Option<&'a str>,
 }
 
 #[derive(Queryable, Clone, Eq, PartialEq, Selectable, Debug)]
@@ -263,6 +267,7 @@ impl From<Group> for crate::group::Group {
             value.protocol.into(),
             value.key_type.into(),
             value.certificate,
+            value.note,
         )
     }
 }

@@ -6,5 +6,6 @@ CREATE TABLE "group" (
     "protocol" protocol_type NOT NULL,
     "round" integer NOT NULL CHECK(round >= 0),
     "key_type" key_type NOT NULL,
-    "certificate" bytea
+    "certificate" bytea,
+    "note" VARCHAR
 );

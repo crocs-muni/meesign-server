@@ -32,6 +32,7 @@ pub async fn add_group<'a, Conn>(
     protocol: ProtocolType,
     key_type: KeyType,
     certificate: Option<&[u8]>,
+    note: Option<&'a str>,
 ) -> Result<Group, PersistenceError>
 where
     Conn: AsyncConnection<Backend = Pg>,
@@ -51,6 +52,7 @@ where
         round: 0,
         certificate,
         key_type,
+        note,
     };
 
     let group = diesel::insert_into(group::table)
@@ -167,6 +169,7 @@ mod test {
         )
         .await?;
 
+        let note = Some("time policy".into());
         let group_creation_task = create_group_task(
             &mut connection,
             None,
@@ -175,6 +178,7 @@ mod test {
             KeyType::SignPdf,
             ProtocolType::Gg18,
             &[],
+            note.as_deref(),
         )
         .await?;
 
@@ -187,6 +191,7 @@ mod test {
             ProtocolType::Gg18,
             KeyType::SignPdf,
             Some(&GROUP_1_CERT),
+            note.as_deref(),
         )
         .await?;
         let retrieved_group = get_group(&mut connection, &GROUP_1_IDENTIFIER).await?;
@@ -205,6 +210,7 @@ mod test {
             round: 0,
             key_type: KeyType::SignPdf,
             certificate: Some(GROUP_1_CERT.into()),
+            note,
         };
 
         assert_eq!(retrieved_group, target_group);
@@ -254,6 +260,7 @@ mod test {
             KeyType::Decrypt,
             ProtocolType::ElGamal,
             &[],
+            None,
         )
         .await?;
         let group_1 = add_group(
@@ -265,6 +272,7 @@ mod test {
             ProtocolType::ElGamal,
             KeyType::Decrypt,
             Some(&GROUP_1_CERT),
+            None,
         )
         .await?;
 
@@ -276,6 +284,7 @@ mod test {
             KeyType::SignChallenge,
             ProtocolType::Frost,
             &[],
+            Some("time policy"),
         )
         .await?;
         let group_2 = add_group(
@@ -287,6 +296,7 @@ mod test {
             ProtocolType::Frost,
             KeyType::SignChallenge,
             Some(&GROUP_2_CERT),
+            None,
         )
         .await?;
 

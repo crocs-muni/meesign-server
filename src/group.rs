@@ -63,8 +63,8 @@ impl Group {
         self.certificate.as_ref()
     }
 
-    pub fn note(&self) -> Option<&String> {
-        self.note.as_ref()
+    pub fn note(&self) -> Option<&str> {
+        self.note.as_deref()
     }
 }
 
@@ -150,7 +150,7 @@ mod tests {
             protocol_type,
             key_type,
             None,
-            None,
+            Some("time policy".into()),
         );
         assert_eq!(group.identifier(), &identifier);
         assert_eq!(group.name(), &name);

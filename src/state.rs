@@ -43,6 +43,7 @@ impl State {
         threshold: u32,
         protocol: ProtocolType,
         key_type: KeyType,
+        note: Option<String>,
     ) -> Result<Uuid, Error> {
         if !name.is_name_valid() {
             error!("Group request with invalid group name {}", name);
@@ -57,6 +58,7 @@ impl State {
             threshold,
             protocol,
             key_type,
+            note,
             self.repo.clone(),
         )?) as Box<dyn Task + Sync + Send>;
 
@@ -180,10 +182,11 @@ impl State {
                     .create_group_task(
                         Some(task.get_id()),
                         &device_ids,
-                        2,
+                        2, // TODO
                         protocol_type.into(),
                         key_type.into(),
                         task.get_request(),
+                        None, // TODO: missing note
                     )
                     .await?
             }
@@ -285,6 +288,7 @@ impl State {
                         group.protocol().into(),
                         group.key_type().into(),
                         group.certificate().map(|v| v.as_ref()),
+                        group.note(),
                     )
                     .await?;
             }
