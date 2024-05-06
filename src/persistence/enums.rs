@@ -31,15 +31,15 @@ pub enum TaskType {
     Decrypt,
 }
 
-#[derive(Debug, DbEnum)]
-#[ExistingTypePath = "crate::persistence::schema::sql_types::TaskResultType"]
-#[DbValueStyle = "PascalCase"]
-pub enum TaskResultType {
-    GroupEstablished,
-    Signed,
-    SignedPdf,
-    Decrypted,
-}
+// #[derive(Debug, DbEnum)]
+// #[ExistingTypePath = "crate::persistence::schema::sql_types::TaskResultType"]
+// #[DbValueStyle = "PascalCase"]
+// pub enum TaskResultType {
+//     GroupEstablished,
+//     Signed,
+//     SignedPdf,
+//     Decrypted,
+// }
 
 #[derive(Debug, DbEnum, Clone, PartialEq, Eq)]
 #[ExistingTypePath = "crate::persistence::schema::sql_types::TaskState"]

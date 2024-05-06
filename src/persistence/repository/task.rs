@@ -6,11 +6,12 @@ use diesel_async::{AsyncConnection, RunQueryDsl};
 use uuid::Uuid;
 
 use super::utils::NameValidator;
-use crate::persistence::schema::task_participant;
+use crate::persistence::models::{NewTaskResult, Task, TaskResult};
+use crate::persistence::schema::{task_participant, task_result};
 use crate::persistence::{
     enums::{KeyType, ProtocolType, TaskState, TaskType},
     error::PersistenceError,
-    models::{NewTask, NewTaskParticipant, Task},
+    models::{NewTask, NewTaskParticipant, PartialTask},
     schema::task,
 };
 
@@ -51,9 +52,9 @@ where
         protocol_type,
     };
 
-    let task: Task = diesel::insert_into(task::table)
+    let task: PartialTask = diesel::insert_into(task::table)
         .values(task)
-        .returning(Task::as_returning())
+        .returning(PartialTask::as_returning())
         .get_result(connection)
         .await?;
 
@@ -71,7 +72,7 @@ where
         .values(new_task_participants)
         .execute(connection)
         .await?;
-    Ok(task)
+    Task::try_from(task, None)
 }
 
 // TODO: join with create_task
@@ -110,9 +111,9 @@ where
         protocol_type: Some(protocol_type),
     };
 
-    let task: Task = diesel::insert_into(task::table)
+    let task: PartialTask = diesel::insert_into(task::table)
         .values(task)
-        .returning(Task::as_returning())
+        .returning(PartialTask::as_returning())
         .get_result(connection)
         .await?;
 
@@ -130,7 +131,7 @@ where
         .values(new_task_participants)
         .execute(connection)
         .await?;
-    Ok(task)
+    Task::try_from(task, None)
 }
 
 pub async fn get_task<Conn>(
@@ -140,35 +141,34 @@ pub async fn get_task<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    let retrieved_task: Option<Task> = match task::table
+    let retrieved_task: Option<(PartialTask, Option<TaskResult>)> = match task::table
+        .left_outer_join(task_result::table)
         .filter(task::id.eq(task_id))
-        .first(connection)
+        .select((PartialTask::as_select(), Option::<TaskResult>::as_select()))
+        .first::<(PartialTask, Option<TaskResult>)>(connection)
         .await
     {
         Ok(val) => Some(val),
         Err(NotFound) => None,
         Err(err) => return Err(PersistenceError::ExecutionError(err)),
     };
-    Ok(retrieved_task)
+    if let Some((task, result)) = retrieved_task {
+        Ok(Some(Task::try_from(task, result)?))
+    } else {
+        Ok(None)
+    }
 }
 
 pub async fn get_tasks<Conn>(connection: &mut Conn) -> Result<Vec<Task>, PersistenceError>
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    let tasks = task::table.load(connection).await?;
-    Ok(tasks)
-}
-
-pub async fn set_task_result<Conn>(
-    connection: &mut Conn,
-    task_id: &Uuid,
-    result: Result<Vec<u8>, String>,
-) -> Result<(), PersistenceError>
-where
-    Conn: AsyncConnection<Backend = Pg>,
-{
-    todo!()
+    let partial_tasks = task::table
+        .left_outer_join(task_result::table)
+        .select((PartialTask::as_select(), Option::<TaskResult>::as_select()))
+        .load::<(PartialTask, Option<TaskResult>)>(connection)
+        .await?;
+    from_partial_tasks(partial_tasks)
 }
 
 pub async fn get_device_tasks<Conn>(
@@ -178,16 +178,33 @@ pub async fn get_device_tasks<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    let tasks = task::table
+    let partial_tasks = task::table
+        .left_outer_join(task_result::table)
         .inner_join(task_participant::table)
-        .filter(
-            // not(task::task_state.eq(TaskState::Finished))
-            task_participant::device_id.eq(identifier),
-        )
-        .select(Task::as_select())
-        .load(connection)
+        .filter(task_participant::device_id.eq(identifier))
+        .select((PartialTask::as_select(), Option::<TaskResult>::as_select()))
+        .load::<(PartialTask, Option<TaskResult>)>(connection)
         .await?;
-    Ok(tasks)
+    from_partial_tasks(partial_tasks)
+}
+
+pub async fn set_task_result<Conn>(
+    connection: &mut Conn,
+    task_id: &Uuid,
+    result: &Result<Vec<u8>, String>,
+) -> Result<(), PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    let task_result = NewTaskResult::from(result, task_id);
+    diesel::insert_into(task_result::table)
+        .values(&task_result)
+        .on_conflict(task_result::task_id) // All devices happen to set the result
+        .do_update()
+        .set(&task_result)
+        .execute(connection)
+        .await?;
+    Ok(())
 }
 
 pub async fn increment_round<Conn>(
@@ -250,4 +267,15 @@ where
         .get_result(connection)
         .await?;
     Ok(new_count as u32)
+}
+
+fn from_partial_tasks(
+    partial_tasks: Vec<(PartialTask, Option<TaskResult>)>,
+) -> Result<Vec<Task>, PersistenceError> {
+    partial_tasks
+        .into_iter()
+        .map(|(partial_task, result)| Task::try_from(partial_task, result))
+        .collect::<Vec<Result<Task, PersistenceError>>>()
+        .into_iter()
+        .collect()
 }

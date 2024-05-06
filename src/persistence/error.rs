@@ -20,6 +20,8 @@ pub enum PersistenceError {
     #[cfg(test)]
     #[error("diesel connection error: {0}")]
     ConnectionError(#[from] diesel::ConnectionError),
+    #[error("DataInconsistencyError: {0}")]
+    DataInconsistencyError(String),
 }
 
 impl From<PersistenceError> for tonic::Status {

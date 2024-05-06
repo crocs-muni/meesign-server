@@ -351,7 +351,7 @@ impl Repository {
     pub async fn set_task_result(
         &self,
         task_id: &Uuid,
-        result: Result<Vec<u8>, String>,
+        result: &Result<Vec<u8>, String>,
     ) -> Result<(), PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         set_task_result(connection, task_id, result).await

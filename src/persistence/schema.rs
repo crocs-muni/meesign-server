@@ -10,10 +10,6 @@ pub mod sql_types {
     pub struct ProtocolType;
 
     #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
-    #[diesel(postgres_type(name = "task_result_type"))]
-    pub struct TaskResultType;
-
-    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "task_state"))]
     pub struct TaskState;
 
@@ -92,14 +88,12 @@ diesel::table! {
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
-    use super::sql_types::TaskResultType;
-
     task_result (id) {
         id -> Int4,
-        signed_data -> Nullable<Bytea>,
-        result_type -> Nullable<TaskResultType>,
-        signing_group_id -> Nullable<Int4>,
+        task_id -> Uuid,
+        is_successfull -> Bool,
+        data -> Nullable<Bytea>,
+        error_message -> Nullable<Varchar>,
     }
 }
 
@@ -108,7 +102,7 @@ diesel::joinable!(group_participant -> group (group_id));
 diesel::joinable!(task -> group (group_id));
 diesel::joinable!(task_participant -> device (device_id));
 diesel::joinable!(task_participant -> task (task_id));
-diesel::joinable!(task_result -> group (signing_group_id));
+diesel::joinable!(task_result -> task (task_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     device,

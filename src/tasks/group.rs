@@ -103,8 +103,15 @@ impl GroupTask {
         })
     }
 
-    async fn set_result(&mut self, result: Result<Group, String>) -> Result<(), Error> {
-        todo!()
+    async fn set_result(
+        &mut self,
+        result: Result<Group, String>,
+        repository: Arc<Repository>,
+    ) -> Result<(), Error> {
+        self.result = Some(result.clone());
+        let result = result.map(|group| group.identifier().to_vec());
+        repository.set_task_result(&self.id, &result).await?;
+        Ok(())
     }
 
     async fn set_last_update(&mut self, repository: Arc<Repository>) -> Result<u64, Error> {
@@ -139,7 +146,8 @@ impl GroupTask {
             .await?;
         if identifier.is_none() {
             let error_message = "Task failed (group key not output)".to_string();
-            self.set_result(Err(error_message.clone())).await?;
+            self.set_result(Err(error_message.clone()), repository)
+                .await?;
             return Err(Error::GeneralProtocolError(error_message));
         }
         let identifier = identifier.unwrap();
@@ -159,17 +167,20 @@ impl GroupTask {
                 .collect::<Vec<_>>()
         );
 
-        self.set_result(Ok(Group::new(
-            identifier.clone(),
-            self.name.clone(),
-            self.threshold,
-            self.protocol.get_type(),
-            self.key_type,
-            certificate,
-        )))
+        self.set_result(
+            Ok(Group::new(
+                identifier.clone(),
+                self.name.clone(),
+                self.threshold,
+                self.protocol.get_type(),
+                self.key_type,
+                certificate,
+            )),
+            repository.clone(),
+        )
         .await?;
         repository
-            .set_task_result(&self.id, Ok(identifier))
+            .set_task_result(&self.id, &Ok(identifier))
             .await
             .unwrap();
 
@@ -418,7 +429,7 @@ impl Task for GroupTask {
         self.set_last_update(repository.clone()).await.unwrap();
         if self.result.is_none() && self.protocol.round() == 0 {
             if self.communicator.read().await.reject_count() > 0 {
-                self.set_result(Err("Task declined".to_string()))
+                self.set_result(Err("Task declined".to_string()), repository)
                     .await
                     .unwrap();
                 return Some(false);
