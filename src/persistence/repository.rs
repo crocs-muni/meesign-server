@@ -3,7 +3,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::{
-    communicator::{self, Communicator},
+    communicator::Communicator,
     tasks::{group::GroupTask, Task as TaskTrait},
 };
 
@@ -16,7 +16,10 @@ use super::{
 use self::{
     device::{activate_device, add_device, get_devices, get_devices_with_ids},
     group::get_group,
-    task::{get_device_tasks, get_tasks, increment_round, set_task_last_update, set_task_result},
+    task::{
+        get_device_tasks, get_tasks, increment_round, increment_task_attempt_count, set_round,
+        set_task_last_update, set_task_result,
+    },
 };
 use self::{
     device::{get_group_device_ids, get_task_devices},
@@ -286,14 +289,17 @@ impl Repository {
         &self,
         task_id: &Uuid,
         communicator: Arc<RwLock<Communicator>>,
+        repository: Arc<Repository>,
     ) -> Result<Option<Box<dyn TaskTrait>>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         let task = get_task(connection, task_id).await?;
         let device_ids = self.get_task_devices(task_id).await?;
         // TODO: also for other task types
         let task: Option<Box<dyn TaskTrait>> = task.map(|task| {
-            Box::new(GroupTask::from_model(task, device_ids, communicator).unwrap())
-                as Box<dyn TaskTrait>
+            Box::new(
+                GroupTask::from_model(task, device_ids, communicator, repository, *task_id)
+                    .unwrap(),
+            ) as Box<dyn TaskTrait>
         });
         Ok(task)
     }
@@ -321,12 +327,25 @@ impl Repository {
         increment_round(connection, task_id).await
     }
 
+    pub async fn set_round(&self, task_id: &Uuid, round: u16) -> Result<u16, PersistenceError> {
+        let connection = &mut self.get_async_connection().await?;
+        set_round(connection, task_id, round).await
+    }
+
     pub async fn set_task_last_update(
         &self,
         task_id: &Uuid,
     ) -> Result<DateTime<Local>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         set_task_last_update(connection, task_id).await
+    }
+
+    pub async fn increment_task_attempt_count(
+        &self,
+        task_id: &Uuid,
+    ) -> Result<u32, PersistenceError> {
+        let connection = &mut self.get_async_connection().await?;
+        increment_task_attempt_count(connection, task_id).await
     }
 
     pub async fn set_task_result(

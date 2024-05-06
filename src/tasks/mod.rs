@@ -100,6 +100,8 @@ pub trait Task: Send + Sync {
         model: TaskModel,
         devices: Vec<Device>,
         communicator: Arc<RwLock<Communicator>>,
+        repository: Arc<Repository>,
+        task_id: Uuid,
     ) -> Result<Self, Error>
     where
         Self: Sized;

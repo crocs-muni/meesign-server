@@ -37,7 +37,7 @@ impl SignPDFTask {
         })
     }
 
-    fn start_task(&mut self) {
+    fn start_task(&mut self, repository: Arc<Repository>) {
         let file = NamedTempFile::new();
         if file.is_err() {
             error!("Could not create temporary file");
@@ -77,7 +77,7 @@ impl SignPDFTask {
         }
         self.pdfhelper = Some(pdfhelper);
         self.sign_task.set_preprocessed(hash);
-        self.sign_task.start_task();
+        self.sign_task.start_task(repository);
     }
 
     fn advance_task(&mut self) {
@@ -100,9 +100,9 @@ impl SignPDFTask {
         }
     }
 
-    fn next_round(&mut self) {
+    fn next_round(&mut self, repository: Arc<Repository>) {
         if self.sign_task.protocol.round() == 0 {
-            self.start_task();
+            self.start_task(repository);
         } else if self.sign_task.protocol.round() < self.sign_task.protocol.last_round() {
             self.advance_task()
         } else {
@@ -145,7 +145,7 @@ impl Task for SignPDFTask {
     ) -> Result<bool, String> {
         let result = self.sign_task.update_internal(device_id, data).await;
         if let Ok(true) = result {
-            self.next_round();
+            self.next_round(repository);
         };
         result
     }
@@ -162,7 +162,7 @@ impl Task for SignPDFTask {
                 self.pdfhelper = None;
             }
             self.sign_task.attempts += 1;
-            self.start_task();
+            self.start_task(repository);
             Ok(true)
         } else {
             Ok(false)
@@ -197,7 +197,7 @@ impl Task for SignPDFTask {
     ) -> Option<bool> {
         let result = self.sign_task.decide_internal(device_id, decision);
         if let Some(true) = result {
-            self.next_round();
+            self.next_round(repository);
         };
         result
     }
@@ -222,6 +222,8 @@ impl Task for SignPDFTask {
         model: crate::persistence::Task,
         devices: Vec<Device>,
         communicator: Arc<RwLock<Communicator>>,
+        repository: Arc<Repository>,
+        task_id: Uuid,
     ) -> Result<Self, crate::error::Error>
     where
         Self: Sized,

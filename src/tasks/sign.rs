@@ -53,7 +53,7 @@ impl SignTask {
             data,
             preprocessed: None,
             protocol: match protocol_type {
-                ProtocolType::Gg18 => Box::new(GG18Sign::new()),
+                ProtocolType::Gg18 => Box::new(GG18Sign::new(todo!(), todo!())),
                 ProtocolType::Frost => Box::new(FROSTSign::new()),
                 _ => {
                     warn!("Protocol type {:?} does not support signing", protocol_type);
@@ -75,21 +75,24 @@ impl SignTask {
         self.preprocessed = Some(preprocessed);
     }
 
-    pub(super) fn start_task(&mut self) {
+    pub(super) fn start_task(&mut self, repository: Arc<Repository>) {
         assert!(self.communicator.accept_count() >= self.group.threshold());
-        self.protocol.initialize(
-            // &mut self.communicator,
-            todo!(),
-            self.preprocessed.as_ref().unwrap_or(&self.data),
-        );
+        todo!()
+        // self.protocol.initialize(
+        //     // &mut self.communicator,
+        //     todo!(),
+        //     self.preprocessed.as_ref().unwrap_or(&self.data),
+        //     repository,
+        // );
     }
 
     pub(super) fn advance_task(&mut self) {
-        self.protocol.advance(todo!())
+        todo!()
+        // self.protocol.advance(todo!())
     }
 
-    pub(super) fn finalize_task(&mut self) {
-        let signature = self.protocol.finalize(todo!());
+    pub(super) async fn finalize_task(&mut self) {
+        let signature = self.protocol.finalize(todo!()).await.unwrap();
         if signature.is_none() {
             self.result = Some(Err("Task failed (signature not output)".to_string()));
             return;
@@ -105,13 +108,13 @@ impl SignTask {
         self.communicator.clear_input();
     }
 
-    pub(super) fn next_round(&mut self) {
+    pub(super) async fn next_round(&mut self, repository: Arc<Repository>) {
         if self.protocol.round() == 0 {
-            self.start_task();
+            self.start_task(repository);
         } else if self.protocol.round() < self.protocol.last_round() {
-            self.advance_task()
+            self.advance_task();
         } else {
-            self.finalize_task()
+            self.finalize_task().await;
         }
     }
 
@@ -210,7 +213,7 @@ impl Task for SignTask {
     ) -> Result<bool, String> {
         let result = self.update_internal(device_id, data).await;
         if let Ok(true) = result {
-            self.next_round();
+            self.next_round(repository);
         };
         result
     }
@@ -223,7 +226,7 @@ impl Task for SignTask {
 
         if self.is_approved().await {
             self.attempts += 1;
-            self.start_task();
+            self.start_task(repository);
             Ok(true)
         } else {
             Ok(false)
@@ -266,7 +269,7 @@ impl Task for SignTask {
     ) -> Option<bool> {
         let result = self.decide_internal(device_id, decision);
         if let Some(true) = result {
-            self.next_round();
+            self.next_round(repository);
         };
         result
     }
@@ -291,6 +294,8 @@ impl Task for SignTask {
         model: crate::persistence::Task,
         devices: Vec<Device>,
         communicator: Arc<RwLock<Communicator>>,
+        repository: Arc<Repository>,
+        task_id: Uuid,
     ) -> Result<Self, crate::error::Error>
     where
         Self: Sized,

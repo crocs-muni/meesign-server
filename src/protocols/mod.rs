@@ -1,6 +1,8 @@
+use async_trait::async_trait;
 use tokio::sync::RwLockWriteGuard;
 
 use crate::communicator::Communicator;
+use crate::error::Error;
 use crate::proto::ProtocolType;
 
 pub mod elgamal;
@@ -17,10 +19,21 @@ impl ProtocolType {
     }
 }
 
+#[async_trait]
 pub trait Protocol {
-    fn initialize(&mut self, communicator: RwLockWriteGuard<'_, Communicator>, data: &[u8]);
-    fn advance(&mut self, communicator: RwLockWriteGuard<'_, Communicator>);
-    fn finalize(&mut self, communicator: RwLockWriteGuard<'_, Communicator>) -> Option<Vec<u8>>;
+    async fn initialize(
+        &mut self,
+        communicator: RwLockWriteGuard<'_, Communicator>,
+        data: &[u8],
+    ) -> Result<(), Error>;
+    async fn advance(
+        &mut self,
+        communicator: RwLockWriteGuard<'_, Communicator>,
+    ) -> Result<(), Error>;
+    async fn finalize(
+        &mut self,
+        communicator: RwLockWriteGuard<'_, Communicator>,
+    ) -> Result<Option<Vec<u8>>, Error>;
     fn round(&self) -> u16;
     fn last_round(&self) -> u16;
     fn get_type(&self) -> ProtocolType;

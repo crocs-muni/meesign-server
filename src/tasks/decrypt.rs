@@ -59,17 +59,17 @@ impl DecryptTask {
         }
     }
 
-    pub(super) fn start_task(&mut self) {
+    pub(super) async fn start_task(&mut self, repository: Arc<Repository>) {
         assert!(self.communicator.accept_count() >= self.group.threshold());
-        self.protocol.initialize(todo!(), &self.data);
+        self.protocol.initialize(todo!(), &self.data).await;
     }
 
-    pub(super) fn advance_task(&mut self) {
-        self.protocol.advance(todo!())
+    pub(super) async fn advance_task(&mut self) {
+        self.protocol.advance(todo!()).await;
     }
 
-    pub(super) fn finalize_task(&mut self) {
-        let decrypted = self.protocol.finalize(todo!());
+    pub(super) async fn finalize_task(&mut self) {
+        let decrypted = self.protocol.finalize(todo!()).await.unwrap();
         if decrypted.is_none() {
             self.result = Some(Err("Task failed (data not output)".to_string()));
             return;
@@ -85,13 +85,13 @@ impl DecryptTask {
         self.communicator.clear_input();
     }
 
-    pub(super) fn next_round(&mut self) {
+    pub(super) async fn next_round(&mut self, repository: Arc<Repository>) {
         if self.protocol.round() == 0 {
-            self.start_task();
+            self.start_task(repository);
         } else if self.protocol.round() < self.protocol.last_round() {
-            self.advance_task()
+            self.advance_task().await;
         } else {
-            self.finalize_task()
+            self.finalize_task().await;
         }
     }
 
@@ -145,6 +145,8 @@ impl Task for DecryptTask {
         model: TaskModel,
         devices: Vec<Device>,
         communicator: Arc<RwLock<Communicator>>,
+        repository: Arc<Repository>,
+        task_id: Uuid,
     ) -> Result<Self, Error> {
         todo!()
     }
@@ -198,7 +200,7 @@ impl Task for DecryptTask {
     ) -> Result<bool, String> {
         let result = self.update_internal(device_id, data).await;
         if let Ok(true) = result {
-            self.next_round();
+            self.next_round(repository);
         };
         result
     }
@@ -211,7 +213,7 @@ impl Task for DecryptTask {
 
         if self.is_approved().await {
             self.attempts += 1;
-            self.start_task();
+            self.start_task(repository);
             Ok(true)
         } else {
             Ok(false)
@@ -254,7 +256,7 @@ impl Task for DecryptTask {
     ) -> Option<bool> {
         let result = self.decide_internal(device_id, decision);
         if let Some(true) = result {
-            self.next_round();
+            self.next_round(repository);
         };
         result
     }

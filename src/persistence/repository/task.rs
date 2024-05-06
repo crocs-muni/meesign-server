@@ -205,6 +205,22 @@ where
     Ok(new_round as u32)
 }
 
+pub async fn set_round<Conn>(
+    connection: &mut Conn,
+    task_id: &Uuid,
+    round: u16,
+) -> Result<u16, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    let new_round: i32 = diesel::update(task::table.filter(task::id.eq(task_id)))
+        .set(task::protocol_round.eq(round as i32))
+        .returning(task::protocol_round)
+        .get_result(connection)
+        .await?;
+    Ok(new_round as u16)
+}
+
 pub async fn set_task_last_update<Conn>(
     connection: &mut Conn,
     task_id: &Uuid,
@@ -219,4 +235,19 @@ where
         .get_result(connection)
         .await?;
     Ok(updated_time)
+}
+
+pub async fn increment_task_attempt_count<Conn>(
+    connection: &mut Conn,
+    task_id: &Uuid,
+) -> Result<u32, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    let new_count: i32 = diesel::update(task::table.filter(task::id.eq(task_id)))
+        .set(task::attempt_count.eq(task::attempt_count + 1))
+        .returning(task::attempt_count)
+        .get_result(connection)
+        .await?;
+    Ok(new_count as u32)
 }

@@ -1,28 +1,70 @@
-use crate::communicator::Communicator;
+use std::sync::Arc;
+
+use crate::error::Error;
 use crate::proto::ProtocolType;
 use crate::protocols::Protocol;
+use crate::{communicator::Communicator, persistence::Repository};
+use async_trait::async_trait;
 use meesign_crypto::proto::{Message, ProtocolGroupInit, ProtocolInit};
 use meesign_crypto::protocol::gg18 as protocol;
 use tokio::sync::RwLockWriteGuard;
+use uuid::Uuid;
 
 pub struct GG18Group {
     parties: u32,
     threshold: u32,
     round: u16,
+    repository: Arc<Repository>,
+    task_id: Uuid,
 }
 
 impl GG18Group {
-    pub fn new(parties: u32, threshold: u32) -> Self {
+    pub fn new(parties: u32, threshold: u32, repository: Arc<Repository>, task_id: Uuid) -> Self {
         GG18Group {
             parties,
             threshold,
             round: 0,
+            repository,
+            task_id,
         }
+    }
+
+    pub fn from_model(
+        parties: u32,
+        threshold: u32,
+        repository: Arc<Repository>,
+        task_id: Uuid,
+        round: u16,
+    ) -> Self {
+        GG18Group {
+            parties,
+            threshold,
+            repository,
+            task_id,
+            round,
+        }
+    }
+
+    async fn set_round(&mut self, round: u16) -> Result<(), Error> {
+        self.round = round;
+        self.repository.set_round(&self.task_id, round).await?;
+        Ok(())
+    }
+
+    async fn increment_round(&mut self) -> Result<(), Error> {
+        self.round += 1;
+        self.repository.increment_round(&self.task_id).await?;
+        Ok(())
     }
 }
 
+#[async_trait]
 impl Protocol for GG18Group {
-    fn initialize(&mut self, mut communicator: RwLockWriteGuard<'_, Communicator>, _: &[u8]) {
+    async fn initialize(
+        &mut self,
+        mut communicator: RwLockWriteGuard<'_, Communicator>,
+        _: &[u8],
+    ) -> Result<(), Error> {
         communicator.set_active_devices(None);
         let parties = self.parties;
         let threshold = self.threshold;
@@ -36,20 +78,26 @@ impl Protocol for GG18Group {
             .encode_to_vec()
         });
 
-        self.round = 1;
+        self.set_round(1).await
     }
 
-    fn advance(&mut self, mut communicator: RwLockWriteGuard<'_, Communicator>) {
+    async fn advance(
+        &mut self,
+        mut communicator: RwLockWriteGuard<'_, Communicator>,
+    ) -> Result<(), Error> {
         assert!((0..self.last_round()).contains(&self.round));
 
         communicator.relay();
-        self.round += 1;
+        self.increment_round().await
     }
 
-    fn finalize(&mut self, communicator: RwLockWriteGuard<'_, Communicator>) -> Option<Vec<u8>> {
+    async fn finalize(
+        &mut self,
+        communicator: RwLockWriteGuard<'_, Communicator>,
+    ) -> Result<Option<Vec<u8>>, Error> {
         assert_eq!(self.last_round(), self.round);
-        self.round += 1;
-        communicator.get_final_message()
+        self.increment_round().await?;
+        Ok(communicator.get_final_message())
     }
 
     fn round(&self) -> u16 {
@@ -67,16 +115,39 @@ impl Protocol for GG18Group {
 
 pub struct GG18Sign {
     round: u16,
+    repository: Arc<Repository>,
+    task_id: Uuid,
 }
 
 impl GG18Sign {
-    pub fn new() -> Self {
-        Self { round: 0 }
+    pub fn new(repository: Arc<Repository>, task_id: Uuid) -> Self {
+        Self {
+            round: 0,
+            repository,
+            task_id,
+        }
+    }
+
+    async fn set_round(&mut self, round: u16) -> Result<(), Error> {
+        self.round = round;
+        self.repository.set_round(&self.task_id, round).await?;
+        Ok(())
+    }
+
+    async fn increment_round(&mut self) -> Result<(), Error> {
+        self.round += 1;
+        self.repository.increment_round(&self.task_id).await?;
+        Ok(())
     }
 }
 
+#[async_trait]
 impl Protocol for GG18Sign {
-    fn initialize(&mut self, mut communicator: RwLockWriteGuard<'_, Communicator>, data: &[u8]) {
+    async fn initialize(
+        &mut self,
+        mut communicator: RwLockWriteGuard<'_, Communicator>,
+        data: &[u8],
+    ) -> Result<(), Error> {
         communicator.set_active_devices(None);
         let participant_indices = communicator.get_protocol_indices();
         communicator.send_all(|idx| {
@@ -89,20 +160,27 @@ impl Protocol for GG18Sign {
             .encode_to_vec()
         });
 
-        self.round = 1;
+        self.set_round(1).await?;
+        Ok(())
     }
 
-    fn advance(&mut self, mut communicator: RwLockWriteGuard<'_, Communicator>) {
+    async fn advance(
+        &mut self,
+        mut communicator: RwLockWriteGuard<'_, Communicator>,
+    ) -> Result<(), Error> {
         assert!((0..self.last_round()).contains(&self.round));
 
         communicator.relay();
-        self.round += 1;
+        self.increment_round().await
     }
 
-    fn finalize(&mut self, communicator: RwLockWriteGuard<'_, Communicator>) -> Option<Vec<u8>> {
+    async fn finalize(
+        &mut self,
+        communicator: RwLockWriteGuard<'_, Communicator>,
+    ) -> Result<Option<Vec<u8>>, Error> {
         assert_eq!(self.last_round(), self.round);
-        self.round += 1;
-        communicator.get_final_message()
+        self.increment_round().await?;
+        Ok(communicator.get_final_message())
     }
 
     fn round(&self) -> u16 {

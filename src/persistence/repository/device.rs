@@ -29,6 +29,7 @@ where
 {
     let devices = device::table
         .filter(device::id.eq_any(device_ids))
+        .order_by(device::id)
         .load(connection)
         .await?;
     Ok(devices)

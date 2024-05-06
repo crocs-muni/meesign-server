@@ -1,12 +1,10 @@
-use std::collections::HashMap;
-
 use dashmap::DashMap;
 use futures::future;
 use log::{debug, error, warn};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::communicator::{self, Communicator};
+use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::interfaces::grpc::format_task;
 use crate::persistence::{Group, NameValidator, Repository, Task as TaskModel};
@@ -54,7 +52,12 @@ impl State {
         }
         let devices = self.get_repo().get_devices_with_ids(device_ids).await?;
         let task = Box::new(GroupTask::try_new(
-            name, devices, threshold, protocol, key_type,
+            name,
+            devices,
+            threshold,
+            protocol,
+            key_type,
+            self.repo.clone(),
         )?) as Box<dyn Task + Sync + Send>;
 
         // TODO: group ID?
@@ -241,7 +244,7 @@ impl State {
         };
         let Some(task) = self
             .get_repo()
-            .get_task(task_id, communicator.clone())
+            .get_task(task_id, communicator.clone(), self.repo.clone())
             .await?
         else {
             return Err(Error::GeneralProtocolError("Invalid task id".into()));
@@ -304,7 +307,7 @@ impl State {
         };
         let Some(mut task) = self
             .get_repo()
-            .get_task(task_id, communicator.clone())
+            .get_task(task_id, communicator.clone(), self.repo.clone())
             .await?
         else {
             return Err(Error::GeneralProtocolError("Invalid task id".into()));
@@ -369,7 +372,7 @@ impl State {
         let communicator = self.communicators.get(task_id).unwrap(); // TODO
         let Some(task) = self
             .get_repo()
-            .get_task(task_id, communicator.clone())
+            .get_task(task_id, communicator.clone(), self.repo.clone())
             .await?
         else {
             return Err(Error::GeneralProtocolError(format!(
@@ -415,7 +418,14 @@ impl State {
             let devices = self.get_repo().get_task_devices(&task.id).await?;
             // TODO: for other task types as well
             let communicator = self.communicators.get(&task.id).expect("TODO");
-            let task = GroupTask::from_model(task, devices, communicator.clone())?;
+            let task_id = task.id;
+            let task = GroupTask::from_model(
+                task,
+                devices,
+                communicator.clone(),
+                self.repo.clone(),
+                task_id,
+            )?;
             Ok(Box::new(task) as Box<dyn Task + Send + Sync>)
         }))
         .await

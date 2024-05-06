@@ -14,7 +14,7 @@ pub async fn run_timer(state: Arc<Mutex<State>>) -> Result<(), String> {
     loop {
         interval.tick().await;
         let mut state = state.lock().await;
-        check_tasks(&mut state).await;
+        check_tasks(&mut state).await.unwrap();
         check_subscribers(&mut state).await;
     }
 }

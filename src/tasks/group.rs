@@ -46,11 +46,19 @@ impl GroupTask {
         threshold: u32,
         protocol_type: ProtocolType,
         key_type: KeyType,
-        note: &Option<String>,
+        repository: Arc<Repository>,
     ) -> Result<Self, String> {
+        let id = Uuid::new_v4();
+
         let devices_len = devices.len() as u32;
-        let protocol: Box<dyn Protocol + Send + Sync> =
-            create_protocol(protocol_type, key_type, devices_len, threshold)?;
+        let protocol: Box<dyn Protocol + Send + Sync> = create_protocol(
+            protocol_type,
+            key_type,
+            devices_len,
+            threshold,
+            repository,
+            id.clone(),
+        )?;
 
         if devices_len < 1 {
             warn!("Invalid number of devices {}", devices_len);
@@ -80,7 +88,7 @@ impl GroupTask {
 
         Ok(GroupTask {
             name: name.into(),
-            id: Uuid::new_v4(),
+            id,
             threshold,
             devices: devices.to_vec(),
             key_type,
@@ -95,20 +103,44 @@ impl GroupTask {
         })
     }
 
-    async fn start_task(&mut self) {
+    async fn set_result(&mut self, result: Result<Group, String>) -> Result<(), Error> {
+        todo!()
+    }
+
+    async fn set_last_update(&mut self, repository: Arc<Repository>) -> Result<u64, Error> {
+        self.last_update = get_timestamp();
+        repository.set_task_last_update(&self.id).await?;
+        Ok(self.last_update)
+    }
+
+    async fn increment_attempt_count(&mut self, repository: Arc<Repository>) -> Result<u32, Error> {
+        self.attempts += 1;
+        Ok(repository.increment_task_attempt_count(&self.id).await?)
+    }
+
+    async fn start_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
         self.protocol
-            .initialize(self.communicator.write().await, &[]);
+            .initialize(self.communicator.write().await, &[])
+            .await?;
+        Ok(())
     }
 
     async fn advance_task(&mut self) {
-        self.protocol.advance(self.communicator.write().await);
+        self.protocol
+            .advance(self.communicator.write().await)
+            .await
+            .unwrap();
     }
 
-    async fn finalize_task(&mut self, repository: Arc<Repository>) {
-        let identifier = self.protocol.finalize(self.communicator.write().await);
+    async fn finalize_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
+        let identifier = self
+            .protocol
+            .finalize(self.communicator.write().await)
+            .await?;
         if identifier.is_none() {
-            self.result = Some(Err("Task failed (group key not output)".to_string()));
-            return;
+            let error_message = "Task failed (group key not output)".to_string();
+            self.set_result(Err(error_message.clone())).await?;
+            return Err(Error::GeneralProtocolError(error_message));
         }
         let identifier = identifier.unwrap();
         // TODO
@@ -127,32 +159,33 @@ impl GroupTask {
                 .collect::<Vec<_>>()
         );
 
-        self.result = Some(Ok(Group::new(
+        self.set_result(Ok(Group::new(
             identifier.clone(),
             self.name.clone(),
             self.threshold,
             self.protocol.get_type(),
             self.key_type,
             certificate,
-            self.note.clone(),
-        )));
+        )))
+        .await?;
         repository
             .set_task_result(&self.id, Ok(identifier))
             .await
             .unwrap();
 
         self.communicator.write().await.clear_input();
+        Ok(())
     }
 
-    async fn next_round(&mut self) {
+    async fn next_round(&mut self, repository: Arc<Repository>) {
         if !self.certificates_sent {
             self.send_certificates();
         } else if self.protocol.round() == 0 {
-            self.start_task().await;
+            self.start_task(repository).await.unwrap();
         } else if self.protocol.round() < self.protocol.last_round() {
             self.advance_task().await
         } else {
-            self.finalize_task(repository).await
+            self.finalize_task(repository).await.unwrap() // TODO
         }
     }
 
@@ -187,11 +220,15 @@ fn create_protocol(
     key_type: proto::KeyType,
     devices_len: u32,
     threshold: u32,
+    repository: Arc<Repository>,
+    task_id: Uuid,
 ) -> Result<Box<dyn Protocol + Send + Sync>, String> {
     let protocol: Box<dyn Protocol + Send + Sync> = match (protocol_type, key_type) {
-        (ProtocolType::Gg18, KeyType::SignPdf) => Box::new(GG18Group::new(devices_len, threshold)),
+        (ProtocolType::Gg18, KeyType::SignPdf) => {
+            Box::new(GG18Group::new(devices_len, threshold, repository, task_id))
+        }
         (ProtocolType::Gg18, KeyType::SignChallenge) => {
-            Box::new(GG18Group::new(devices_len, threshold))
+            Box::new(GG18Group::new(devices_len, threshold, repository, task_id))
         }
         (ProtocolType::Frost, KeyType::SignChallenge) => {
             Box::new(FROSTGroup::new(devices_len, threshold))
@@ -231,13 +268,17 @@ impl Task for GroupTask {
         model: TaskModel,
         devices: Vec<Device>,
         communicator: Arc<RwLock<Communicator>>,
+        repository: Arc<Repository>,
+        task_id: Uuid,
     ) -> Result<Self, Error> {
-        let protocol = create_protocol(
-            model.protocol_type.unwrap().into(),
-            model.key_type.clone().unwrap().into(),
+        // TODO: make this universal
+        let protocol = Box::new(GG18Group::from_model(
             devices.len() as u32,
             model.threshold as u32,
-        )?;
+            repository,
+            task_id,
+            model.protocol_round as u16,
+        ));
         Ok(Self {
             name: "test group".into(), // TODO: name
             id: model.id,
@@ -287,8 +328,7 @@ impl Task for GroupTask {
         data: &Vec<Vec<u8>>,
         repository: Arc<Repository>,
     ) -> Result<bool, String> {
-        let mut communicator = self.communicator.write().await;
-        if communicator.accept_count() != self.devices.len() as u32 {
+        if self.communicator.read().await.accept_count() != self.devices.len() as u32 {
             return Err("Not enough agreements to proceed with the protocol.".to_string());
         }
 
@@ -304,14 +344,16 @@ impl Task for GroupTask {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| "Failed to decode messages".to_string())?;
 
-        communicator.receive_messages(device_id, messages);
-        self.last_update = get_timestamp();
-        repository.set_task_last_update(&self.id).await.unwrap(); // TODO: errorhandling
+        self.communicator
+            .write()
+            .await
+            .receive_messages(device_id, data.message);
+        self.set_last_update(repository.clone()).await.unwrap();
 
-        if communicator.round_received() && self.protocol.round() <= self.protocol.last_round() {
-            drop(communicator);
+        if self.communicator.read().await.round_received()
+            && self.protocol.round() <= self.protocol.last_round()
+        {
             self.next_round(repository.clone()).await;
-            repository.increment_round(&self.id).await.unwrap(); // TODO: errorhandling
             return Ok(true);
         }
 
@@ -319,15 +361,16 @@ impl Task for GroupTask {
     }
 
     async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, String> {
-        self.last_update = get_timestamp();
-        repository.set_task_last_update(&self.id).await.unwrap();
+        self.set_last_update(repository.clone()).await.unwrap();
         if self.result.is_some() {
             return Ok(false);
         }
 
         if self.is_approved().await {
-            self.attempts += 1;
-            self.start_task().await;
+            self.increment_attempt_count(repository.clone())
+                .await
+                .unwrap();
+            self.start_task(repository).await.unwrap();
             Ok(true)
         } else {
             Ok(false)
@@ -371,20 +414,15 @@ impl Task for GroupTask {
         decision: bool,
         repository: Arc<Repository>,
     ) -> Option<bool> {
-        let mut communicator = self.communicator.write().await;
-        communicator.decide(device_id, decision);
-        self.last_update = get_timestamp();
-        repository.set_task_last_update(&self.id).await.unwrap();
+        self.communicator.write().await.decide(device_id, decision);
+        self.set_last_update(repository.clone()).await.unwrap();
         if self.result.is_none() && self.protocol.round() == 0 {
-            if communicator.reject_count() > 0 {
-                self.result = Some(Err("Task declined".to_string()));
-                repository
-                    .set_task_result(&self.id, Err("Task declined".to_string()))
+            if self.communicator.read().await.reject_count() > 0 {
+                self.set_result(Err("Task declined".to_string()))
                     .await
                     .unwrap();
                 return Some(false);
-            } else if communicator.accept_count() == self.devices.len() as u32 {
-                drop(communicator);
+            } else if self.communicator.read().await.accept_count() == self.devices.len() as u32 {
                 self.next_round(repository).await;
                 return Some(true);
             }
