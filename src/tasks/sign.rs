@@ -20,7 +20,7 @@ use uuid::Uuid;
 pub struct SignTask {
     id: Uuid,
     group: Group,
-    communicator: Communicator,
+    communicator: Arc<RwLock<Communicator>>,
     result: Option<Result<Vec<u8>, String>>,
     pub(super) data: Vec<u8>,
     preprocessed: Option<Vec<u8>>,
@@ -37,7 +37,11 @@ impl SignTask {
         devices.sort_by_key(|x| x.identifier().to_vec());
         let protocol_type = group.protocol();
 
-        let communicator = Communicator::new(devices, group.threshold(), protocol_type);
+        let communicator = Arc::new(RwLock::new(Communicator::new(
+            devices,
+            group.threshold(),
+            protocol_type,
+        )));
 
         let request = (SignRequest {
             group_id: group.identifier().to_vec(),
@@ -76,8 +80,8 @@ impl SignTask {
         self.preprocessed = Some(preprocessed);
     }
 
-    pub(super) fn start_task(&mut self, repository: Arc<Repository>) {
-        assert!(self.communicator.accept_count() >= self.group.threshold());
+    pub(super) async fn start_task(&mut self, repository: Arc<Repository>) {
+        assert!(self.communicator.read().await.accept_count() >= self.group.threshold());
         todo!()
         // self.protocol.initialize(
         //     // &mut self.communicator,
@@ -106,12 +110,12 @@ impl SignTask {
         );
 
         self.result = Some(Ok(signature));
-        self.communicator.clear_input();
+        self.communicator.write().await.clear_input();
     }
 
     pub(super) async fn next_round(&mut self, repository: Arc<Repository>) {
         if self.protocol.round() == 0 {
-            self.start_task(repository);
+            self.start_task(repository).await;
         } else if self.protocol.round() < self.protocol.last_round() {
             self.advance_task();
         } else {
@@ -124,7 +128,7 @@ impl SignTask {
         device_id: &[u8],
         data: &Vec<Vec<u8>>,
     ) -> Result<bool, Error> {
-        if self.communicator.accept_count() < self.group.threshold() {
+        if self.communicator.read().await.accept_count() < self.group.threshold() {
             return Err(Error::GeneralProtocolError(
                 "Not enough agreements to proceed with the protocol.".into(),
             ));
@@ -142,24 +146,32 @@ impl SignTask {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| Error::GeneralProtocolError("Expected ClientMessage.".into()))?;
 
-        self.communicator.receive_messages(device_id, messages);
+        self.communicator
+            .write()
+            .await
+            .receive_messages(device_id, messages);
         self.last_update = get_timestamp();
 
-        if self.communicator.round_received() && self.protocol.round() <= self.protocol.last_round()
+        if self.communicator.read().await.round_received()
+            && self.protocol.round() <= self.protocol.last_round()
         {
             return Ok(true);
         }
         Ok(false)
     }
 
-    pub(super) fn decide_internal(&mut self, device_id: &[u8], decision: bool) -> Option<bool> {
-        self.communicator.decide(device_id, decision);
+    pub(super) async fn decide_internal(
+        &mut self,
+        device_id: &[u8],
+        decision: bool,
+    ) -> Option<bool> {
+        self.communicator.write().await.decide(device_id, decision);
         self.last_update = get_timestamp();
         if self.result.is_none() && self.protocol.round() == 0 {
-            if self.communicator.reject_count() >= self.group.reject_threshold() {
+            if self.communicator.read().await.reject_count() >= self.group.reject_threshold() {
                 self.result = Some(Err("Task declined".to_string()));
                 return Some(false);
-            } else if self.communicator.accept_count() >= self.group.threshold() {
+            } else if self.communicator.read().await.accept_count() >= self.group.threshold() {
                 return Some(true);
             }
         }
@@ -192,7 +204,10 @@ impl Task for SignTask {
             return None;
         }
 
-        self.communicator.get_messages(device_id.unwrap())
+        self.communicator
+            .read()
+            .await
+            .get_message(device_id.unwrap())
     }
 
     fn get_result(&self) -> Option<TaskResult> {
@@ -205,8 +220,8 @@ impl Task for SignTask {
 
     async fn get_decisions(&self) -> (u32, u32) {
         (
-            self.communicator.accept_count(),
-            self.communicator.reject_count(),
+            self.communicator.read().await.accept_count(),
+            self.communicator.read().await.reject_count(),
         )
     }
 
@@ -218,7 +233,7 @@ impl Task for SignTask {
     ) -> Result<bool, Error> {
         let result = self.update_internal(device_id, data).await;
         if let Ok(true) = result {
-            self.next_round(repository);
+            self.next_round(repository).await;
         };
         result
     }
@@ -231,7 +246,7 @@ impl Task for SignTask {
 
         if self.is_approved().await {
             self.attempts += 1;
-            self.start_task(repository);
+            self.start_task(repository).await;
             Ok(true)
         } else {
             Ok(false)
@@ -243,7 +258,7 @@ impl Task for SignTask {
     }
 
     async fn is_approved(&self) -> bool {
-        self.communicator.accept_count() >= self.group.threshold()
+        self.communicator.read().await.accept_count() >= self.group.threshold()
     }
 
     fn has_device(&self, device_id: &[u8]) -> bool {
@@ -258,12 +273,12 @@ impl Task for SignTask {
 
     async fn waiting_for(&self, device: &[u8]) -> bool {
         if self.protocol.round() == 0 {
-            return !self.communicator.device_decided(device);
+            return !self.communicator.read().await.device_decided(device);
         } else if self.protocol.round() >= self.protocol.last_round() {
-            return !self.communicator.device_acknowledged(device);
+            return !self.communicator.read().await.device_acknowledged(device);
         }
 
-        self.communicator.waiting_for(device)
+        self.communicator.read().await.waiting_for(device)
     }
 
     async fn decide(
@@ -272,19 +287,22 @@ impl Task for SignTask {
         decision: bool,
         repository: Arc<Repository>,
     ) -> Option<bool> {
-        let result = self.decide_internal(device_id, decision);
+        let result = self.decide_internal(device_id, decision).await;
         if let Some(true) = result {
-            self.next_round(repository);
+            self.next_round(repository).await;
         };
         result
     }
 
     async fn acknowledge(&mut self, device_id: &[u8]) {
-        self.communicator.acknowledge(device_id);
+        self.communicator.write().await.acknowledge(device_id);
     }
 
     async fn device_acknowledged(&self, device_id: &[u8]) -> bool {
-        self.communicator.device_acknowledged(device_id)
+        self.communicator
+            .read()
+            .await
+            .device_acknowledged(device_id)
     }
 
     fn get_request(&self) -> &[u8] {

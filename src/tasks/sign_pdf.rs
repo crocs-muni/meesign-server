@@ -38,7 +38,7 @@ impl SignPDFTask {
         })
     }
 
-    fn start_task(&mut self, repository: Arc<Repository>) {
+    async fn start_task(&mut self, repository: Arc<Repository>) {
         let file = NamedTempFile::new();
         if file.is_err() {
             error!("Could not create temporary file");
@@ -78,15 +78,15 @@ impl SignPDFTask {
         }
         self.pdfhelper = Some(pdfhelper);
         self.sign_task.set_preprocessed(hash);
-        self.sign_task.start_task(repository);
+        self.sign_task.start_task(repository).await;
     }
 
     fn advance_task(&mut self) {
         self.sign_task.advance_task();
     }
 
-    fn finalize_task(&mut self) {
-        self.sign_task.finalize_task();
+    async fn finalize_task(&mut self) {
+        self.sign_task.finalize_task().await;
         if let Some(TaskResult::Signed(signature)) = self.sign_task.get_result() {
             let signed = include_signature(self.pdfhelper.as_mut().unwrap(), &signature);
             self.pdfhelper = None;
@@ -101,13 +101,13 @@ impl SignPDFTask {
         }
     }
 
-    fn next_round(&mut self, repository: Arc<Repository>) {
+    async fn next_round(&mut self, repository: Arc<Repository>) {
         if self.sign_task.protocol.round() == 0 {
-            self.start_task(repository);
+            self.start_task(repository).await;
         } else if self.sign_task.protocol.round() < self.sign_task.protocol.last_round() {
             self.advance_task()
         } else {
-            self.finalize_task()
+            self.finalize_task().await
         }
     }
 }
@@ -146,7 +146,7 @@ impl Task for SignPDFTask {
     ) -> Result<bool, Error> {
         let result = self.sign_task.update_internal(device_id, data).await;
         if let Ok(true) = result {
-            self.next_round(repository);
+            self.next_round(repository).await;
         };
         result
     }
@@ -163,7 +163,7 @@ impl Task for SignPDFTask {
                 self.pdfhelper = None;
             }
             self.sign_task.attempts += 1;
-            self.start_task(repository);
+            self.start_task(repository).await;
             Ok(true)
         } else {
             Ok(false)
@@ -196,9 +196,9 @@ impl Task for SignPDFTask {
         decision: bool,
         repository: Arc<Repository>,
     ) -> Option<bool> {
-        let result = self.sign_task.decide_internal(device_id, decision);
+        let result = self.sign_task.decide_internal(device_id, decision).await;
         if let Some(true) = result {
-            self.next_round(repository);
+            self.next_round(repository).await;
         };
         result
     }

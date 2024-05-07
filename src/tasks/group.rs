@@ -30,7 +30,7 @@ pub struct GroupTask {
     threshold: u32,
     key_type: KeyType,
     devices: Vec<Device>,
-    communicator: Arc<RwLock<Communicator>>, // TODO: consider using tokio RwLock for async
+    communicator: Arc<RwLock<Communicator>>,
     result: Option<Result<Group, String>>,
     protocol: Box<dyn Protocol + Send + Sync>,
     request: Vec<u8>,
