@@ -1,3 +1,5 @@
+use std::io;
+
 use log::error;
 use thiserror::Error;
 
@@ -9,6 +11,8 @@ pub(crate) enum Error {
     PersistenceError(#[from] PersistenceError),
     #[error("GeneralProtocolError: {0}")]
     GeneralProtocolError(String),
+    #[error("IoError: {0}")]
+    IoError(#[from] io::Error),
 }
 
 impl From<String> for Error {
@@ -20,7 +24,9 @@ impl From<String> for Error {
 impl From<Error> for tonic::Status {
     fn from(value: Error) -> Self {
         match value {
-            Error::PersistenceError(_) => Self::internal("Internal error occurred"),
+            Error::PersistenceError(_) | Error::IoError(_) => {
+                Self::internal("Internal error occurred")
+            }
             Error::GeneralProtocolError(error) => Self::failed_precondition(error),
         }
     }

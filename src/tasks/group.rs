@@ -154,7 +154,7 @@ impl GroupTask {
         };
         // TODO
         let certificate = if self.protocol.get_type() == ProtocolType::Gg18 {
-            Some(issue_certificate(&self.name, &identifier))
+            Some(issue_certificate(&self.name, &identifier)?)
         } else {
             None
         };
@@ -517,7 +517,7 @@ impl Task for GroupTask {
     }
 }
 
-fn issue_certificate(name: &str, public_key: &[u8]) -> Vec<u8> {
+fn issue_certificate(name: &str, public_key: &[u8]) -> Result<Vec<u8>, Error> {
     assert_eq!(public_key.len(), 65);
     let mut process = Command::new("java")
         .arg("-jar")
@@ -526,15 +526,9 @@ fn issue_certificate(name: &str, public_key: &[u8]) -> Vec<u8> {
         .arg(name)
         .arg(hex::encode(public_key))
         .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .spawn()?;
 
     let mut result = Vec::new();
-    process
-        .stdout
-        .as_mut()
-        .unwrap()
-        .read_to_end(&mut result)
-        .unwrap();
-    result
+    process.stdout.as_mut().unwrap().read_to_end(&mut result)?;
+    Ok(result)
 }
