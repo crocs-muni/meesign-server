@@ -195,7 +195,7 @@ impl State {
                     .create_group_task(
                         Some(task.get_id()),
                         &device_ids,
-                        2, // TODO
+                        task.get_threshold(),
                         protocol_type.into(),
                         key_type.into(),
                         task.get_request(),

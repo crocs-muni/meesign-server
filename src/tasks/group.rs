@@ -515,6 +515,10 @@ impl Task for GroupTask {
     fn get_communicator(&self) -> Arc<RwLock<Communicator>> {
         self.communicator.clone()
     }
+
+    fn get_threshold(&self) -> u32 {
+        self.threshold
+    }
 }
 
 fn issue_certificate(name: &str, public_key: &[u8]) -> Result<Vec<u8>, Error> {

@@ -314,4 +314,8 @@ impl Task for SignTask {
     fn get_communicator(&self) -> Arc<RwLock<Communicator>> {
         todo!()
     }
+
+    fn get_threshold(&self) -> u32 {
+        self.get_group().threshold()
+    }
 }

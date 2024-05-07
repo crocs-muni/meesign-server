@@ -238,6 +238,10 @@ impl Task for SignPDFTask {
     fn get_communicator(&self) -> Arc<RwLock<Communicator>> {
         todo!()
     }
+
+    fn get_threshold(&self) -> u32 {
+        self.sign_task.get_threshold()
+    }
 }
 
 fn request_hash(process: &mut Child, certificate: &[u8]) -> Vec<u8> {

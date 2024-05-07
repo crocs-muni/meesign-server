@@ -106,4 +106,5 @@ pub trait Task: Send + Sync {
         Self: Sized;
     fn get_id(&self) -> &Uuid;
     fn get_communicator(&self) -> Arc<RwLock<Communicator>>;
+    fn get_threshold(&self) -> u32;
 }
