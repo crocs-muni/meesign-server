@@ -321,7 +321,7 @@ impl State {
         if let Ok(true) = update_result {
             self.send_updates(task_id).await?;
         }
-        update_result.map_err(|err| Error::GeneralProtocolError(err))
+        update_result
     }
 
     pub async fn decide_task(

@@ -146,13 +146,12 @@ impl GroupTask {
             .protocol
             .finalize(self.communicator.write().await)
             .await?;
-        if identifier.is_none() {
+        let Some(identifier) = identifier else {
             let error_message = "Task failed (group key not output)".to_string();
             self.set_result(Err(error_message.clone()), repository)
                 .await?;
             return Err(Error::GeneralProtocolError(error_message));
-        }
-        let identifier = identifier.unwrap();
+        };
         // TODO
         let certificate = if self.protocol.get_type() == ProtocolType::Gg18 {
             Some(issue_certificate(&self.name, &identifier))
@@ -184,8 +183,7 @@ impl GroupTask {
         .await?;
         repository
             .set_task_result(&self.id, &Ok(identifier))
-            .await
-            .unwrap();
+            .await?;
 
         self.communicator.write().await.clear_input();
         Ok(())
@@ -327,16 +325,24 @@ impl Task for GroupTask {
         } else {
             "".into() // TODO add field to the task table
         };
+        if model.key_type.is_none() || model.request.is_none() {
+            return Err(PersistenceError::DataInconsistencyError(
+                "TaskModel is not data-consistent. KeyType of request is not set".into(),
+            )
+            .into());
+        }
+        let key_type = model.key_type.unwrap().into();
+        let request = model.request.unwrap().into();
         Ok(Self {
             name,
             id: model.id,
             threshold: model.threshold as u32,
-            key_type: model.key_type.unwrap().into(),
+            key_type,
             devices,
             communicator,
             result,
             protocol,
-            request: model.request.unwrap(),
+            request,
             last_update: model.last_update.timestamp() as u64,
             attempts: model.attempt_count as u32,
             note: model.note,
@@ -376,13 +382,17 @@ impl Task for GroupTask {
         device_id: &[u8],
         data: &Vec<Vec<u8>>,
         repository: Arc<Repository>,
-    ) -> Result<bool, String> {
+    ) -> Result<bool, Error> {
         if self.communicator.read().await.accept_count() != self.devices.len() as u32 {
-            return Err("Not enough agreements to proceed with the protocol.".to_string());
+            return Err(Error::GeneralProtocolError(
+                "Not enough agreements to proceed with the protocol.".into(),
+            ));
         }
 
         if !self.waiting_for(device_id).await {
-            return Err("Wasn't waiting for a message from this ID.".to_string());
+            return Err(Error::GeneralProtocolError(
+                "Wasn't waiting for a message from this ID.".into(),
+            ));
         }
 
         assert_eq!(self.certificates_sent, true);
@@ -391,13 +401,13 @@ impl Task for GroupTask {
             .iter()
             .map(|d| ClientMessage::decode(d.as_slice()))
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| "Failed to decode messages".to_string())?;
+            .map_err(|_| Error::GeneralProtocolError("Expected ClientMessage.".into()))?;
 
         self.communicator
             .write()
             .await
             .receive_messages(device_id, data.message);
-        self.set_last_update(repository.clone()).await.unwrap();
+        self.set_last_update(repository.clone()).await?;
 
         if self.communicator.read().await.round_received()
             && self.protocol.round() <= self.protocol.last_round()

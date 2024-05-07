@@ -1,4 +1,5 @@
 use crate::communicator::Communicator;
+use crate::error::Error;
 use crate::get_timestamp;
 use crate::group::Group;
 use crate::persistence::{Device, Repository};
@@ -142,7 +143,7 @@ impl Task for SignPDFTask {
         device_id: &[u8],
         data: &Vec<Vec<u8>>,
         repository: Arc<Repository>,
-    ) -> Result<bool, String> {
+    ) -> Result<bool, Error> {
         let result = self.sign_task.update_internal(device_id, data).await;
         if let Ok(true) = result {
             self.next_round(repository);

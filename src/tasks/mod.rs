@@ -60,7 +60,7 @@ pub trait Task: Send + Sync {
         device_id: &[u8],
         data: &Vec<Vec<u8>>,
         repository: Arc<Repository>,
-    ) -> Result<bool, String>;
+    ) -> Result<bool, Error>;
 
     /// Attempt to restart protocol in task
     ///
