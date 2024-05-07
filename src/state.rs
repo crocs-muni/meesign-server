@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use log::{debug, error, warn};
+use log::{debug, warn};
 use uuid::Uuid;
 
 use crate::device::Device;
@@ -293,7 +293,7 @@ impl State {
             device.activated();
             true
         } else {
-            error!("Unknown Device ID {}", utils::hextrunc(device_id));
+            debug!("Unknown Device ID {}", utils::hextrunc(device_id));
             false
         }
     }
