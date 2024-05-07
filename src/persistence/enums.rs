@@ -1,7 +1,8 @@
 use crate::proto;
 use diesel_derive_enum::DbEnum;
+use serde::Serialize;
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug, DbEnum)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, DbEnum, Serialize)]
 #[cfg_attr(test, derive(PartialOrd, Ord))]
 #[ExistingTypePath = "crate::persistence::schema::sql_types::ProtocolType"]
 #[DbValueStyle = "PascalCase"]
@@ -21,7 +22,7 @@ impl From<proto::ProtocolType> for ProtocolType {
     }
 }
 
-#[derive(Debug, DbEnum, Clone, PartialEq, Eq)]
+#[derive(Debug, DbEnum, Clone, PartialEq, Eq, Serialize)]
 #[ExistingTypePath = "crate::persistence::schema::sql_types::TaskType"]
 #[DbValueStyle = "PascalCase"]
 pub enum TaskType {
@@ -49,7 +50,7 @@ pub enum DeviceKind {
     Bot,
 }
 
-#[derive(Debug, DbEnum, Clone, PartialEq, Eq)]
+#[derive(Debug, DbEnum, Clone, PartialEq, Eq, Serialize)]
 #[ExistingTypePath = "crate::persistence::schema::sql_types::TaskState"]
 #[DbValueStyle = "PascalCase"]
 pub enum TaskState {
@@ -59,7 +60,7 @@ pub enum TaskState {
     Failed,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, DbEnum)]
+#[derive(Debug, Clone, PartialEq, Eq, DbEnum, Serialize)]
 #[cfg_attr(test, derive(PartialOrd, Ord))]
 #[ExistingTypePath = "crate::persistence::schema::sql_types::KeyType"]
 #[DbValueStyle = "PascalCase"]

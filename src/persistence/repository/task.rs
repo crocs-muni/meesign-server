@@ -1,12 +1,13 @@
 use chrono::{DateTime, Local};
 use diesel::result::Error::NotFound;
 use diesel::ExpressionMethods;
+use diesel::NullableExpressionMethods;
 use diesel::{pg::Pg, QueryDsl, SelectableHelper};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use uuid::Uuid;
 
 use super::utils::NameValidator;
-use crate::persistence::models::{NewTaskResult, Task, TaskResult};
+use crate::persistence::models::{NewTaskResult, Task};
 use crate::persistence::schema::{task_participant, task_result};
 use crate::persistence::{
     enums::{KeyType, ProtocolType, TaskState, TaskType},
@@ -144,34 +145,64 @@ pub async fn get_task<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    let retrieved_task: Option<(PartialTask, Option<TaskResult>)> = match task::table
+    let task: Option<Task> = match task::table
         .left_outer_join(task_result::table)
         .filter(task::id.eq(task_id))
-        .select((PartialTask::as_select(), Option::<TaskResult>::as_select()))
-        .first::<(PartialTask, Option<TaskResult>)>(connection)
+        .select((
+            task::id,
+            task::protocol_round,
+            task::attempt_count,
+            task::error_message,
+            task::threshold,
+            task::last_update,
+            task::task_data,
+            task::preprocessed,
+            task::request,
+            task::group_id,
+            task::task_type,
+            task::task_state,
+            task::key_type,
+            task::protocol_type,
+            task::note,
+            task_result::all_columns.nullable(),
+        ))
+        .first(connection)
         .await
     {
         Ok(val) => Some(val),
         Err(NotFound) => None,
         Err(err) => return Err(PersistenceError::ExecutionError(err)),
     };
-    if let Some((task, result)) = retrieved_task {
-        Ok(Some(Task::try_from(task, result)?))
-    } else {
-        Ok(None)
-    }
+    Ok(task)
 }
 
 pub async fn get_tasks<Conn>(connection: &mut Conn) -> Result<Vec<Task>, PersistenceError>
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    let partial_tasks = task::table
+    let tasks = task::table
         .left_outer_join(task_result::table)
-        .select((PartialTask::as_select(), Option::<TaskResult>::as_select()))
-        .load::<(PartialTask, Option<TaskResult>)>(connection)
+        .select((
+            task::id,
+            task::protocol_round,
+            task::attempt_count,
+            task::error_message,
+            task::threshold,
+            task::last_update,
+            task::task_data,
+            task::preprocessed,
+            task::request,
+            task::group_id,
+            task::task_type,
+            task::task_state,
+            task::key_type,
+            task::protocol_type,
+            task::note,
+            task_result::all_columns.nullable(),
+        ))
+        .load(connection)
         .await?;
-    from_partial_tasks(partial_tasks)
+    Ok(tasks)
 }
 
 pub async fn get_device_tasks<Conn>(
@@ -181,14 +212,31 @@ pub async fn get_device_tasks<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    let partial_tasks = task::table
+    let tasks = task::table
         .left_outer_join(task_result::table)
         .inner_join(task_participant::table)
         .filter(task_participant::device_id.eq(identifier))
-        .select((PartialTask::as_select(), Option::<TaskResult>::as_select()))
-        .load::<(PartialTask, Option<TaskResult>)>(connection)
+        .select((
+            task::id,
+            task::protocol_round,
+            task::attempt_count,
+            task::error_message,
+            task::threshold,
+            task::last_update,
+            task::task_data,
+            task::preprocessed,
+            task::request,
+            task::group_id,
+            task::task_type,
+            task::task_state,
+            task::key_type,
+            task::protocol_type,
+            task::note,
+            task_result::all_columns.nullable(),
+        ))
+        .load(connection)
         .await?;
-    from_partial_tasks(partial_tasks)
+    Ok(tasks)
 }
 
 pub async fn set_task_result<Conn>(
@@ -270,15 +318,4 @@ where
         .get_result(connection)
         .await?;
     Ok(new_count as u32)
-}
-
-fn from_partial_tasks(
-    partial_tasks: Vec<(PartialTask, Option<TaskResult>)>,
-) -> Result<Vec<Task>, PersistenceError> {
-    partial_tasks
-        .into_iter()
-        .map(|(partial_task, result)| Task::try_from(partial_task, result))
-        .collect::<Vec<Result<Task, PersistenceError>>>()
-        .into_iter()
-        .collect()
 }

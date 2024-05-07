@@ -1,5 +1,6 @@
 use chrono::{DateTime, Local};
 use diesel::{query_builder::AsChangeset, Insertable, Queryable, Selectable};
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::persistence::schema::*;
@@ -135,8 +136,7 @@ pub struct PartialTask {
     pub note: Option<String>,
 }
 
-// TODO: attempt to write a diesel query that will serialize this.
-// This is an inefficient hotfix
+#[derive(Queryable, Serialize, Clone, Eq, PartialEq)]
 pub struct Task {
     pub id: Uuid,
     pub protocol_round: i32,
@@ -153,17 +153,14 @@ pub struct Task {
     pub key_type: Option<KeyType>,
     pub protocol_type: Option<ProtocolType>,
     pub note: Option<String>,
-    pub result: Option<Result<Vec<u8>, String>>,
+    #[serde(flatten)]
+    pub result: Option<TaskResult>,
 }
 impl Task {
     pub fn try_from(
         task: PartialTask,
         result: Option<TaskResult>,
     ) -> Result<Self, PersistenceError> {
-        let result = match result.map(|result| result.try_into_option()) {
-            Some(val) => val?,
-            None => None,
-        };
         Ok(Self {
             id: task.id,
             protocol_round: task.protocol_round,
@@ -204,7 +201,7 @@ pub struct NewTask<'a> {
     pub note: Option<&'a str>,
 }
 
-#[derive(Queryable, Clone, Eq, PartialEq, Selectable, Debug)]
+#[derive(Queryable, Selectable, Serialize, Clone, Eq, PartialEq, Debug)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 #[diesel(table_name=task_result)]
 pub struct TaskResult {

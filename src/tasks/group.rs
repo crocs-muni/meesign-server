@@ -292,8 +292,15 @@ impl Task for GroupTask {
             model.id,
             model.protocol_round as u16,
         ));
+
         // TODO: refactor
-        let result: Option<Result<Group, String>> = match model.result {
+        let result = if let Some(result) = model.result {
+            let result = result.try_into_option()?;
+            result
+        } else {
+            None
+        };
+        let result: Option<Result<Group, String>> = match result {
             Some(Ok(group_id)) => {
                 let Some(resulting_group) = repository.get_group(&group_id).await? else {
                     return Err(Error::PersistenceError(
