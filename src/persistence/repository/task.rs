@@ -2,7 +2,7 @@ use chrono::{DateTime, Local};
 use diesel::result::Error::NotFound;
 use diesel::ExpressionMethods;
 use diesel::NullableExpressionMethods;
-use diesel::{pg::Pg, QueryDsl, SelectableHelper};
+use diesel::{pg::Pg, QueryDsl};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use uuid::Uuid;
 
@@ -12,7 +12,7 @@ use crate::persistence::schema::{task_participant, task_result};
 use crate::persistence::{
     enums::{KeyType, ProtocolType, TaskState, TaskType},
     error::PersistenceError,
-    models::{NewTask, NewTaskParticipant, PartialTask},
+    models::{NewTask, NewTaskParticipant},
     schema::task,
 };
 
@@ -54,9 +54,9 @@ where
         note: None,
     };
 
-    let task: PartialTask = diesel::insert_into(task::table)
+    let task_id = diesel::insert_into(task::table)
         .values(task)
-        .returning(PartialTask::as_returning())
+        .returning(task::id)
         .get_result(connection)
         .await?;
 
@@ -64,7 +64,7 @@ where
         .into_iter()
         .map(|device_id| NewTaskParticipant {
             device_id,
-            task_id: &task.id,
+            task_id: &task_id,
             decision: None,
             acknowledgment: None,
         })
@@ -74,7 +74,12 @@ where
         .values(new_task_participants)
         .execute(connection)
         .await?;
-    Task::try_from(task, None)
+
+    get_task(connection, &task_id)
+        .await?
+        .ok_or(PersistenceError::DataInconsistencyError(
+            "Already created task can't be returned".into(),
+        ))
 }
 
 // TODO: join with create_task
@@ -115,9 +120,9 @@ where
         note,
     };
 
-    let task: PartialTask = diesel::insert_into(task::table)
+    let task_id: Uuid = diesel::insert_into(task::table)
         .values(task)
-        .returning(PartialTask::as_returning())
+        .returning(task::id)
         .get_result(connection)
         .await?;
 
@@ -125,7 +130,7 @@ where
         .into_iter()
         .map(|device_id| NewTaskParticipant {
             device_id,
-            task_id: &task.id,
+            task_id: &task_id,
             decision: None,
             acknowledgment: None,
         })
@@ -135,7 +140,12 @@ where
         .values(new_task_participants)
         .execute(connection)
         .await?;
-    Task::try_from(task, None)
+
+    get_task(connection, &task_id)
+        .await?
+        .ok_or(PersistenceError::DataInconsistencyError(
+            "Already created task can't be returned".into(),
+        ))
 }
 
 pub async fn get_task<Conn>(

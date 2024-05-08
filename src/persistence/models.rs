@@ -114,27 +114,6 @@ pub struct NewTaskParticipant<'a> {
     pub acknowledgment: Option<bool>,
 }
 
-#[derive(Queryable, Selectable, Clone, Eq, PartialEq)]
-#[diesel(table_name=task)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
-pub struct PartialTask {
-    pub id: Uuid,
-    pub protocol_round: i32,
-    pub attempt_count: i32,
-    pub error_message: Option<String>,
-    pub threshold: i32,
-    pub last_update: DateTime<Local>,
-    pub task_data: Option<Vec<u8>>,
-    pub preprocessed: Option<Vec<u8>>,
-    pub request: Option<Vec<u8>>,
-    pub group_id: Option<Vec<u8>>,
-    pub task_type: TaskType,
-    pub task_state: TaskState,
-    pub key_type: Option<KeyType>,
-    pub protocol_type: Option<ProtocolType>,
-    pub note: Option<String>,
-}
-
 #[derive(Queryable, Serialize, Clone, Eq, PartialEq)]
 pub struct Task {
     pub id: Uuid,
@@ -154,31 +133,6 @@ pub struct Task {
     pub note: Option<String>,
     #[serde(flatten)]
     pub result: Option<TaskResult>,
-}
-impl Task {
-    pub fn try_from(
-        task: PartialTask,
-        result: Option<TaskResult>,
-    ) -> Result<Self, PersistenceError> {
-        Ok(Self {
-            id: task.id,
-            protocol_round: task.protocol_round,
-            attempt_count: task.attempt_count,
-            error_message: task.error_message,
-            threshold: task.threshold,
-            last_update: task.last_update,
-            task_data: task.task_data,
-            preprocessed: task.preprocessed,
-            request: task.request,
-            group_id: task.group_id,
-            task_type: task.task_type,
-            task_state: task.task_state,
-            key_type: task.key_type,
-            protocol_type: task.protocol_type,
-            note: task.note,
-            result,
-        })
-    }
 }
 
 #[derive(Insertable)]
