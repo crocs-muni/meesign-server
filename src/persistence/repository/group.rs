@@ -1,6 +1,9 @@
 use std::convert::TryInto;
 
-use diesel::{pg::Pg, result::Error::NotFound, ExpressionMethods, QueryDsl, SelectableHelper};
+use diesel::alias;
+use diesel::dsl::sql;
+use diesel::sql_types::{Array, Bytea};
+use diesel::{pg::Pg, result::Error::NotFound, ExpressionMethods, QueryDsl};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use uuid::Uuid;
 
@@ -20,13 +23,28 @@ pub async fn get_groups<Conn>(connection: &mut Conn) -> Result<Vec<Group>, Persi
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    Ok(group::table.load(connection).await?)
+    Ok(group::table
+        .left_outer_join(group_participant::table)
+        .group_by(group::id)
+        .select((
+            group::id,
+            group::name,
+            group::threshold,
+            group::protocol,
+            group::round,
+            group::key_type,
+            group::certificate,
+            group::note,
+            sql::<Array<Bytea>>("array_agg(group_participant.device_id ORDER BY group_participant.device_id ASC) AS group_ids"),
+        ))
+        .load(connection)
+        .await?)
 }
 
 pub async fn add_group<'a, Conn>(
     connection: &mut Conn,
     group_task_id: &Uuid,
-    identifier: &[u8],
+    id: &[u8],
     name: &str,
     threshold: u32,
     protocol: ProtocolType,
@@ -39,13 +57,13 @@ where
 {
     let threshold: i32 = threshold.try_into()?;
 
-    if identifier.is_empty() {
+    if id.is_empty() {
         return Err(PersistenceError::InvalidArgumentError(format!(
             "Empty identifier"
         )));
     }
     let new_group = NewGroup {
-        identifier,
+        id,
         threshold: threshold as i32,
         protocol,
         name,
@@ -55,24 +73,22 @@ where
         note,
     };
 
-    let group = diesel::insert_into(group::table)
+    let _ = diesel::insert_into(group::table)
         .values(new_group)
-        .returning(Group::as_returning())
-        .get_result(connection)
+        .execute(connection)
         .await?;
 
     let device_ids: Vec<Vec<u8>> = task_participant::table
         .inner_join(task::table)
         .filter(task::id.eq(group_task_id))
-        .inner_join(device::table)
-        .select(device::id)
+        .select(task_participant::device_id)
         .load(connection)
         .await?;
     let group_participants: Vec<NewGroupParticipant> = device_ids
         .iter()
         .map(|device_id| NewGroupParticipant {
             device_id,
-            group_id: group.id,
+            group_id: id,
         })
         .collect();
     let expected_affected_row_count = group_participants.len();
@@ -82,7 +98,11 @@ where
         .await?;
     // TODO: consider propagating the check into the prod build: assert -> Err(...)
     assert_eq!(affected_row_count, expected_affected_row_count);
-    Ok(group)
+    get_group(connection, id)
+        .await?
+        .ok_or(PersistenceError::DataInconsistencyError(
+            "Already created group was not found!".into(),
+        ))
 }
 
 pub async fn get_group<Conn>(
@@ -93,7 +113,20 @@ where
     Conn: AsyncConnection<Backend = Pg>,
 {
     let group: Option<Group> = match group::table
-        .filter(group::identifier.eq(group_identifier))
+        .left_outer_join(group_participant::table)
+        .filter(group::id.eq(group_identifier))
+        .group_by(group::id)
+        .select((
+            group::id,
+            group::name,
+            group::threshold,
+            group::protocol,
+            group::round,
+            group::key_type,
+            group::certificate,
+            group::note,
+            sql::<Array<Bytea>>("array_agg(group_participant.device_id ORDER BY group_participant.device_id ASC) AS group_ids"),
+        ))
         .first(connection)
         // .optional() TODO
         .await
@@ -113,10 +146,25 @@ pub async fn get_device_groups<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    let groups: Vec<Group> = group_participant::table
-        .inner_join(group::table)
-        .filter(group_participant::device_id.eq(device_identifier))
-        .select(Group::as_select())
+    let device_group_ids = group_participant::table
+        .select(group_participant::group_id)
+        .filter(group_participant::device_id.eq(device_identifier));
+    let group_participant2 = alias!(group_participant as group_participant2);
+    let groups: Vec<Group> = group::table
+        .left_outer_join(group_participant2)
+        .group_by(group::id)
+        .filter(group::id.eq_any(device_group_ids))
+        .select((
+            group::id,
+            group::name,
+            group::threshold,
+            group::protocol,
+            group::round,
+            group::key_type,
+            group::certificate,
+            group::note,
+            sql::<Array<Bytea>>("array_agg(group_participant2.device_id ORDER BY group_participant2.device_id ASC) AS group_ids"),
+        ))
         .load(connection)
         .await?;
 
@@ -201,9 +249,10 @@ mod test {
         );
         let retrieved_group = retrieved_group.unwrap();
         assert_eq!(created_group, retrieved_group);
+        let mut device_ids = vec![DEVICE_1_ID.into(), DEVICE_2_ID.into()];
+        device_ids.sort();
         let target_group = Group {
-            id: retrieved_group.id,
-            identifier: Vec::from(GROUP_1_IDENTIFIER),
+            id: Vec::from(GROUP_1_IDENTIFIER),
             name: GROUP_1_NAME.into(),
             threshold: threshold as i32,
             protocol: ProtocolType::Gg18,
@@ -211,6 +260,7 @@ mod test {
             key_type: KeyType::SignPdf,
             certificate: Some(GROUP_1_CERT.into()),
             note,
+            device_ids,
         };
 
         assert_eq!(retrieved_group, target_group);

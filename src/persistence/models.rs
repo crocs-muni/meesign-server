@@ -61,13 +61,10 @@ impl From<Device> for crate::proto::Device {
     }
 }
 
-#[derive(Queryable, Clone, Eq, PartialEq, Selectable)]
+#[derive(Queryable, Clone, Eq, PartialEq, Serialize)]
 #[cfg_attr(test, derive(PartialOrd, Ord, Debug))]
-#[diesel(table_name=group)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Group {
-    pub id: i32,
-    pub identifier: Vec<u8>,
+    pub id: Vec<u8>,
     pub name: String,
     pub threshold: i32,
     pub protocol: ProtocolType,
@@ -75,12 +72,14 @@ pub struct Group {
     pub key_type: KeyType,
     pub certificate: Option<Vec<u8>>,
     pub note: Option<String>,
+    #[serde(flatten)]
+    pub device_ids: Vec<Vec<u8>>,
 }
 
 #[derive(Insertable)]
 #[diesel(table_name=group)]
 pub struct NewGroup<'a> {
-    pub identifier: &'a [u8],
+    pub id: &'a [u8],
     pub name: &'a str,
     pub threshold: i32,
     pub protocol: ProtocolType,
@@ -94,7 +93,7 @@ pub struct NewGroup<'a> {
 #[diesel(table_name=group_participant)]
 pub struct NewGroupParticipant<'a> {
     pub device_id: &'a [u8],
-    pub group_id: i32,
+    pub group_id: &'a [u8],
 }
 
 #[derive(Queryable, Selectable)]
@@ -103,7 +102,7 @@ pub struct NewGroupParticipant<'a> {
 pub struct GroupParticipant {
     pub id: i32,
     pub device_id: Vec<u8>,
-    pub group_id: i32,
+    pub group_id: Vec<u8>,
 }
 
 #[derive(Insertable)]
@@ -128,7 +127,7 @@ pub struct PartialTask {
     pub task_data: Option<Vec<u8>>,
     pub preprocessed: Option<Vec<u8>>,
     pub request: Option<Vec<u8>>,
-    pub group_id: Option<i32>,
+    pub group_id: Option<Vec<u8>>,
     pub task_type: TaskType,
     pub task_state: TaskState,
     pub key_type: Option<KeyType>,
@@ -147,7 +146,7 @@ pub struct Task {
     pub task_data: Option<Vec<u8>>,
     pub preprocessed: Option<Vec<u8>>,
     pub request: Option<Vec<u8>>,
-    pub group_id: Option<i32>,
+    pub group_id: Option<Vec<u8>>,
     pub task_type: TaskType,
     pub task_state: TaskState,
     pub key_type: Option<KeyType>,
@@ -258,7 +257,7 @@ impl<'a> NewTaskResult<'a> {
 impl From<Group> for crate::group::Group {
     fn from(value: Group) -> Self {
         Self::new(
-            value.identifier,
+            value.id,
             value.name,
             value.threshold as u32,
             value.protocol.into(),

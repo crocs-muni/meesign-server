@@ -1,6 +1,5 @@
 CREATE TABLE "group" (
-    "id" INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    "identifier" bytea UNIQUE NOT NULL,
+    "id" bytea PRIMARY KEY,
     "name" varchar NOT NULL,
     "threshold" integer NOT NULL CHECK (threshold > 0),
     "protocol" protocol_type NOT NULL,

@@ -289,19 +289,19 @@ impl MeeSign for MeeSignService {
         // TODO: refactor, consider storing device IDS in the group model directly
         let groups = if let Some(device_id) = device_id {
             state.activate_device(&device_id).await?;
-            future::join_all(state.get_device_groups(&device_id).await?.into_iter().map(
-                |group| async {
-                    let device_ids = state.get_group_device_ids(&group.id).await.unwrap();
-                    Group::from_model(group, device_ids)
-                },
-            ))
-            .await
+            state
+                .get_device_groups(&device_id)
+                .await?
+                .into_iter()
+                .map(Group::from_model)
+                .collect()
         } else {
-            future::join_all(state.get_groups().await?.into_iter().map(|group| async {
-                let device_ids = state.get_group_device_ids(&group.id).await.unwrap();
-                Group::from_model(group, device_ids)
-            }))
-            .await
+            state
+                .get_groups()
+                .await?
+                .into_iter()
+                .map(Group::from_model)
+                .collect()
         };
 
         Ok(Response::new(msg::Groups { groups }))

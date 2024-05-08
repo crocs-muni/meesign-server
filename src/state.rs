@@ -257,10 +257,6 @@ impl State {
         Ok(self.get_repo().get_groups().await?)
     }
 
-    pub async fn get_group_device_ids(&self, group_id: &i32) -> Result<Vec<Vec<u8>>, Error> {
-        Ok(self.get_repo().get_group_device_ids(group_id).await?)
-    }
-
     pub async fn get_tasks(&self) -> Result<Vec<Box<dyn Task + Send + Sync>>, Error> {
         let task_models = self.get_repo().get_tasks().await?;
         self.tasks_from_task_models(task_models).await

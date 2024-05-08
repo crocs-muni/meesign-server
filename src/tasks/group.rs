@@ -308,7 +308,7 @@ impl Task for GroupTask {
                     ));
                 };
                 Some(Ok(crate::group::Group::new(
-                    resulting_group.identifier,
+                    resulting_group.id,
                     resulting_group.name,
                     resulting_group.threshold as u32,
                     resulting_group.protocol.into(),

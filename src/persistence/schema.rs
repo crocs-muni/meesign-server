@@ -41,8 +41,7 @@ diesel::table! {
     use super::sql_types::KeyType;
 
     group (id) {
-        id -> Int4,
-        identifier -> Bytea,
+        id -> Bytea,
         name -> Varchar,
         threshold -> Int4,
         protocol -> ProtocolType,
@@ -57,7 +56,7 @@ diesel::table! {
     group_participant (id) {
         id -> Int4,
         device_id -> Bytea,
-        group_id -> Int4,
+        group_id -> Bytea,
     }
 }
 
@@ -78,7 +77,7 @@ diesel::table! {
         task_data -> Nullable<Bytea>,
         preprocessed -> Nullable<Bytea>,
         request -> Nullable<Bytea>,
-        group_id -> Nullable<Int4>,
+        group_id -> Nullable<Bytea>,
         task_type -> TaskType,
         task_state -> TaskState,
         key_type -> Nullable<KeyType>,

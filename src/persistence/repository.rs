@@ -121,14 +121,6 @@ impl Repository {
         get_task_devices(connection, task_id).await
     }
 
-    pub async fn get_group_device_ids(
-        &self,
-        group_id: &i32,
-    ) -> Result<Vec<Vec<u8>>, PersistenceError> {
-        let connection = &mut self.get_async_connection().await?;
-        get_group_device_ids(connection, group_id).await
-    }
-
     pub async fn activate_device(
         &self,
         target_identifier: &[u8],

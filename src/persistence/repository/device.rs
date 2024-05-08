@@ -55,7 +55,7 @@ where
 
 pub async fn get_group_device_ids<Conn>(
     connection: &mut Conn,
-    group_id: &i32,
+    group_id: &[u8],
 ) -> Result<Vec<Vec<u8>>, PersistenceError>
 where
     Conn: AsyncConnection<Backend = Pg>,

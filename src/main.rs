@@ -57,16 +57,16 @@ mod proto {
     }
 
     impl Group {
-        pub fn from_model(model: GroupModel, device_ids: Vec<Vec<u8>>) -> Self {
+        pub fn from_model(model: GroupModel) -> Self {
             let protocol: crate::proto::ProtocolType = model.protocol.into();
             let key_type: crate::proto::KeyType = model.key_type.into();
             Self {
-                identifier: model.identifier,
+                identifier: model.id,
                 name: model.name,
                 threshold: model.threshold as u32,
                 protocol: protocol.into(),
                 key_type: key_type.into(),
-                device_ids,
+                device_ids: model.device_ids,
             }
         }
     }

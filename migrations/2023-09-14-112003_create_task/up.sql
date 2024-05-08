@@ -9,7 +9,7 @@ CREATE TABLE task (
     task_data bytea,
     preprocessed bytea,
     request bytea,
-    group_id INT REFERENCES "group"(id),
+    group_id bytea REFERENCES "group"(id),
     task_type task_type NOT NULL,
     task_state task_state NOT NULL,
     key_type key_type,
