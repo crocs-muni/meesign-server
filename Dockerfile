@@ -11,6 +11,7 @@ WORKDIR /home/rust/src/
 ADD --chown=rust:rust . .
 # Install protobuf compiler
 ENV PATH="${PATH}:/home/rust/.local/bin"
+RUN sudo apt-get update && sudo apt-get install -y unzip
 RUN curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v21.9/protoc-21.9-linux-x86_64.zip" && \
     unzip ./protoc-21.9-linux-x86_64.zip -d $HOME/.local && \
     rm -rf ./protoc-21.9-linux-x86_64.zip && \
@@ -35,14 +36,14 @@ ARG REVISION
 ARG BUILD_VERSION
 
 LABEL org.opencontainers.image.created=${BUILD_DATE} \
-      org.opencontainers.image.source="https://github.com/crocs-muni/meesign-server" \
-      org.opencontainers.image.version=${BUILD_VERSION} \
-      org.opencontainers.image.revision=${REVISION} \
-      org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.title="meesign-server" \
-      org.opencontainers.image.description="Meesign server for threshold ECDSA signatures." \
-      org.opencontainers.image.vendor="CRoCS, FI MUNI" \
-      org.label-schema.docker.cmd="docker run --detach --publish 1337:1337 --volume `pwd`/keys/:/meesign/keys/ crocsmuni/meesign:latest"
+    org.opencontainers.image.source="https://github.com/crocs-muni/meesign-server" \
+    org.opencontainers.image.version=${BUILD_VERSION} \
+    org.opencontainers.image.revision=${REVISION} \
+    org.opencontainers.image.licenses="MIT" \
+    org.opencontainers.image.title="meesign-server" \
+    org.opencontainers.image.description="Meesign server for threshold ECDSA signatures." \
+    org.opencontainers.image.vendor="CRoCS, FI MUNI" \
+    org.label-schema.docker.cmd="docker run --detach --publish 1337:1337 --volume `pwd`/keys/:/meesign/keys/ crocsmuni/meesign:latest"
 
 EXPOSE ${SERVER_PORT}
 # running the binary from a specific directory as meesign helper requires 
