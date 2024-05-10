@@ -1,6 +1,6 @@
 [package]
 name = "meesign-server"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
@@ -18,7 +18,7 @@ tempfile = "3.3.0"
 lazy_static = "1.4.0"
 openssl = "0.10.60"
 sha2 = "0.10.6"
-meesign-crypto = { git = "https://github.com/crocs-muni/meesign-crypto", rev = "6a6fbf7", default-features = false }
+meesign-crypto = { git = "https://github.com/crocs-muni/meesign-crypto", rev = "92fbdc7", default-features = false }
 
 [build-dependencies]
 tonic-build = "0.10"
