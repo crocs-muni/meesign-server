@@ -8,6 +8,7 @@ mod repository;
 mod schema;
 
 pub use enums::DeviceKind;
+pub use enums::TaskType;
 pub use error::PersistenceError;
 pub use models::Device;
 pub use models::Group;

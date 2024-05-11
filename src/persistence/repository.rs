@@ -227,9 +227,15 @@ impl Repository {
     pub async fn create_sign_task<'a>(
         &self,
         id: Option<&Uuid>,
-        group_identifier: &[u8],
+        group_id: &[u8],
+        devices: &[&[u8]],
+        threshold: u32,
         name: &str,
-        data: &Vec<u8>,
+        task_data: &[u8],
+        request: &[u8],
+        task_type: TaskType,
+        key_type: KeyType,
+        protocol: ProtocolType,
     ) -> Result<Task, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         connection
@@ -238,13 +244,15 @@ impl Repository {
                     create_task(
                         connection,
                         id,
-                        TaskType::SignChallenge, // TODO: based on data
+                        group_id,
+                        task_type,
                         name,
-                        Some(data),
-                        &vec![],
-                        None,
-                        None,
-                        None,
+                        devices,
+                        Some(task_data),
+                        request,
+                        threshold,
+                        Some(key_type),
+                        Some(protocol), // todo: should we fetch these from group?
                     )
                     .await
                 }
@@ -260,26 +268,27 @@ impl Repository {
         name: &str,
         data: &Vec<u8>,
     ) -> Result<Task, PersistenceError> {
-        let connection = &mut self.get_async_connection().await?;
-        connection
-            .transaction(|connection| {
-                async move {
-                    create_task(
-                        connection,
-                        id,
-                        TaskType::Decrypt,
-                        name,
-                        Some(data),
-                        &vec![],
-                        None,
-                        None,
-                        None,
-                    )
-                    .await
-                }
-                .scope_boxed()
-            })
-            .await
+        unimplemented!()
+        // let connection = &mut self.get_async_connection().await?;
+        // connection
+        //     .transaction(|connection| {
+        //         async move {
+        //             create_task(
+        //                 connection,
+        //                 id,
+        //                 TaskType::Decrypt,
+        //                 name,
+        //                 Some(data),
+        //                 &vec![],
+        //                 None,
+        //                 None,
+        //                 None,
+        //             )
+        //             .await
+        //         }
+        //         .scope_boxed()
+        //     })
+        //     .await
     }
 
     pub async fn get_task(

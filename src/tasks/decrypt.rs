@@ -208,7 +208,7 @@ impl Task for DecryptTask {
         result
     }
 
-    async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, String> {
+    async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, Error> {
         self.last_update = get_timestamp();
         if self.result.is_some() {
             return Ok(false);
@@ -229,11 +229,6 @@ impl Task for DecryptTask {
 
     async fn is_approved(&self) -> bool {
         self.communicator.accept_count() >= self.group.threshold()
-    }
-
-    fn has_device(&self, device_id: &[u8]) -> bool {
-        // self.group.contains(device_id)
-        todo!();
     }
 
     fn get_devices(&self) -> &Vec<Device> {
@@ -290,5 +285,9 @@ impl Task for DecryptTask {
 
     fn get_threshold(&self) -> u32 {
         self.group.threshold()
+    }
+
+    fn get_data(&self) -> Option<&[u8]> {
+        Some(&self.data)
     }
 }

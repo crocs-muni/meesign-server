@@ -173,6 +173,7 @@ impl GroupTask {
                 identifier.clone(),
                 self.name.clone(),
                 self.threshold,
+                self.devices.clone(),
                 self.protocol.get_type(),
                 self.key_type,
                 certificate,
@@ -227,7 +228,7 @@ impl GroupTask {
     }
 }
 
-fn create_protocol(
+pub fn create_protocol(
     protocol_type: proto::ProtocolType,
     key_type: proto::KeyType,
     devices_len: u32,
@@ -307,15 +308,10 @@ impl Task for GroupTask {
                         ),
                     ));
                 };
-                Some(Ok(crate::group::Group::new(
-                    resulting_group.id,
-                    resulting_group.name,
-                    resulting_group.threshold as u32,
-                    resulting_group.protocol.into(),
-                    resulting_group.key_type.into(),
-                    resulting_group.certificate,
-                    resulting_group.note,
-                )))
+                Some(Ok(crate::group::Group::try_from_model(
+                    resulting_group,
+                    devices.clone(),
+                )?))
             }
             Some(Err(err)) => Some(Err(err)),
             None => None,
@@ -419,16 +415,14 @@ impl Task for GroupTask {
         Ok(false)
     }
 
-    async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, String> {
+    async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, Error> {
         self.set_last_update(repository.clone()).await.unwrap();
         if self.result.is_some() {
             return Ok(false);
         }
 
         if self.is_approved().await {
-            self.increment_attempt_count(repository.clone())
-                .await
-                .unwrap();
+            self.increment_attempt_count(repository.clone()).await?;
             self.start_task(repository).await.unwrap();
             Ok(true)
         } else {
@@ -442,14 +436,6 @@ impl Task for GroupTask {
 
     async fn is_approved(&self) -> bool {
         self.communicator.read().await.accept_count() == self.devices.len() as u32
-    }
-
-    fn has_device(&self, device_id: &[u8]) -> bool {
-        return self
-            .devices
-            .iter()
-            .map(|device| device.identifier())
-            .any(|x| x == device_id);
     }
 
     fn get_devices(&self) -> &Vec<Device> {
@@ -518,6 +504,10 @@ impl Task for GroupTask {
 
     fn get_threshold(&self) -> u32 {
         self.threshold
+    }
+
+    fn get_data(&self) -> Option<&[u8]> {
+        None
     }
 }
 

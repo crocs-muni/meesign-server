@@ -22,14 +22,19 @@ pub struct SignPDFTask {
 }
 
 impl SignPDFTask {
-    pub fn try_new(group: Group, name: String, data: Vec<u8>) -> Result<Self, String> {
+    pub fn try_new(
+        group: Group,
+        name: String,
+        data: Vec<u8>,
+        repository: Arc<Repository>,
+    ) -> Result<Self, String> {
         if data.len() > 8 * 1024 * 1024 || name.len() > 256 || name.chars().any(|x| x.is_control())
         {
             warn!("Invalid input name={} len={}", name, data.len());
             return Err("Invalid input".to_string());
         }
 
-        let sign_task = SignTask::try_new(group, name, data)?;
+        let sign_task = SignTask::try_new(group, name, data, repository)?;
 
         Ok(SignPDFTask {
             sign_task,
@@ -38,18 +43,18 @@ impl SignPDFTask {
         })
     }
 
-    async fn start_task(&mut self, repository: Arc<Repository>) {
+    async fn start_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
         let file = NamedTempFile::new();
         if file.is_err() {
             error!("Could not create temporary file");
             self.result = Some(Err("Task failed (server error)".to_string()));
-            return;
+            return Ok(()); // TODO: double check that behavior won't change if we return as err
         }
         let mut file = file.unwrap();
         if file.write_all(&self.sign_task.data).is_err() {
             error!("Could not write in temporary file");
             self.result = Some(Err("Task failed (server error)".to_string()));
-            return;
+            return Ok(()); // TODO: double check that behavior won't change if we return as err
         }
 
         let pdfhelper = Command::new("java")
@@ -64,7 +69,7 @@ impl SignPDFTask {
         if pdfhelper.is_err() {
             error!("Could not start PDFHelper");
             self.result = Some(Err("Task failed (server error)".to_string()));
-            return;
+            return Ok(()); // TODO: double check that behavior won't change if we return as err
         }
         let mut pdfhelper = pdfhelper.unwrap();
 
@@ -74,19 +79,19 @@ impl SignPDFTask {
         );
         if hash.is_empty() {
             self.result = Some(Err("Task failed (invalid PDF)".to_string()));
-            return;
+            return Ok(()); // TODO: double check that behavior won't change if we return as err
         }
         self.pdfhelper = Some(pdfhelper);
         self.sign_task.set_preprocessed(hash);
-        self.sign_task.start_task(repository).await;
+        self.sign_task.start_task(repository).await
     }
 
-    fn advance_task(&mut self) {
-        self.sign_task.advance_task();
+    async fn advance_task(&mut self) -> Result<(), Error> {
+        self.sign_task.advance_task().await
     }
 
-    async fn finalize_task(&mut self) {
-        self.sign_task.finalize_task().await;
+    async fn finalize_task(&mut self) -> Result<(), Error> {
+        self.sign_task.finalize_task().await?;
         if let Some(TaskResult::Signed(signature)) = self.sign_task.get_result() {
             let signed = include_signature(self.pdfhelper.as_mut().unwrap(), &signature);
             self.pdfhelper = None;
@@ -99,13 +104,14 @@ impl SignPDFTask {
         } else {
             self.result = Some(Err("Task failed (signature not output)".to_string()));
         }
+        Ok(())
     }
 
-    async fn next_round(&mut self, repository: Arc<Repository>) {
+    async fn next_round(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
         if self.sign_task.protocol.round() == 0 {
-            self.start_task(repository).await;
+            self.start_task(repository).await
         } else if self.sign_task.protocol.round() < self.sign_task.protocol.last_round() {
-            self.advance_task()
+            self.advance_task().await
         } else {
             self.finalize_task().await
         }
@@ -144,14 +150,17 @@ impl Task for SignPDFTask {
         data: &Vec<Vec<u8>>,
         repository: Arc<Repository>,
     ) -> Result<bool, Error> {
-        let result = self.sign_task.update_internal(device_id, data).await;
+        let result = self
+            .sign_task
+            .update_internal(device_id, data, repository.clone())
+            .await;
         if let Ok(true) = result {
-            self.next_round(repository).await;
+            self.next_round(repository).await?;
         };
         result
     }
 
-    async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, String> {
+    async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, Error> {
         self.sign_task.last_update = get_timestamp();
         if self.result.is_some() {
             return Ok(false);
@@ -163,7 +172,7 @@ impl Task for SignPDFTask {
                 self.pdfhelper = None;
             }
             self.sign_task.attempts += 1;
-            self.start_task(repository).await;
+            self.start_task(repository).await?;
             Ok(true)
         } else {
             Ok(false)
@@ -176,10 +185,6 @@ impl Task for SignPDFTask {
 
     async fn is_approved(&self) -> bool {
         self.sign_task.is_approved().await
-    }
-
-    fn has_device(&self, device_id: &[u8]) -> bool {
-        self.sign_task.has_device(device_id)
     }
 
     fn get_devices(&self) -> &Vec<Device> {
@@ -196,9 +201,12 @@ impl Task for SignPDFTask {
         decision: bool,
         repository: Arc<Repository>,
     ) -> Option<bool> {
-        let result = self.sign_task.decide_internal(device_id, decision).await;
+        let result = self
+            .sign_task
+            .decide_internal(device_id, decision, repository.clone())
+            .await;
         if let Some(true) = result {
-            self.next_round(repository).await;
+            self.next_round(repository).await.unwrap();
         };
         result
     }
@@ -228,7 +236,12 @@ impl Task for SignPDFTask {
     where
         Self: Sized,
     {
-        todo!()
+        let sign_task = SignTask::from_model(model, devices, communicator, repository).await?;
+        Ok(Self {
+            sign_task,
+            result: None,
+            pdfhelper: None,
+        })
     }
 
     fn get_id(&self) -> &Uuid {
@@ -236,11 +249,14 @@ impl Task for SignPDFTask {
     }
 
     fn get_communicator(&self) -> Arc<RwLock<Communicator>> {
-        todo!()
+        self.sign_task.get_communicator()
     }
 
     fn get_threshold(&self) -> u32 {
         self.sign_task.get_threshold()
+    }
+    fn get_data(&self) -> Option<&[u8]> {
+        self.sign_task.get_data()
     }
 }
 

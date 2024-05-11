@@ -19,11 +19,13 @@ use crate::persistence::{
 pub async fn create_task<Conn>(
     connection: &mut Conn,
     id: Option<&Uuid>,
+    group_id: &[u8],
     task_type: TaskType,
     name: &str,
-    data: Option<&Vec<u8>>,
     devices: &[&[u8]],
-    threshold: Option<u32>,
+    task_data: Option<&[u8]>,
+    request: &[u8],
+    threshold: u32,
     key_type: Option<KeyType>,
     protocol_type: Option<ProtocolType>,
 ) -> Result<Task, PersistenceError>
@@ -36,18 +38,17 @@ where
         )));
     }
 
-    // let threshold: i32 = threshold.try_into()?;
     let task = NewTask {
         id,
         protocol_round: 0,
         attempt_count: 0,
         error_message: None,
-        threshold: 2, // TODO: decide if optional or not
-        last_update: None,
-        task_data: None,
+        threshold: threshold as i32,
+        task_data,
         preprocessed: None,
-        request: None,
+        request: Some(request),
         task_type,
+        group_id: Some(group_id),
         key_type,
         task_state: TaskState::Created,
         protocol_type,
@@ -105,11 +106,11 @@ where
     let threshold: i32 = threshold.try_into()?;
     let task = NewTask {
         id,
+        group_id: None,
         protocol_round: 0,
         attempt_count: 0,
         error_message: None,
         threshold,
-        last_update: None,
         task_data: None,
         preprocessed: None,
         request: Some(request),

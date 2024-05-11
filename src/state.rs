@@ -9,7 +9,7 @@ use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::interfaces::grpc::format_task;
 use crate::persistence::{Device, DeviceKind, Group, NameValidator, Repository, Task as TaskModel};
-use crate::proto::{KeyType, ProtocolType};
+use crate::proto::{self, KeyType, ProtocolType, TaskType};
 use crate::tasks::decrypt::DecryptTask;
 use crate::tasks::group::GroupTask;
 use crate::tasks::sign::SignTask;
@@ -88,26 +88,34 @@ impl State {
         name: &str,
         data: &[u8],
     ) -> Result<Uuid, Error> {
-        let group: Option<crate::group::Group> = self
-            .get_repo()
-            .get_group(group_id)
-            .await?
-            .map(|val| val.into());
-        if group.is_none() {
+        let group = self.get_repo().get_group(group_id).await?;
+        let Some(group) = group else {
             warn!(
                 "Signing requested from an unknown group group_id={}",
                 utils::hextrunc(group_id)
             );
             return Err(Error::GeneralProtocolError("Invalid group_id".into()));
-        }
-        let group = group.unwrap();
+        };
+        let device_ids: Vec<&[u8]> = group.device_ids.iter().map(|id| id.as_ref()).collect();
+        let devices = self.repo.get_devices_with_ids(&device_ids).await?;
+        let group = crate::group::Group::try_from_model(group, devices)?;
         let task = match group.key_type() {
             KeyType::SignPdf => {
-                let task = SignPDFTask::try_new(group.clone(), name.to_string(), data.to_vec())?;
+                let task = SignPDFTask::try_new(
+                    group.clone(),
+                    name.to_string(),
+                    data.to_vec(),
+                    self.repo.clone(),
+                )?;
                 Box::new(task) as Box<dyn Task + Sync + Send>
             }
             KeyType::SignChallenge => {
-                let task = SignTask::try_new(group.clone(), name.to_string(), data.to_vec())?;
+                let task = SignTask::try_new(
+                    group.clone(),
+                    name.to_string(),
+                    data.to_vec(),
+                    self.repo.clone(),
+                )?;
                 Box::new(task) as Box<dyn Task + Sync + Send>
             }
             KeyType::Decrypt => {
@@ -136,19 +144,17 @@ impl State {
         data: &[u8],
         data_type: &str,
     ) -> Result<Uuid, Error> {
-        let group: Option<crate::group::Group> = self
-            .get_repo()
-            .get_group(group_id)
-            .await?
-            .map(|val| val.into());
-        if group.is_none() {
+        let group: Option<Group> = self.get_repo().get_group(group_id).await?;
+        let Some(group) = group else {
             warn!(
                 "Decryption requested from an unknown group group_id={}",
                 utils::hextrunc(group_id)
             );
             return Err(Error::GeneralProtocolError("Invalid group_id".into()));
-        }
-        let group = group.unwrap();
+        };
+        let device_ids: Vec<&[u8]> = group.device_ids.iter().map(|id| id.as_ref()).collect();
+        let devices = self.repo.get_devices_with_ids(&device_ids).await?;
+        let group = crate::group::Group::try_from_model(group, devices)?;
         let task = match group.key_type() {
             KeyType::Decrypt => {
                 let task = DecryptTask::new(
@@ -203,6 +209,27 @@ impl State {
                     )
                     .await?
             }
+            crate::proto::TaskType::SignPdf => {
+                let task_devices = task.get_devices();
+                let device_ids: Vec<&[u8]> = task_devices
+                    .iter()
+                    .map(|device| device.id.as_slice())
+                    .collect();
+                self.get_repo()
+                    .create_sign_task(
+                        Some(task.get_id()),
+                        group_id,
+                        &device_ids,
+                        task.get_threshold(),
+                        "name",
+                        task.get_data().unwrap(),
+                        task.get_request(),
+                        crate::persistence::TaskType::SignPdf,
+                        key_type.into(),
+                        protocol_type.into(),
+                    )
+                    .await?
+            }
             _ => {
                 todo!()
             }
@@ -230,10 +257,9 @@ impl State {
         let mut filtered_tasks = Vec::new();
         // TODO: can we simplify the condition so that we can filter it in DB? Maybe store task acknowledgements in task_participant
         for task in tasks.into_iter() {
-            if task.has_device(device)
-                && (task.get_status() != TaskStatus::Finished
-                    || (task.get_status() == TaskStatus::Finished
-                        && !task.device_acknowledged(device).await))
+            if (task.get_status() != TaskStatus::Finished
+                || (task.get_status() == TaskStatus::Finished
+                    && !task.device_acknowledged(device).await))
             {
                 filtered_tasks.push(task as Box<dyn Task>);
             }
@@ -441,7 +467,6 @@ impl State {
         // TODO: do the grouping in DB
         let tasks = future::join_all(task_models.into_iter().map(|task| async {
             let devices = self.get_repo().get_task_devices(&task.id).await?;
-            // TODO: for other task types as well
             let communicator = self.communicators.entry(task.id).or_insert_with(|| {
                 // TODO: decide what to do when the server has restarted and the task communicator is not present
                 Arc::new(RwLock::new(Communicator::new(
@@ -451,10 +476,30 @@ impl State {
                 )))
             });
 
-            let task =
-                GroupTask::from_model(task, devices, communicator.clone(), self.repo.clone())
+            // TODO refactor
+            match task.task_type {
+                crate::persistence::TaskType::Group => {
+                    let task = GroupTask::from_model(
+                        task,
+                        devices,
+                        communicator.clone(),
+                        self.repo.clone(),
+                    )
                     .await?;
-            Ok(Box::new(task) as Box<dyn Task + Send + Sync>)
+                    Ok(Box::new(task) as Box<dyn Task + Send + Sync>)
+                }
+                crate::persistence::TaskType::SignPdf => {
+                    let task = SignPDFTask::from_model(
+                        task,
+                        devices,
+                        communicator.clone(),
+                        self.repo.clone(),
+                    )
+                    .await?;
+                    Ok(Box::new(task) as Box<dyn Task + Send + Sync>)
+                }
+                _ => unimplemented!(),
+            }
         }))
         .await
         .into_iter()

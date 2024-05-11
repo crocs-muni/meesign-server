@@ -1,9 +1,11 @@
+use crate::error::Error;
+use crate::persistence::{Device, Group as GroupModel};
 use crate::proto::{KeyType, ProtocolType};
-
 #[derive(Clone)]
 pub struct Group {
     identifier: Vec<u8>,
     name: String,
+    devices: Vec<Device>,
     threshold: u32,
     protocol: ProtocolType,
     key_type: KeyType,
@@ -16,6 +18,7 @@ impl Group {
         identifier: Vec<u8>,
         name: String,
         threshold: u32,
+        devices: Vec<Device>,
         protocol: ProtocolType,
         key_type: KeyType,
         certificate: Option<Vec<u8>>,
@@ -26,6 +29,7 @@ impl Group {
         Group {
             identifier,
             name,
+            devices,
             threshold,
             protocol,
             key_type,
@@ -41,14 +45,15 @@ impl Group {
     pub fn name(&self) -> &str {
         &self.name
     }
-
+    pub fn devices(&self) -> &Vec<Device> {
+        &self.devices
+    }
     pub fn threshold(&self) -> u32 {
         self.threshold
     }
 
     pub fn reject_threshold(&self) -> u32 {
-        // self.devices.len() as u32 - self.threshold + 1 // rejects >= threshold_reject => fail
-        3
+        self.devices.len() as u32 - self.threshold + 1 // rejects >= threshold_reject => fail
     }
 
     pub fn protocol(&self) -> ProtocolType {
@@ -65,6 +70,20 @@ impl Group {
 
     pub fn note(&self) -> Option<&str> {
         self.note.as_deref()
+    }
+
+    // TODO: consider merging Group with GroupModel
+    pub fn try_from_model(value: GroupModel, devices: Vec<Device>) -> Result<Self, Error> {
+        Ok(Self {
+            identifier: value.id,
+            name: value.name,
+            threshold: value.threshold as u32,
+            devices,
+            protocol: value.protocol.into(),
+            key_type: value.key_type.into(),
+            certificate: value.certificate,
+            note: value.note,
+        })
     }
 }
 
@@ -89,7 +108,7 @@ impl Group {
 
 #[cfg(test)]
 mod tests {
-    use crate::proto::DeviceKind;
+    use std::vec;
 
     use super::*;
 
@@ -100,6 +119,7 @@ mod tests {
             vec![],
             String::from("Sample Group"),
             2,
+            vec![],
             ProtocolType::Gg18,
             KeyType::SignPdf,
             None,
@@ -147,6 +167,7 @@ mod tests {
             identifier.clone(),
             name.clone(),
             threshold,
+            vec![], // TODO: fix tests
             protocol_type,
             key_type,
             None,

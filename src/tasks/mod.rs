@@ -66,7 +66,7 @@ pub trait Task: Send + Sync {
     ///
     /// # Returns
     /// Ok(true) if task restarted successfully; Ok(false) otherwise.
-    async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, String>;
+    async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, Error>;
 
     /// Get timestamp of the most recent task update
     fn last_update(&self) -> u64;
@@ -74,7 +74,6 @@ pub trait Task: Send + Sync {
     /// True if the task has been approved
     async fn is_approved(&self) -> bool;
 
-    fn has_device(&self, device_id: &[u8]) -> bool;
     fn get_devices(&self) -> &Vec<Device>;
     async fn waiting_for(&self, device_id: &[u8]) -> bool;
 
@@ -107,4 +106,5 @@ pub trait Task: Send + Sync {
     fn get_id(&self) -> &Uuid;
     fn get_communicator(&self) -> Arc<RwLock<Communicator>>;
     fn get_threshold(&self) -> u32;
+    fn get_data(&self) -> Option<&[u8]>;
 }

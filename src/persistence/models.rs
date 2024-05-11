@@ -19,7 +19,7 @@ pub struct NewDevice<'a> {
     pub certificate: &'a Vec<u8>,
 }
 
-#[derive(Queryable, Selectable, Clone)]
+#[derive(Queryable, Selectable, Clone, PartialEq, Eq)]
 #[diesel(table_name = device)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Device {
@@ -143,12 +143,12 @@ pub struct NewTask<'a> {
     pub attempt_count: i32,
     pub error_message: Option<&'a str>,
     pub threshold: i32,
-    pub last_update: Option<DateTime<Local>>,
     pub task_data: Option<&'a [u8]>,
     pub preprocessed: Option<&'a [u8]>,
     pub request: Option<&'a [u8]>,
     pub task_type: TaskType,
     pub task_state: TaskState,
+    pub group_id: Option<&'a [u8]>,
     pub key_type: Option<KeyType>,
     pub protocol_type: Option<ProtocolType>,
     pub note: Option<&'a str>,
@@ -205,19 +205,5 @@ impl<'a> NewTaskResult<'a> {
                 error_message: Some(error_message),
             },
         }
-    }
-}
-
-impl From<Group> for crate::group::Group {
-    fn from(value: Group) -> Self {
-        Self::new(
-            value.id,
-            value.name,
-            value.threshold as u32,
-            value.protocol.into(),
-            value.key_type.into(),
-            value.certificate,
-            value.note,
-        )
     }
 }
