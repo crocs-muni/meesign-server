@@ -112,6 +112,7 @@ mod cli {
     use crate::proto::MeeSignClient;
     use crate::{Args, CA_CERT};
     use clap::Subcommand;
+    use meesign_crypto;
     use std::str::FromStr;
     use std::time::SystemTime;
     use tonic::transport::{Certificate, Channel, ClientTlsConfig, Uri};
@@ -138,6 +139,11 @@ mod cli {
             pdf_file: String,
         },
         RequestSignChallenge {
+            name: String,
+            group_id: String,
+            data: String,
+        },
+        RequestDecrypt {
             name: String,
             group_id: String,
             data: String,
@@ -205,11 +211,12 @@ mod cli {
 
                     for group in response.groups {
                         println!(
-                            "[{}] {} ({}-of-{})",
-                            hex::encode(group.identifier),
+                            "[{}] {} ({}-of-{}; {:?})",
+                            hex::encode(&group.identifier),
                             &group.name,
-                            group.threshold,
-                            group.device_ids.len()
+                            &group.threshold,
+                            &group.device_ids.len(),
+                            &group.key_type()
                         );
                     }
                 }
@@ -227,6 +234,8 @@ mod cli {
                         let task_type = match task.r#type {
                             0 => "Group",
                             1 => "Sign",
+                            2 => "Challenge",
+                            3 => "Decrypt",
                             _ => "Unknown",
                         };
                         println!(
@@ -273,6 +282,8 @@ mod cli {
                     let task_type = match task.r#type {
                         0 => "Group",
                         1 => "Sign",
+                        2 => "Challenge",
+                        3 => "Decrypt",
                         _ => "Unknown",
                     };
                     println!(
@@ -306,6 +317,8 @@ mod cli {
                     let task_type = match task.r#type {
                         0 => "Group",
                         1 => "Sign",
+                        2 => "Challenge",
+                        3 => "Decrypt",
                         _ => "Unknown",
                     };
                     println!(
@@ -340,6 +353,48 @@ mod cli {
                     let task_type = match task.r#type {
                         0 => "Group",
                         1 => "Sign",
+                        2 => "Challenge",
+                        3 => "Decrypt",
+                        _ => "Unknown",
+                    };
+                    println!(
+                        "Task {} [{}] (state {}:{})",
+                        task_type,
+                        hex::encode(task.id),
+                        task.state,
+                        task.round
+                    );
+                }
+                Commands::RequestDecrypt {
+                    name,
+                    group_id,
+                    data,
+                } => {
+                    let group_id = hex::decode(group_id).unwrap();
+                    // let data = hex::decode(data).unwrap();
+                    let data =
+                        meesign_crypto::protocol::elgamal::encrypt(data.as_bytes(), &group_id)
+                            .unwrap();
+
+                    let request = tonic::Request::new(crate::proto::DecryptRequest {
+                        name,
+                        group_id,
+                        data,
+                        data_type: "text/plain;charset=utf-8".to_string(),
+                    });
+
+                    let response = client
+                        .decrypt(request)
+                        .await
+                        .map_err(|_| String::from("Request failed"))?
+                        .into_inner();
+
+                    let task = response;
+                    let task_type = match task.r#type {
+                        0 => "Group",
+                        1 => "Sign",
+                        2 => "Challenge",
+                        3 => "Decrypt",
                         _ => "Unknown",
                     };
                     println!(
