@@ -463,14 +463,13 @@ mod tests {
         assert_eq!(communicator.round_received(), true);
 
         for idx in 0..devices.len() {
-            assert_eq!(
-                communicator.get_messages(devices[idx].identifier()),
-                if active_indices.contains(&idx) {
-                    vec![vec![]]
-                } else {
-                    vec![]
-                }
-            );
+            let msgs = communicator.get_messages(devices[idx].identifier());
+            let expected: Vec<Vec<u8>> = if active_indices.contains(&idx) {
+                vec![vec![]]
+            } else {
+                vec![]
+            };
+            assert_eq!(msgs, expected);
         }
         communicator.relay();
         for idx in 0..devices.len() {
