@@ -16,7 +16,7 @@ clap = { version = "3.1.8", features = ["derive"] }
 rand = "0.8.5"
 tempfile = "3.3.0"
 lazy_static = "1.4.0"
-openssl = "0.10.60"
+openssl = "0.10.66"
 sha2 = "0.10.6"
 meesign-crypto = { git = "https://github.com/crocs-muni/meesign-crypto", rev = "92fbdc7", default-features = false }
 
