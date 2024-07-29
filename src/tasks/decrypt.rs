@@ -101,7 +101,6 @@ impl DecryptTask {
             .map(|d| {
                 ProtocolMessage::decode(d.as_slice())
                     .map_err(|_| String::from("Expected ProtocolMessage."))
-                    .map(|m| m.message)
             })
             .collect();
         if messages.iter().any(|m| m.is_err()) {
