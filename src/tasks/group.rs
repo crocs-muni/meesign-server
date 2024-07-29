@@ -204,17 +204,10 @@ impl Task for GroupTask {
             return Err("Wasn't waiting for a message from this ID.".to_string());
         }
 
-        let messages: Vec<_> = data
-            .iter()
-            .map(|d| {
-                ProtocolMessage::decode(d.as_slice())
-                    .map_err(|_| String::from("Expected ProtocolMessage."))
-            })
-            .collect();
-        if messages.iter().any(|m| m.is_err()) {
-            return Err("Failed to decode messages".to_string());
-        }
-        let messages = messages.into_iter().map(|m| m.unwrap()).collect();
+        let messages = data.iter()
+            .map(|d| ProtocolMessage::decode(d.as_slice()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| "Failed to decode messages".to_string())?;
 
         self.communicator.receive_messages(device_id, messages);
         self.last_update = get_timestamp();
