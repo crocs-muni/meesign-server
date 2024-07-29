@@ -1,7 +1,7 @@
 use crate::device::Device;
 use crate::get_timestamp;
 use crate::proto::ProtocolType;
-use meesign_crypto::proto::{Message, ProtocolMessage};
+use meesign_crypto::proto::{Message, MessageType, ProtocolMessage};
 use rand::prelude::SliceRandom;
 use rand::thread_rng;
 use std::collections::HashMap;
@@ -26,6 +26,8 @@ pub struct Communicator {
     output: Vec<Vec<u8>>,
     /// Relayed protocol type
     protocol_type: ProtocolType,
+    /// Relayed message type
+    message_type: Option<MessageType>,
 }
 
 impl Communicator {
@@ -56,6 +58,7 @@ impl Communicator {
             input: Vec::new(),
             output: Vec::new(),
             protocol_type,
+            message_type: None,
         };
         communicator.clear_input();
         communicator
@@ -67,6 +70,7 @@ impl Communicator {
         for _ in 0..self.threshold {
             self.input.push(vec![None; self.threshold as usize]);
         }
+        self.message_type = None;
     }
 
     /// Receive messages from a given device identifier
@@ -78,17 +82,36 @@ impl Communicator {
     pub fn receive_messages(
         &mut self,
         from_identifier: &[u8],
-        messages: Vec<Vec<Vec<u8>>>,
+        messages: Vec<ProtocolMessage>,
     ) -> bool {
         let from_indices = self.identifier_to_indices(from_identifier);
         if messages.is_empty() || from_indices.len() != messages.len() {
             return false;
         }
 
-        for (from_index, message) in from_indices.into_iter().zip(messages) {
-            assert_eq!(message.len(), (self.threshold - 1) as usize);
+        let message_type = messages[0].message_type();
+        assert!(messages.iter()
+                .all(|msg| msg.message_type() == message_type));
+        self.message_type = Some(message_type);
 
-            self.input[from_index] = message.into_iter().map(Some).collect();
+        for (from_index, message) in from_indices.into_iter().zip(messages) {
+            self.input[from_index] = match message.message_type() {
+                MessageType::Broadcast => {
+                    let messages = message.messages;
+                    assert_eq!(messages.len(), 1);
+
+                    std::iter::repeat(messages[0].clone())
+                        .map(Some)
+                        .take(self.threshold as usize - 1)
+                        .collect()
+                },
+                MessageType::Unicast => {
+                    let messages = message.messages;
+                    assert_eq!(messages.len(), (self.threshold - 1) as usize);
+
+                    messages.into_iter().map(Some).collect()
+                },
+            };
             self.input[from_index].insert(from_index, None);
         }
         true
@@ -126,7 +149,8 @@ impl Communicator {
             }
             let message = ProtocolMessage {
                 protocol_type: meesign_crypto::proto::ProtocolType::from(self.protocol_type) as i32,
-                message: out,
+                message_type: self.message_type.unwrap().into(),
+                messages: out,
             };
             self.output.push(Message::encode_to_vec(&message));
         }
@@ -420,7 +444,11 @@ mod tests {
             assert_eq!(
                 communicator.receive_messages(
                     devices[idx].identifier(),
-                    vec![vec![vec![]; active_indices.len() - 1]]
+                    vec![ProtocolMessage {
+                        protocol_type: 0,
+                        message_type: MessageType::Unicast.into(),
+                        messages: vec![vec![]; active_indices.len() - 1]
+                    }]
                 ),
                 active_indices.contains(&idx)
             );
@@ -492,7 +520,13 @@ mod tests {
         communicator.decide(devices[1].identifier(), true);
         communicator.decide(devices[2].identifier(), true);
         communicator.set_active_devices();
-        communicator.receive_messages(devices[0].identifier(), vec![vec![vec![]; 1]]);
+        communicator.receive_messages(devices[0].identifier(), vec![
+            ProtocolMessage {
+                protocol_type: 0,
+                message_type: MessageType::Unicast.into(),
+                messages: vec![vec![]; 1]
+            }
+        ]);
     }
 
     #[test]
@@ -504,7 +538,13 @@ mod tests {
         communicator.decide(devices[1].identifier(), true);
         communicator.decide(devices[2].identifier(), true);
         communicator.set_active_devices();
-        communicator.receive_messages(devices[0].identifier(), vec![vec![vec![]; 3]]);
+        communicator.receive_messages(devices[0].identifier(), vec![
+            ProtocolMessage {
+                protocol_type: 0,
+                message_type: MessageType::Unicast.into(),
+                messages: vec![vec![]; 3]
+            }
+        ]);
     }
 
     #[test]
