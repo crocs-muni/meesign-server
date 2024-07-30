@@ -617,6 +617,43 @@ mod tests {
         assert_eq!(communicator.acknowledge(devices[0].identifier()), false);
     }
 
+    #[test]
+    fn broadcast_messages() {
+        let devices = prepare_devices(3);
+        let mut communicator = Communicator::new(&devices, 2, ProtocolType::Gg18);
+
+        communicator.decide(devices[0].identifier(), true);
+        communicator.decide(devices[1].identifier(), true);
+        communicator.decide(devices[2].identifier(), false);
+        communicator.set_active_devices();
+
+        assert_eq!(communicator.get_protocol_indices(), vec![0, 1]);
+
+        let messages: Vec<_> = (0..2).map(|i| ProtocolMessage {
+            protocol_type: ProtocolType::Gg18.into(),
+            message_type: MessageType::Broadcast.into(),
+            messages: vec![vec![i]],
+        }).collect();
+
+        for i in 0..2 {
+            assert_eq!(communicator.receive_messages(
+                devices[i].identifier(),
+                vec![messages[i].clone()]
+            ), true);
+        }
+
+        assert_eq!(communicator.round_received(), true);
+        communicator.relay();
+        assert_eq!(
+            communicator.get_messages(devices[0].identifier()),
+            vec![messages[1].encode_to_vec()],
+        );
+        assert_eq!(
+            communicator.get_messages(devices[1].identifier()),
+            vec![messages[0].encode_to_vec()],
+        );
+    }
+
     fn prepare_devices(n: usize) -> Vec<Arc<Device>> {
         assert!(n < u8::MAX as usize);
         (0..n)
