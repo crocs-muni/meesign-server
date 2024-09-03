@@ -100,10 +100,9 @@ impl Communicator {
 
     /// Moves messages from incoming buffers to outgoing buffers
     pub fn relay(&mut self) {
-        self.output = (0..self.threshold)
+        self.output = self.get_protocol_indices()
+            .into_iter()
             .map(|idx| {
-                let idx = idx + self.protocol_type.index_offset();
-
                 let mut unicasts = HashMap::new();
                 let mut broadcasts = HashMap::new();
 
