@@ -26,8 +26,8 @@ impl Protocol for FROSTGroup {
         let threshold = self.threshold;
         communicator.send_all(|idx| {
             (ProtocolGroupInit {
-                protocol_type: ProtocolType::Frost as i32,
-                index: idx + 1,
+                protocol_type: meesign_crypto::proto::ProtocolType::Frost as i32,
+                index: idx,
                 parties,
                 threshold,
             })
@@ -77,15 +77,12 @@ impl Protocol for FROSTSign {
     fn initialize(&mut self, communicator: &mut Communicator, data: &[u8]) {
         communicator.set_active_devices();
         let participant_indices: Vec<_> = communicator
-            .get_protocol_indices()
-            .into_iter()
-            .map(|idx| idx + 1)
-            .collect();
+            .get_protocol_indices();
         communicator.send_all(|idx| {
             (ProtocolInit {
-                protocol_type: ProtocolType::Frost as i32,
+                protocol_type: meesign_crypto::proto::ProtocolType::Frost as i32,
                 indices: participant_indices.clone(),
-                index: idx + 1,
+                index: idx,
                 data: Vec::from(data),
             })
             .encode_to_vec()

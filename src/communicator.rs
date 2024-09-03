@@ -1,7 +1,7 @@
 use crate::device::Device;
 use crate::get_timestamp;
 use crate::proto::ProtocolType;
-use meesign_crypto::proto::{Message, MessageType, ProtocolMessage};
+use meesign_crypto::proto::{Message, ClientMessage, ServerMessage};
 use rand::prelude::SliceRandom;
 use rand::thread_rng;
 use std::collections::HashMap;
@@ -21,13 +21,11 @@ pub struct Communicator {
     /// A mapping of device identifiers to their Task acknowledgement
     acknowledgements: HashMap<Vec<u8>, bool>,
     /// Incoming messages
-    input: Vec<Vec<Option<Vec<u8>>>>,
+    input: HashMap<u32, ClientMessage>,
     /// Outgoing messages
-    output: Vec<Vec<u8>>,
+    output: HashMap<u32, Vec<u8>>,
     /// Relayed protocol type
     protocol_type: ProtocolType,
-    /// Relayed message type
-    message_type: Option<MessageType>,
 }
 
 impl Communicator {
@@ -55,10 +53,9 @@ impl Communicator {
                 .iter()
                 .map(|x| (x.identifier().to_vec(), false))
                 .collect(),
-            input: Vec::new(),
-            output: Vec::new(),
+            input: HashMap::new(),
+            output: HashMap::new(),
             protocol_type,
-            message_type: None,
         };
         communicator.clear_input();
         communicator
@@ -67,10 +64,6 @@ impl Communicator {
     /// Clears incoming message buffers
     pub fn clear_input(&mut self) {
         self.input.clear();
-        for _ in 0..self.threshold {
-            self.input.push(vec![None; self.threshold as usize]);
-        }
-        self.message_type = None;
     }
 
     /// Receive messages from a given device identifier
@@ -82,78 +75,59 @@ impl Communicator {
     pub fn receive_messages(
         &mut self,
         from_identifier: &[u8],
-        messages: Vec<ProtocolMessage>,
+        messages: Vec<ClientMessage>,
     ) -> bool {
         let from_indices = self.identifier_to_indices(from_identifier);
         if messages.is_empty() || from_indices.len() != messages.len() {
             return false;
         }
 
-        let message_type = messages[0].message_type();
-        assert!(messages.iter()
-                .all(|msg| msg.message_type() == message_type));
-        self.message_type = Some(message_type);
-
-        for (from_index, message) in from_indices.into_iter().zip(messages) {
-            self.input[from_index] = match message.message_type() {
-                MessageType::Broadcast => {
-                    let messages = message.messages;
-                    assert_eq!(messages.len(), 1);
-
-                    std::iter::repeat(messages[0].clone())
-                        .map(Some)
-                        .take(self.threshold as usize - 1)
-                        .collect()
-                },
-                MessageType::Unicast => {
-                    let messages = message.messages;
-                    assert_eq!(messages.len(), (self.threshold - 1) as usize);
-
-                    messages.into_iter().map(Some).collect()
-                },
-            };
-            self.input[from_index].insert(from_index, None);
+        for msg in &messages {
+            assert!(msg.broadcast.is_some() || msg.unicasts.len() == self.threshold as usize - 1);
         }
+
+        self.input.extend(from_indices.into_iter().zip(messages));
+
         true
     }
 
     /// Is waiting for a message from the given device id
     pub fn waiting_for(&self, device_id: &[u8]) -> bool {
-        let device_indices = self.identifier_to_indices(device_id);
-        if device_indices.is_empty() {
-            return false;
-        }
-        for device_index in device_indices.into_iter() {
-            if self
-                .input
-                .get(device_index)
-                .map(|messages| !messages.iter().any(Option::is_some))
-                .unwrap_or(true)
-            {
-                return true;
-            }
-        }
-        return false;
+        self.identifier_to_indices(device_id)
+            .iter()
+            .any(|idx| !self.input.contains_key(idx))
     }
 
     /// Moves messages from incoming buffers to outgoing buffers
     pub fn relay(&mut self) {
-        self.output.clear();
+        self.output = (0..self.threshold)
+            .map(|idx| {
+                let idx = idx + self.protocol_type.index_offset();
 
-        for i in 0..self.threshold {
-            let mut out: Vec<Vec<u8>> = Vec::new();
-            for j in 0..self.threshold {
-                if i != j {
-                    out.push(self.input[j as usize][i as usize].clone().unwrap());
+                let mut unicasts = HashMap::new();
+                let mut broadcasts = HashMap::new();
+
+                for (&sender, msg) in &self.input {
+                    if sender == idx {
+                        continue;
+                    }
+                    if let Some(broadcast) = &msg.broadcast {
+                        broadcasts.insert(sender, broadcast.clone());
+                    }
+                    if let Some(unicast) = msg.unicasts.get(&idx) {
+                        unicasts.insert(sender, unicast.clone());
+                    }
                 }
-            }
-            let message = ProtocolMessage {
-                protocol_type: meesign_crypto::proto::ProtocolType::from(self.protocol_type) as i32,
-                message_type: self.message_type.unwrap().into(),
-                messages: out,
-            };
-            self.output.push(Message::encode_to_vec(&message));
-        }
+
+                let msg = ServerMessage {
+                    protocol_type: meesign_crypto::proto::ProtocolType::from(self.protocol_type) as i32,
+                    unicasts,
+                    broadcasts,
+                };
+
+                (idx, msg.encode_to_vec())
+            })
+            .collect();
 
         self.clear_input();
     }
@@ -163,12 +137,10 @@ impl Communicator {
     where
         F: Fn(u32) -> Vec<u8>,
     {
-        self.output.clear();
-        let indices = self.get_protocol_indices();
-
-        for idx in indices {
-            self.output.push(f(idx));
-        }
+        self.output = self.get_protocol_indices()
+            .into_iter()
+            .map(|idx| (idx, f(idx)))
+            .collect();
 
         self.clear_input();
     }
@@ -179,27 +151,33 @@ impl Communicator {
             return false;
         }
 
-        self.active_devices
-            .as_ref()
-            .unwrap()
-            .iter()
-            .zip(self.input.iter())
-            .filter(|(_a, b)| b.iter().all(Option::is_none))
-            .count()
-            == 0
+        self.input.len() == self.active_devices.as_ref().unwrap().len()
     }
 
     /// Get message for given device id
     pub fn get_messages(&self, device_id: &[u8]) -> Vec<Vec<u8>> {
         self.identifier_to_indices(device_id)
-            .into_iter()
+            .iter()
             .map(|idx| self.output.get(idx).map(Vec::clone).unwrap_or_default())
             .collect()
     }
 
     /// Get final message
     pub fn get_final_message(&self) -> Option<Vec<u8>> {
-        self.input[0][1].clone()
+        let results: Vec<_> = self.input
+            .iter()
+            .map(|(_, msg)| msg.broadcast.clone())
+            .collect();
+
+        if results.len() == 0 {
+            return None;
+        }
+
+        for msg in &results {
+            assert_eq!(msg, &results[0]);
+        }
+
+        results[0].clone()
     }
 
     /// Set active devices
@@ -322,7 +300,7 @@ impl Communicator {
         for device in &active_devices {
             while let Some((idx, dev)) = devices_iter.next() {
                 if dev.identifier() == device {
-                    indices.push(idx as u32);
+                    indices.push(idx as u32 + self.protocol_type.index_offset());
                     break;
                 }
             }
@@ -332,17 +310,24 @@ impl Communicator {
     }
 
     /// Translate device identifier to `active_devices` indices
-    fn identifier_to_indices(&self, device_id: &[u8]) -> Vec<usize> {
+    fn identifier_to_indices(&self, device_id: &[u8]) -> Vec<u32> {
         if self.active_devices.is_none() {
             return Vec::new();
         }
 
+        let mut devices_iter = self.device_list.iter().enumerate();
         let mut indices = Vec::new();
-        for (idx, device) in self.active_devices.as_ref().unwrap().iter().enumerate() {
+
+        for device in self.get_active_devices().unwrap() {
             if device == device_id {
-                indices.push(idx);
+                let (idx, _) = devices_iter
+                    .find(|(_, dev)| dev.identifier() == device)
+                    .unwrap();
+
+                indices.push(idx as u32 + self.protocol_type.index_offset());
             }
         }
+
         indices
     }
 }
@@ -444,10 +429,14 @@ mod tests {
             assert_eq!(
                 communicator.receive_messages(
                     devices[idx].identifier(),
-                    vec![ProtocolMessage {
+                    vec![ClientMessage {
                         protocol_type: 0,
-                        message_type: MessageType::Unicast.into(),
-                        messages: vec![vec![]; active_indices.len() - 1]
+                        unicasts: active_indices
+                            .iter()
+                            .filter(|&&i| i != idx)
+                            .map(|&i| (i as u32, vec![]))
+                            .collect(),
+                        broadcast: None,
                     }]
                 ),
                 active_indices.contains(&idx)
@@ -521,10 +510,10 @@ mod tests {
         communicator.decide(devices[2].identifier(), true);
         communicator.set_active_devices();
         communicator.receive_messages(devices[0].identifier(), vec![
-            ProtocolMessage {
+            ClientMessage {
                 protocol_type: 0,
-                message_type: MessageType::Unicast.into(),
-                messages: vec![vec![]; 1]
+                unicasts: HashMap::new(),
+                broadcast: None,
             }
         ]);
     }
@@ -539,10 +528,10 @@ mod tests {
         communicator.decide(devices[2].identifier(), true);
         communicator.set_active_devices();
         communicator.receive_messages(devices[0].identifier(), vec![
-            ProtocolMessage {
+            ClientMessage {
                 protocol_type: 0,
-                message_type: MessageType::Unicast.into(),
-                messages: vec![vec![]; 3]
+                unicasts: (0..6 as u32).map(|i| (i, vec![])).collect(),
+                broadcast: None,
             }
         ]);
     }
@@ -603,6 +592,51 @@ mod tests {
     }
 
     #[test]
+    fn protocol_init() {
+        use meesign_crypto::proto::ProtocolInit;
+        let devices = prepare_devices(3);
+        let mut communicator = Communicator::new(&devices, 2, ProtocolType::Frost);
+        communicator.decide(devices[0].identifier(), true);
+        communicator.decide(devices[2].identifier(), true);
+        communicator.set_active_devices();
+        assert_eq!(
+            communicator.get_active_devices(),
+            Some(vec![
+                devices[0].identifier().to_vec(),
+                devices[2].identifier().to_vec()
+            ])
+        );
+        communicator.send_all(|idx| ProtocolInit {
+            protocol_type: ProtocolType::Frost as i32,
+            indices: Vec::new(),
+            index: idx,
+            data: "hello".as_bytes().to_vec(),
+        }.encode_to_vec());
+        assert_eq!(
+            communicator.get_messages(devices[0].identifier()),
+            vec![ProtocolInit {
+                protocol_type: ProtocolType::Frost as i32,
+                indices: Vec::new(),
+                index: 1,
+                data: "hello".as_bytes().to_vec(),
+            }.encode_to_vec()]
+        );
+        assert_eq!(
+            communicator.get_messages(devices[1].identifier()),
+            Vec::new() as Vec<Vec<u8>>
+        );
+        assert_eq!(
+            communicator.get_messages(devices[2].identifier()),
+            vec![ProtocolInit {
+                protocol_type: ProtocolType::Frost as i32,
+                indices: Vec::new(),
+                index: 3,
+                data: "hello".as_bytes().to_vec(),
+            }.encode_to_vec()]
+        );
+    }
+
+    #[test]
     fn unknown_device_acknowledgement() {
         let devices = prepare_devices(3);
         let mut communicator = Communicator::new(&devices[..2], 2, ProtocolType::Gg18);
@@ -620,37 +654,46 @@ mod tests {
     #[test]
     fn broadcast_messages() {
         let devices = prepare_devices(3);
-        let mut communicator = Communicator::new(&devices, 2, ProtocolType::Gg18);
+        let mut communicator = Communicator::new(&devices, 2, ProtocolType::Frost);
 
         communicator.decide(devices[0].identifier(), true);
         communicator.decide(devices[1].identifier(), true);
         communicator.decide(devices[2].identifier(), false);
         communicator.set_active_devices();
 
-        assert_eq!(communicator.get_protocol_indices(), vec![0, 1]);
-
-        let messages: Vec<_> = (0..2).map(|i| ProtocolMessage {
-            protocol_type: ProtocolType::Gg18.into(),
-            message_type: MessageType::Broadcast.into(),
-            messages: vec![vec![i]],
-        }).collect();
+        assert_eq!(communicator.get_protocol_indices(), vec![1, 2]);
 
         for i in 0..2 {
             assert_eq!(communicator.receive_messages(
                 devices[i].identifier(),
-                vec![messages[i].clone()]
+                vec![ClientMessage {
+                    protocol_type: ProtocolType::Frost.into(),
+                    unicasts: HashMap::new(),
+                    broadcast: Some(vec![i as u8]),
+                }]
             ), true);
         }
 
         assert_eq!(communicator.round_received(), true);
+        eprintln!("input: {:?}", communicator.input);
         communicator.relay();
+        eprintln!("output: {:?}", communicator.output);
+
         assert_eq!(
             communicator.get_messages(devices[0].identifier()),
-            vec![messages[1].encode_to_vec()],
+            vec![ServerMessage {
+                protocol_type: ProtocolType::Frost.into(),
+                unicasts: HashMap::new(),
+                broadcasts: HashMap::from([(2, vec![1])]),
+            }.encode_to_vec()],
         );
         assert_eq!(
             communicator.get_messages(devices[1].identifier()),
-            vec![messages[0].encode_to_vec()],
+            vec![ServerMessage {
+                protocol_type: ProtocolType::Frost.into(),
+                unicasts: HashMap::new(),
+                broadcasts: HashMap::from([(1, vec![0])]),
+            }.encode_to_vec()],
         );
     }
 

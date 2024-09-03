@@ -44,6 +44,15 @@ mod proto {
             }
         }
     }
+
+    impl ProtocolType {
+        pub fn index_offset(&self) -> u32 {
+            match self {
+                ProtocolType::Gg18 | ProtocolType::Elgamal => 0,
+                ProtocolType::Frost => 1,
+            }
+        }
+    }
 }
 
 lazy_static! {
