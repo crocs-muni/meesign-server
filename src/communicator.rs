@@ -20,20 +20,21 @@ pub struct Communicator {
     decisions: HashMap<Vec<u8>, i8>,
     /// A mapping of device identifiers to their Task acknowledgement
     acknowledgements: HashMap<Vec<u8>, bool>,
-    /// Incoming messages
+    /// A mapping of protocol indices to incoming messages
     input: HashMap<u32, ClientMessage>,
-    /// Outgoing messages
+    /// A mapping of protocol indices to outgoing messages
     output: HashMap<u32, Vec<u8>>,
     /// Relayed protocol type
     protocol_type: ProtocolType,
 }
 
 impl Communicator {
-    /// Constructs a new Communicator instance with given Devices, threshold, and request message
+    /// Constructs a new Communicator instance with given Devices, threshold and ProtocolType
     ///
     /// # Arguments
     /// * `devices` - a list of devices
     /// * `threshold` - the minimal number of devices to successfully complete the task
+    /// * `protocol_type` - the type of the threshold protocol
     pub fn new(devices: &[Arc<Device>], threshold: u32, protocol_type: ProtocolType) -> Self {
         assert!(devices.len() > 1);
         assert!(threshold <= devices.len() as u32);
@@ -66,12 +67,12 @@ impl Communicator {
         self.input.clear();
     }
 
-    /// Receive messages from a given device identifier
+    /// Receive messages from a given device
     ///
     /// # Arguments
     ///
-    /// * `from_identifier` - identifier of device from which is this broadcast received
-    /// * `message` - vector of length (threshold - 1) containing messages for other parties, sending party is excluded
+    /// * `from_identifier` - identifier of the sender device
+    /// * `messages` - vector containing messages from each of the sender device's shares
     pub fn receive_messages(
         &mut self,
         from_identifier: &[u8],
@@ -133,7 +134,7 @@ impl Communicator {
         self.clear_input();
     }
 
-    /// Sends a message to all active devices that can be parametrized by their share index
+    /// Sends a message to all active devices parametrized by their protocol index
     pub fn send_all<F>(&mut self, f: F)
     where
         F: Fn(u32) -> Vec<u8>,
@@ -156,7 +157,7 @@ impl Communicator {
         self.input.len() == self.active_devices.as_ref().unwrap().len()
     }
 
-    /// Get message for given device id
+    /// Get all messages for a given device
     pub fn get_messages(&self, device_id: &[u8]) -> Vec<Vec<u8>> {
         self.identifier_to_indices(device_id)
             .iter()
@@ -164,7 +165,7 @@ impl Communicator {
             .collect()
     }
 
-    /// Get final message
+    /// Get the final message
     pub fn get_final_message(&self) -> Option<Vec<u8>> {
         let results: Vec<_> = self
             .input
@@ -183,7 +184,11 @@ impl Communicator {
         results[0].clone()
     }
 
-    /// Set active devices
+    /// Sets the active devices
+    ///
+    /// Picks which devices shall participate in the protocol
+    /// Considers only those devices which accepted participation
+    /// If enough devices are available, additionaly filters by response latency
     pub fn set_active_devices(&mut self) -> Vec<Vec<u8>> {
         assert!(self.accept_count() >= self.threshold);
         let agreeing_devices = self
@@ -227,12 +232,16 @@ impl Communicator {
         self.active_devices.as_ref().unwrap().clone()
     }
 
-    /// Get active devices
+    /// Get the active devices
     pub fn get_active_devices(&self) -> Option<Vec<Vec<u8>>> {
         self.active_devices.clone()
     }
 
-    /// Save decision by the given device_id; return true if successful
+    /// Save a decision by the given device
+    ///
+    /// # Returns
+    /// `false` if the `device_id` is invalid or has already decided
+    /// `true` otherwise
     pub fn decide(&mut self, device_id: &[u8], decision: bool) -> bool {
         if !self.decisions.contains_key(device_id) || self.decisions[device_id] != 0 {
             return false;
@@ -276,7 +285,11 @@ impl Communicator {
         }
     }
 
-    /// Save acknowledgement by the given device; return true if successful
+    /// Save an acknowledgement by the given device
+    ///
+    /// # Returns
+    /// `false` if `device` is invalid or has already acknowledged this task's output
+    /// `true` otherwise
     pub fn acknowledge(&mut self, device: &[u8]) -> bool {
         if !self.acknowledgements.contains_key(device) || self.acknowledgements[device] {
             return false;
@@ -285,14 +298,12 @@ impl Communicator {
         true
     }
 
-    /// Check whether a device acknowledged task output
+    /// Check whether a device has acknowledged this task's output
     pub fn device_acknowledged(&self, device: &[u8]) -> bool {
         *self.acknowledgements.get(device).unwrap_or(&false)
     }
 
-    /// Get indices of active devices in the corresponding group
-    ///
-    /// Indices returned by this command correspond to key share indices of `active_devices`.
+    /// Get the protocol indices of active devices
     pub fn get_protocol_indices(&mut self) -> Vec<u32> {
         assert!(self.active_devices.is_some());
 
@@ -312,7 +323,7 @@ impl Communicator {
         indices
     }
 
-    /// Translate device identifier to `active_devices` indices
+    /// Get the protocol indices of an active device
     fn identifier_to_indices(&self, device_id: &[u8]) -> Vec<u32> {
         if self.active_devices.is_none() {
             return Vec::new();
