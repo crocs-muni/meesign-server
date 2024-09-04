@@ -76,8 +76,7 @@ impl FROSTSign {
 impl Protocol for FROSTSign {
     fn initialize(&mut self, communicator: &mut Communicator, data: &[u8]) {
         communicator.set_active_devices();
-        let participant_indices: Vec<_> = communicator
-            .get_protocol_indices();
+        let participant_indices = communicator.get_protocol_indices();
         communicator.send_all(|idx| {
             (ProtocolInit {
                 protocol_type: meesign_crypto::proto::ProtocolType::Frost as i32,

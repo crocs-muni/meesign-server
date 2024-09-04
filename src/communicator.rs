@@ -1,7 +1,7 @@
 use crate::device::Device;
 use crate::get_timestamp;
 use crate::proto::ProtocolType;
-use meesign_crypto::proto::{Message, ClientMessage, ServerMessage};
+use meesign_crypto::proto::{ClientMessage, Message, ServerMessage};
 use rand::prelude::SliceRandom;
 use rand::thread_rng;
 use std::collections::HashMap;
@@ -100,7 +100,8 @@ impl Communicator {
 
     /// Moves messages from incoming buffers to outgoing buffers
     pub fn relay(&mut self) {
-        self.output = self.get_protocol_indices()
+        self.output = self
+            .get_protocol_indices()
             .into_iter()
             .map(|idx| {
                 let mut unicasts = HashMap::new();
@@ -119,7 +120,8 @@ impl Communicator {
                 }
 
                 let msg = ServerMessage {
-                    protocol_type: meesign_crypto::proto::ProtocolType::from(self.protocol_type) as i32,
+                    protocol_type: meesign_crypto::proto::ProtocolType::from(self.protocol_type)
+                        .into(),
                     unicasts,
                     broadcasts,
                 };
@@ -136,7 +138,8 @@ impl Communicator {
     where
         F: Fn(u32) -> Vec<u8>,
     {
-        self.output = self.get_protocol_indices()
+        self.output = self
+            .get_protocol_indices()
             .into_iter()
             .map(|idx| (idx, f(idx)))
             .collect();
@@ -163,7 +166,8 @@ impl Communicator {
 
     /// Get final message
     pub fn get_final_message(&self) -> Option<Vec<u8>> {
-        let results: Vec<_> = self.input
+        let results: Vec<_> = self
+            .input
             .iter()
             .map(|(_, msg)| msg.broadcast.clone())
             .collect();
@@ -508,13 +512,14 @@ mod tests {
         communicator.decide(devices[1].identifier(), true);
         communicator.decide(devices[2].identifier(), true);
         communicator.set_active_devices();
-        communicator.receive_messages(devices[0].identifier(), vec![
-            ClientMessage {
+        communicator.receive_messages(
+            devices[0].identifier(),
+            vec![ClientMessage {
                 protocol_type: 0,
                 unicasts: HashMap::new(),
                 broadcast: None,
-            }
-        ]);
+            }],
+        );
     }
 
     #[test]
@@ -526,13 +531,14 @@ mod tests {
         communicator.decide(devices[1].identifier(), true);
         communicator.decide(devices[2].identifier(), true);
         communicator.set_active_devices();
-        communicator.receive_messages(devices[0].identifier(), vec![
-            ClientMessage {
+        communicator.receive_messages(
+            devices[0].identifier(),
+            vec![ClientMessage {
                 protocol_type: 0,
                 unicasts: (0..6 as u32).map(|i| (i, vec![])).collect(),
                 broadcast: None,
-            }
-        ]);
+            }],
+        );
     }
 
     #[test]
@@ -605,12 +611,15 @@ mod tests {
                 devices[2].identifier().to_vec()
             ])
         );
-        communicator.send_all(|idx| ProtocolInit {
-            protocol_type: ProtocolType::Frost as i32,
-            indices: Vec::new(),
-            index: idx,
-            data: "hello".as_bytes().to_vec(),
-        }.encode_to_vec());
+        communicator.send_all(|idx| {
+            ProtocolInit {
+                protocol_type: ProtocolType::Frost as i32,
+                indices: Vec::new(),
+                index: idx,
+                data: "hello".as_bytes().to_vec(),
+            }
+            .encode_to_vec()
+        });
         assert_eq!(
             communicator.get_messages(devices[0].identifier()),
             vec![ProtocolInit {
@@ -618,7 +627,8 @@ mod tests {
                 indices: Vec::new(),
                 index: 1,
                 data: "hello".as_bytes().to_vec(),
-            }.encode_to_vec()]
+            }
+            .encode_to_vec()]
         );
         assert_eq!(
             communicator.get_messages(devices[1].identifier()),
@@ -631,7 +641,8 @@ mod tests {
                 indices: Vec::new(),
                 index: 3,
                 data: "hello".as_bytes().to_vec(),
-            }.encode_to_vec()]
+            }
+            .encode_to_vec()]
         );
     }
 
@@ -663,14 +674,17 @@ mod tests {
         assert_eq!(communicator.get_protocol_indices(), vec![1, 2]);
 
         for i in 0..2 {
-            assert_eq!(communicator.receive_messages(
-                devices[i].identifier(),
-                vec![ClientMessage {
-                    protocol_type: ProtocolType::Frost.into(),
-                    unicasts: HashMap::new(),
-                    broadcast: Some(vec![i as u8]),
-                }]
-            ), true);
+            assert_eq!(
+                communicator.receive_messages(
+                    devices[i].identifier(),
+                    vec![ClientMessage {
+                        protocol_type: ProtocolType::Frost.into(),
+                        unicasts: HashMap::new(),
+                        broadcast: Some(vec![i as u8]),
+                    }]
+                ),
+                true
+            );
         }
 
         assert_eq!(communicator.round_received(), true);
@@ -684,7 +698,8 @@ mod tests {
                 protocol_type: ProtocolType::Frost.into(),
                 unicasts: HashMap::new(),
                 broadcasts: HashMap::from([(2, vec![1])]),
-            }.encode_to_vec()],
+            }
+            .encode_to_vec()],
         );
         assert_eq!(
             communicator.get_messages(devices[1].identifier()),
@@ -692,7 +707,8 @@ mod tests {
                 protocol_type: ProtocolType::Frost.into(),
                 unicasts: HashMap::new(),
                 broadcasts: HashMap::from([(1, vec![0])]),
-            }.encode_to_vec()],
+            }
+            .encode_to_vec()],
         );
     }
 

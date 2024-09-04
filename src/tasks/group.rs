@@ -9,7 +9,7 @@ use crate::protocols::Protocol;
 use crate::tasks::{Task, TaskResult, TaskStatus};
 use crate::{get_timestamp, utils};
 use log::{info, warn};
-use meesign_crypto::proto::{Message as _, ClientMessage};
+use meesign_crypto::proto::{ClientMessage, Message as _};
 use prost::Message as _;
 use std::io::Read;
 use std::process::{Command, Stdio};
@@ -204,7 +204,8 @@ impl Task for GroupTask {
             return Err("Wasn't waiting for a message from this ID.".to_string());
         }
 
-        let messages = data.iter()
+        let messages = data
+            .iter()
             .map(|d| ClientMessage::decode(d.as_slice()))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| "Failed to decode messages".to_string())?;
