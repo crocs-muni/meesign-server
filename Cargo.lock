@@ -958,6 +958,7 @@ checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
 [[package]]
 name = "meesign-crypto"
 version = "0.3.0"
+source = "git+https://github.com/crocs-muni/meesign-crypto?rev=343fbbc#343fbbcb57c3efd0840716e41ddcbf4328cf7ca9"
 dependencies = [
  "aes-gcm",
  "cbindgen",
