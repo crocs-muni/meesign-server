@@ -324,7 +324,7 @@ impl Communicator {
     }
 
     /// Get the protocol indices of an active device
-    fn identifier_to_indices(&self, device_id: &[u8]) -> Vec<u32> {
+    pub fn identifier_to_indices(&self, device_id: &[u8]) -> Vec<u32> {
         if self.active_devices.is_none() {
             return Vec::new();
         }
