@@ -543,6 +543,9 @@ pub fn issue_certificate(device_name: &str, csr: &[u8]) -> Result<Vec<u8>, Strin
         .append_extension(authority_key_identifier)
         .unwrap();
 
+    let pub_key_ext = csr.extensions().unwrap().pop().unwrap();
+    cert_builder.append_extension(pub_key_ext).unwrap();
+
     cert_builder.sign(&CA_KEY, MessageDigest::sha256()).unwrap();
 
     Ok(cert_builder.build().to_der().unwrap())
