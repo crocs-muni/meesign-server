@@ -55,7 +55,7 @@ impl Protocol for ElgamalGroup {
     }
 
     fn last_round(&self) -> u16 {
-        4
+        4 + 2
     }
 
     fn get_type(&self) -> ProtocolType {
@@ -108,7 +108,7 @@ impl Protocol for ElgamalDecrypt {
     }
 
     fn last_round(&self) -> u16 {
-        2
+        2 + 1
     }
 
     fn get_type(&self) -> ProtocolType {

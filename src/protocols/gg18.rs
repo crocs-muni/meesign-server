@@ -55,7 +55,7 @@ impl Protocol for GG18Group {
     }
 
     fn last_round(&self) -> u16 {
-        6
+        6 + 4
     }
 
     fn get_type(&self) -> ProtocolType {
@@ -108,7 +108,7 @@ impl Protocol for GG18Sign {
     }
 
     fn last_round(&self) -> u16 {
-        10
+        10 + 8
     }
 
     fn get_type(&self) -> ProtocolType {

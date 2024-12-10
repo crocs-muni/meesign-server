@@ -55,7 +55,7 @@ impl Protocol for FROSTGroup {
     }
 
     fn last_round(&self) -> u16 {
-        3
+        3 + 1
     }
 
     fn get_type(&self) -> ProtocolType {
@@ -108,7 +108,7 @@ impl Protocol for FROSTSign {
     }
 
     fn last_round(&self) -> u16 {
-        3
+        3 + 2
     }
 
     fn get_type(&self) -> ProtocolType {
