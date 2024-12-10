@@ -9,7 +9,7 @@ use crate::protocols::Protocol;
 use crate::tasks::{Task, TaskResult, TaskStatus};
 use crate::{get_timestamp, utils};
 use log::{info, warn};
-use meesign_crypto::proto::{ClientMessage, Message as _, ServerMessage, SignedMessage};
+use meesign_crypto::proto::{ClientMessage, Message as _, ServerMessage};
 use prost::Message as _;
 use std::collections::HashMap;
 use std::io::Read;
@@ -117,8 +117,7 @@ impl GroupTask {
         let identifier = identifier.unwrap();
         // TODO
         let certificate = if self.protocol.get_type() == ProtocolType::Gg18 {
-            let signed_pub_key = SignedMessage::decode(identifier.as_slice()).unwrap();
-            Some(issue_certificate(&self.name, &signed_pub_key.message))
+            Some(issue_certificate(&self.name, &identifier))
         } else {
             None
         };

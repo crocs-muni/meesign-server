@@ -1,6 +1,7 @@
 use crate::device::Device;
 use crate::get_timestamp;
 use crate::proto::ProtocolType;
+use meesign_crypto::auth::verify_broadcast;
 use meesign_crypto::proto::{ClientMessage, Message, ServerMessage};
 use rand::prelude::SliceRandom;
 use rand::thread_rng;
@@ -167,21 +168,36 @@ impl Communicator {
 
     /// Get the final message
     pub fn get_final_message(&self) -> Option<Vec<u8>> {
-        let results: Vec<_> = self
-            .input
-            .iter()
-            .map(|(_, msg)| msg.broadcast.clone())
-            .collect();
-
-        if results.len() == 0 {
+        if self.input.len() == 0 {
             return None;
         }
 
-        for msg in &results {
-            assert_eq!(msg, &results[0]);
+        let active_devices = self.get_active_devices()?;
+        let protocol_indices = self.get_protocol_indices();
+
+        let mut final_message = None;
+        for (&sender, msg) in &self.input {
+            let device_index = protocol_indices
+                .iter()
+                .position(|&idx| idx == sender)
+                .unwrap();
+            let device = &active_devices[device_index];
+            let cert_der = self
+                .device_list
+                .iter()
+                .find(|dev| dev.identifier() == device)
+                .unwrap()
+                .certificate();
+
+            // NOTE: Verify all signed broadcasts and check that the messages are all equal
+            let msg = verify_broadcast(msg.broadcast.as_ref().unwrap(), &cert_der).ok()?;
+            if let Some(prev) = final_message {
+                assert_eq!(prev, msg);
+            }
+            final_message = Some(msg);
         }
 
-        results[0].clone()
+        final_message
     }
 
     /// Sets the active devices
@@ -304,7 +320,7 @@ impl Communicator {
     }
 
     /// Get the protocol indices of active devices
-    pub fn get_protocol_indices(&mut self) -> Vec<u32> {
+    pub fn get_protocol_indices(&self) -> Vec<u32> {
         assert!(self.active_devices.is_some());
 
         let active_devices = self.get_active_devices().unwrap();
