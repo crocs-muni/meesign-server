@@ -43,3 +43,7 @@ Server-side implementation for MeeSign system.
    There are 2 types of available releases:
    1. **latest** - this is the latest stable version, you can optionally specify a specific stable version
    2. **nightly** - a bleeding-edge unstable version that is released every midnight
+
+## Acknowledgements
+
+* This work was supported by the Ministry of the Interior of the Czech Republic under grant VJ01010084 in program IMPAKT I.
