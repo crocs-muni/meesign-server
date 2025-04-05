@@ -2,6 +2,7 @@ use crate::communicator::Communicator;
 use crate::proto::ProtocolType;
 use crate::protocols::Protocol;
 use meesign_crypto::proto::{Message, ProtocolGroupInit, ProtocolInit};
+use meesign_crypto::protocol::gg18 as protocol;
 
 pub struct GG18Group {
     parties: u32,
@@ -55,7 +56,7 @@ impl Protocol for GG18Group {
     }
 
     fn last_round(&self) -> u16 {
-        6 + 4
+        protocol::KEYGEN_ROUNDS
     }
 
     fn get_type(&self) -> ProtocolType {
@@ -108,7 +109,7 @@ impl Protocol for GG18Sign {
     }
 
     fn last_round(&self) -> u16 {
-        10 + 8
+        protocol::SIGN_ROUNDS
     }
 
     fn get_type(&self) -> ProtocolType {

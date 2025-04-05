@@ -2,6 +2,7 @@ use crate::communicator::Communicator;
 use crate::proto::ProtocolType;
 use crate::protocols::Protocol;
 use meesign_crypto::proto::{Message, ProtocolGroupInit, ProtocolInit};
+use meesign_crypto::protocol::elgamal as protocol;
 
 pub struct ElgamalGroup {
     parties: u32,
@@ -55,7 +56,7 @@ impl Protocol for ElgamalGroup {
     }
 
     fn last_round(&self) -> u16 {
-        4 + 2
+        protocol::KEYGEN_ROUNDS
     }
 
     fn get_type(&self) -> ProtocolType {
@@ -108,7 +109,7 @@ impl Protocol for ElgamalDecrypt {
     }
 
     fn last_round(&self) -> u16 {
-        2 + 1
+        protocol::DECRYPT_ROUNDS
     }
 
     fn get_type(&self) -> ProtocolType {

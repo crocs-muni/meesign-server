@@ -2,6 +2,7 @@ use crate::communicator::Communicator;
 use crate::proto::ProtocolType;
 use crate::protocols::Protocol;
 use meesign_crypto::proto::{Message, ProtocolGroupInit, ProtocolInit};
+use meesign_crypto::protocol::frost as protocol;
 
 pub struct FROSTGroup {
     parties: u32,
@@ -55,7 +56,7 @@ impl Protocol for FROSTGroup {
     }
 
     fn last_round(&self) -> u16 {
-        3 + 1
+        protocol::KEYGEN_ROUNDS
     }
 
     fn get_type(&self) -> ProtocolType {
@@ -108,7 +109,7 @@ impl Protocol for FROSTSign {
     }
 
     fn last_round(&self) -> u16 {
-        3 + 2
+        protocol::SIGN_ROUNDS
     }
 
     fn get_type(&self) -> ProtocolType {
