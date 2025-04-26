@@ -18,7 +18,7 @@ tempfile = "3.3.0"
 lazy_static = "1.4.0"
 openssl = "0.10.60"
 sha2 = "0.10.6"
-meesign-crypto = { git = "https://github.com/crocs-muni/meesign-crypto", rev = "b0e7f14", default-features = false, features = ["elgamal-encrypt"] }
+meesign-crypto = { git = "https://github.com/crocs-muni/meesign-crypto", rev = "ccf6b1d", default-features = false, features = ["elgamal-encrypt"] }
 
 [build-dependencies]
 tonic-build = "0.10"

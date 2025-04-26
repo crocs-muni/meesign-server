@@ -31,6 +31,7 @@ mod proto {
                 meesign_crypto::proto::ProtocolType::Gg18 => ProtocolType::Gg18,
                 meesign_crypto::proto::ProtocolType::Elgamal => ProtocolType::Elgamal,
                 meesign_crypto::proto::ProtocolType::Frost => ProtocolType::Frost,
+                meesign_crypto::proto::ProtocolType::Musig2 => ProtocolType::Musig2,
             }
         }
     }
@@ -41,6 +42,7 @@ mod proto {
                 ProtocolType::Gg18 => meesign_crypto::proto::ProtocolType::Gg18,
                 ProtocolType::Elgamal => meesign_crypto::proto::ProtocolType::Elgamal,
                 ProtocolType::Frost => meesign_crypto::proto::ProtocolType::Frost,
+                ProtocolType::Musig2 => meesign_crypto::proto::ProtocolType::Musig2,
             }
         }
     }
@@ -48,7 +50,7 @@ mod proto {
     impl ProtocolType {
         pub fn index_offset(&self) -> u32 {
             match self {
-                ProtocolType::Gg18 | ProtocolType::Elgamal => 0,
+                ProtocolType::Gg18 | ProtocolType::Elgamal | ProtocolType::Musig2 => 0,
                 ProtocolType::Frost => 1,
             }
         }
