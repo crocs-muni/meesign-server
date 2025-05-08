@@ -222,15 +222,15 @@ impl Task for SignTask {
         TaskType::SignChallenge
     }
 
-    async fn get_work(&self, device_id: Option<&[u8]>) -> Option<Vec<Vec<u8>>> {
+    async fn get_work(&self, device_id: Option<&[u8]>) -> Vec<Vec<u8>> {
         if device_id.is_none() || !self.waiting_for(device_id.unwrap()).await {
-            return None;
+            return Vec::new();
         }
 
         self.communicator
             .read()
             .await
-            .get_message(device_id.unwrap())
+            .get_messages(device_id.unwrap())
     }
 
     fn get_result(&self) -> Option<TaskResult> {

@@ -55,6 +55,7 @@ impl From<Device> for crate::proto::Device {
         crate::proto::Device {
             identifier: device.id,
             name: device.name,
+            kind: crate::proto::DeviceKind::User.into(), // TODO: Use device.kind
             certificate: device.certificate,
             last_active: device.last_active.timestamp() as u64,
         }

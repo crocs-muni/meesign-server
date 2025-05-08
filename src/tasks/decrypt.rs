@@ -172,12 +172,12 @@ impl Task for DecryptTask {
         TaskType::Decrypt
     }
 
-    async fn get_work(&self, device_id: Option<&[u8]>) -> Option<Vec<Vec<u8>>> {
+    async fn get_work(&self, device_id: Option<&[u8]>) -> Vec<Vec<u8>> {
         if device_id.is_none() || !self.waiting_for(device_id.unwrap()).await {
-            return None;
+            return Vec::new();
         }
 
-        Some(self.communicator.get_messages(device_id.unwrap()))
+        self.communicator.get_messages(device_id.unwrap())
     }
 
     fn get_result(&self) -> Option<TaskResult> {
@@ -198,7 +198,7 @@ impl Task for DecryptTask {
     async fn update(
         &mut self,
         device_id: &[u8],
-        data: &[u8],
+        data: &Vec<Vec<u8>>,
         repository: Arc<Repository>,
     ) -> Result<bool, Error> {
         let result = self.update_internal(device_id, data).await;

@@ -25,6 +25,9 @@ mod utils;
 mod proto {
     #![allow(clippy::derive_partial_eq_without_eq)]
     tonic::include_proto!("meesign");
+    pub(crate) use mee_sign_client::MeeSignClient;
+    pub(crate) use mee_sign_server::MeeSign;
+    pub(crate) use mee_sign_server::MeeSignServer;
     use crate::persistence::Group as GroupModel;
 
     impl From<meesign_crypto::proto::ProtocolType> for ProtocolType {
@@ -66,6 +69,7 @@ mod proto {
                 threshold: model.threshold as u32,
                 protocol: protocol.into(),
                 key_type: key_type.into(),
+                note: model.note,
                 device_ids: model.device_ids,
             }
         }

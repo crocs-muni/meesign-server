@@ -45,24 +45,18 @@ impl Communicator {
 
         let decisions = device_list
             .iter()
-            .map(|x| (x.identifier().to_vec(), None))
+            .map(|x| (x.identifier().clone(), 0))
             .collect();
         let acknowledgements = device_list
             .iter()
-            .map(|x| (x.identifier().to_vec(), false))
+            .map(|x| (x.identifier().clone(), false))
             .collect();
         let mut communicator = Communicator {
             threshold,
             device_list,
             active_devices: None,
-            decisions: device_list
-                .iter()
-                .map(|x| (x.identifier().clone(), 0))
-                .collect(),
-            acknowledgements: device_list
-                .iter()
-                .map(|x| (x.identifier().clone(), false))
-                .collect(),
+            decisions,
+            acknowledgements,
             input: HashMap::new(),
             output: HashMap::new(),
             protocol_type,
@@ -190,15 +184,15 @@ impl Communicator {
                 .position(|&idx| idx == sender)
                 .unwrap();
             let device = &active_devices[device_index];
-            let cert_der = self
+            let cert_der = &self
                 .device_list
                 .iter()
                 .find(|dev| dev.identifier() == device)
                 .unwrap()
-                .certificate();
+                .certificate;
 
             // NOTE: Verify all signed broadcasts and check that the messages are all equal
-            let msg = verify_broadcast(msg.broadcast.as_ref().unwrap(), &cert_der).ok()?;
+            let msg = verify_broadcast(msg.broadcast.as_ref().unwrap(), cert_der).ok()?;
             if let Some(prev) = final_message {
                 assert_eq!(prev, msg);
             }
@@ -365,7 +359,7 @@ impl Communicator {
         for device in self.get_active_devices().unwrap() {
             if device == device_id {
                 let (idx, _) = devices_iter
-                    .find(|(_, dev)| dev.identifier() == device)
+                    .find(|(_, dev)| dev.identifier() == &device)
                     .unwrap();
 
                 indices.push(idx as u32 + self.protocol_type.index_offset());
@@ -541,9 +535,9 @@ mod tests {
     fn repeated_devices() {
         let devices = prepare_devices(1);
         let devices = vec![devices[0].clone(), devices[0].clone()];
-        let mut communicator = Communicator::new(&devices, 2, ProtocolType::Gg18);
+        let mut communicator = Communicator::new(devices.clone(), 2, ProtocolType::Gg18);
         assert_eq!(communicator.decide(devices[0].identifier(), true), true);
-        communicator.set_active_devices();
+        communicator.set_active_devices(None);
         assert_eq!(communicator.get_protocol_indices(), vec![0, 1]);
     }
 
@@ -555,7 +549,7 @@ mod tests {
         communicator.decide(devices[0].identifier(), true);
         communicator.decide(devices[1].identifier(), true);
         communicator.decide(devices[2].identifier(), true);
-        communicator.set_active_devices();
+        communicator.set_active_devices(None);
         communicator.receive_messages(
             devices[0].identifier(),
             vec![ClientMessage {
@@ -574,7 +568,7 @@ mod tests {
         communicator.decide(devices[0].identifier(), true);
         communicator.decide(devices[1].identifier(), true);
         communicator.decide(devices[2].identifier(), true);
-        communicator.set_active_devices();
+        communicator.set_active_devices(None);
         communicator.receive_messages(
             devices[0].identifier(),
             vec![ClientMessage {
@@ -644,10 +638,10 @@ mod tests {
     fn protocol_init() {
         use meesign_crypto::proto::ProtocolInit;
         let devices = prepare_devices(3);
-        let mut communicator = Communicator::new(&devices, 2, ProtocolType::Frost);
+        let mut communicator = Communicator::new(devices.clone(), 2, ProtocolType::Frost);
         communicator.decide(devices[0].identifier(), true);
         communicator.decide(devices[2].identifier(), true);
-        communicator.set_active_devices();
+        communicator.set_active_devices(None);
         assert_eq!(
             communicator.get_active_devices(),
             Some(vec![
@@ -712,12 +706,12 @@ mod tests {
     #[test]
     fn broadcast_messages() {
         let devices = prepare_devices(3);
-        let mut communicator = Communicator::new(&devices, 2, ProtocolType::Frost);
+        let mut communicator = Communicator::new(devices.clone(), 2, ProtocolType::Frost);
 
         communicator.decide(devices[0].identifier(), true);
         communicator.decide(devices[1].identifier(), true);
         communicator.decide(devices[2].identifier(), false);
-        communicator.set_active_devices();
+        communicator.set_active_devices(None);
 
         assert_eq!(communicator.get_protocol_indices(), vec![1, 2]);
 

@@ -37,7 +37,7 @@ pub struct GroupTask {
     last_update: u64,
     attempts: u32,
     note: Option<String>,
-    certificates_sent: bool,
+    certificates_sent: bool, // TODO: remove the field completely
 }
 
 impl GroupTask {
@@ -192,7 +192,7 @@ impl GroupTask {
 
     async fn next_round(&mut self, repository: Arc<Repository>) {
         if !self.certificates_sent {
-            self.send_certificates();
+            self.send_certificates().await;
         } else if self.protocol.round() == 0 {
             self.start_task(repository).await.unwrap();
         } else if self.protocol.round() < self.protocol.last_round() {
@@ -202,20 +202,25 @@ impl GroupTask {
         }
     }
 
-    fn send_certificates(&mut self) {
-        self.communicator.set_active_devices();
+    async fn send_certificates(&mut self) {
+        self.communicator.write().await.set_active_devices(None);
 
-        let certs: HashMap<u32, Vec<u8>> = self
-            .devices
-            .iter()
-            .flat_map(|dev| {
-                let cert = dev.certificate().to_vec();
-                self.communicator
-                    .identifier_to_indices(dev.identifier())
-                    .into_iter()
-                    .zip(std::iter::repeat(cert))
-            })
-            .collect();
+        let certs: HashMap<u32, Vec<u8>> = {
+            let communicator_read = self
+                .communicator
+                .read()
+                .await;
+            self.devices
+                .iter()
+                .flat_map(|dev| {
+                    let cert = &dev.certificate;
+                    communicator_read
+                        .identifier_to_indices(dev.identifier())
+                        .into_iter()
+                        .zip(std::iter::repeat(cert).cloned())
+                })
+                .collect()
+        };
         let certs = ServerMessage {
             broadcasts: certs,
             unicasts: HashMap::new(),
@@ -223,7 +228,7 @@ impl GroupTask {
         }
         .encode_to_vec();
 
-        self.communicator.send_all(|_| certs.clone());
+        self.communicator.write().await.send_all(|_| certs.clone());
         self.certificates_sent = true;
     }
 }
@@ -342,6 +347,7 @@ impl Task for GroupTask {
             last_update: model.last_update.timestamp() as u64,
             attempts: model.attempt_count as u32,
             note: model.note,
+            certificates_sent: false, // TODO: remove the field completely
         })
     }
 
@@ -349,15 +355,15 @@ impl Task for GroupTask {
         TaskType::Group
     }
 
-    async fn get_work(&self, device_id: Option<&[u8]>) -> Option<Vec<Vec<u8>>> {
+    async fn get_work(&self, device_id: Option<&[u8]>) -> Vec<Vec<u8>> {
         if device_id.is_none() || !self.waiting_for(device_id.unwrap()).await {
-            return None;
+            return Vec::new();
         }
 
         self.communicator
             .read()
             .await
-            .get_message(device_id.unwrap())
+            .get_messages(device_id.unwrap())
     }
 
     fn get_result(&self) -> Option<TaskResult> {
@@ -402,7 +408,7 @@ impl Task for GroupTask {
         self.communicator
             .write()
             .await
-            .receive_messages(device_id, data.message);
+            .receive_messages(device_id, messages);
         self.set_last_update(repository.clone()).await?;
 
         if self.communicator.read().await.round_received()

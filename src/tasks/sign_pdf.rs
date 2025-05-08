@@ -128,7 +128,7 @@ impl Task for SignPDFTask {
         TaskType::SignPdf
     }
 
-    async fn get_work(&self, device_id: Option<&[u8]>) -> Option<Vec<Vec<u8>>> {
+    async fn get_work(&self, device_id: Option<&[u8]>) -> Vec<Vec<u8>> {
         self.sign_task.get_work(device_id).await
     }
 

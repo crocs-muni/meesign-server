@@ -1,5 +1,5 @@
 use futures::future;
-use log::{debug, error, info};
+use log::{debug, error, warn, info};
 use openssl::asn1::{Asn1Integer, Asn1Time};
 use openssl::bn::BigNum;
 use openssl::hash::MessageDigest;
@@ -19,8 +19,7 @@ use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use crate::persistence::DeviceKind;
-use crate::proto::mpc_server::{Mpc, MpcServer};
-use crate::proto::{Group, KeyType, ProtocolType};
+use crate::proto::{Group, KeyType, MeeSign, MeeSignServer, ProtocolType};
 use crate::state::State;
 use crate::tasks::{Task, TaskStatus};
 use crate::{proto as msg, utils, CA_CERT, CA_KEY};
@@ -43,7 +42,7 @@ impl MeeSignService {
     ) -> Result<(), Status> {
         if let Some(certs) = certs {
             let device_id = certs.get(0).map(cert_to_id).unwrap_or(vec![]);
-            if !self.state.lock().await.device_activated(&device_id) {
+            if !self.state.lock().await.device_activated(&device_id).await? {
                 return Err(Status::unauthenticated("Unknown device certificate"));
             }
         } else if required {
@@ -78,8 +77,8 @@ impl MeeSign for MeeSignService {
 
         let request = request.into_inner();
         let name = request.name;
-        let kind = DeviceKind::try_from(request.kind).unwrap();
         let csr = request.csr;
+        //let kind = DeviceKind::try_from(request.kind).unwrap();
         let kind = DeviceKind::User; // TODO
         info!("RegistrationRequest name={:?}", name);
 
