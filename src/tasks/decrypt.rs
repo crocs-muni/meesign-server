@@ -87,7 +87,7 @@ impl DecryptTask {
 
     pub(super) async fn next_round(&mut self, repository: Arc<Repository>) {
         if self.protocol.round() == 0 {
-            self.start_task(repository);
+            self.start_task(repository).await;
         } else if self.protocol.round() < self.protocol.last_round() {
             self.advance_task().await;
         } else {
@@ -203,7 +203,7 @@ impl Task for DecryptTask {
     ) -> Result<bool, Error> {
         let result = self.update_internal(device_id, data).await;
         if let Ok(true) = result {
-            self.next_round(repository);
+            self.next_round(repository).await;
         };
         result
     }
@@ -216,7 +216,7 @@ impl Task for DecryptTask {
 
         if self.is_approved().await {
             self.attempts += 1;
-            self.start_task(repository);
+            self.start_task(repository).await;
             Ok(true)
         } else {
             Ok(false)
@@ -254,7 +254,7 @@ impl Task for DecryptTask {
     ) -> Option<bool> {
         let result = self.decide_internal(device_id, decision);
         if let Some(true) = result {
-            self.next_round(repository);
+            self.next_round(repository).await;
         };
         result
     }
