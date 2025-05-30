@@ -83,6 +83,7 @@ diesel::table! {
         key_type -> Nullable<KeyType>,
         protocol_type -> Nullable<ProtocolType>,
         note -> Nullable<Varchar>,
+        group_certificates_sent -> Nullable<Bool>,
     }
 }
 

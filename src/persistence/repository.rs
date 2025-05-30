@@ -4,7 +4,9 @@ use uuid::Uuid;
 
 use crate::{
     communicator::Communicator,
-    tasks::{group::GroupTask, Task as TaskTrait},
+    tasks::{group::GroupTask, sign::SignTask, sign_pdf::SignPDFTask,
+            decrypt::DecryptTask, Task as TaskTrait,
+    },
 };
 
 use super::{
@@ -18,7 +20,7 @@ use self::{
     group::get_group,
     task::{
         get_device_tasks, get_tasks, increment_round, increment_task_attempt_count, set_round,
-        set_task_last_update, set_task_result,
+        set_task_last_update, set_task_result, set_task_group_certificates_sent,
     },
 };
 use self::{
@@ -317,11 +319,20 @@ impl Repository {
         let task = task.unwrap();
         // TODO: also for other task types
 
-        let task = Box::new(
-            GroupTask::from_model(task, device_ids, communicator, repository)
+        let task: Box<dyn TaskTrait> = match task.task_type {
+            TaskType::Group => Box::new(GroupTask::from_model(task, device_ids, communicator, repository)
                 .await
-                .unwrap(),
-        ) as Box<dyn TaskTrait>;
+                .unwrap()),
+            TaskType::SignChallenge => Box::new(SignTask::from_model(task, device_ids, communicator, repository)
+                .await
+                .unwrap()),
+            TaskType::SignPdf => Box::new(SignPDFTask::from_model(task, device_ids, communicator, repository)
+                .await
+                .unwrap()),
+            TaskType::Decrypt => Box::new(DecryptTask::from_model(task, device_ids, communicator, repository)
+                .await
+                .unwrap()),
+        }; // as Box<dyn TaskTrait>;
         Ok(Some(task))
     }
 
@@ -376,5 +387,14 @@ impl Repository {
     ) -> Result<(), PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         set_task_result(connection, task_id, result).await
+    }
+
+    pub async fn set_task_group_certificates_sent(
+        &self,
+        task_id: &Uuid,
+        group_certificates_sent: Option<bool>,
+    ) -> Result<(), PersistenceError> {
+        let connection = &mut self.get_async_connection().await?;
+        set_task_group_certificates_sent(connection, task_id, group_certificates_sent).await
     }
 }

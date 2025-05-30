@@ -132,6 +132,7 @@ pub struct Task {
     pub key_type: Option<KeyType>,
     pub protocol_type: Option<ProtocolType>,
     pub note: Option<String>,
+    pub group_certificates_sent: Option<bool>,
     #[serde(flatten)]
     pub result: Option<TaskResult>,
 }
@@ -153,6 +154,7 @@ pub struct NewTask<'a> {
     pub key_type: Option<KeyType>,
     pub protocol_type: Option<ProtocolType>,
     pub note: Option<&'a str>,
+    pub group_certificates_sent: Option<bool>,
 }
 
 #[derive(Queryable, Selectable, Serialize, Clone, Eq, PartialEq, Debug)]

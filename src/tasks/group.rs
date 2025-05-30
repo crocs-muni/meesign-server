@@ -192,7 +192,7 @@ impl GroupTask {
 
     async fn next_round(&mut self, repository: Arc<Repository>) {
         if !self.certificates_sent {
-            self.send_certificates().await;
+            self.send_certificates(repository).await.unwrap();
         } else if self.protocol.round() == 0 {
             self.start_task(repository).await.unwrap();
         } else if self.protocol.round() < self.protocol.last_round() {
@@ -202,7 +202,7 @@ impl GroupTask {
         }
     }
 
-    async fn send_certificates(&mut self) {
+    async fn send_certificates(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
         self.communicator.write().await.set_active_devices(None);
 
         let certs: HashMap<u32, Vec<u8>> = {
@@ -230,6 +230,8 @@ impl GroupTask {
 
         self.communicator.write().await.send_all(|_| certs.clone());
         self.certificates_sent = true;
+        repository.set_task_group_certificates_sent(&self.id, Some(true)).await?;
+        Ok(())
     }
 }
 
@@ -347,7 +349,7 @@ impl Task for GroupTask {
             last_update: model.last_update.timestamp() as u64,
             attempts: model.attempt_count as u32,
             note: model.note,
-            certificates_sent: false, // TODO: remove the field completely
+            certificates_sent: model.group_certificates_sent.unwrap(), // TODO: remove the field completely
         })
     }
 

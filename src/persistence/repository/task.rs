@@ -53,6 +53,7 @@ where
         task_state: TaskState::Created,
         protocol_type,
         note: None,
+        group_certificates_sent: None,
     };
 
     let task_id = diesel::insert_into(task::table)
@@ -119,6 +120,7 @@ where
         task_state: TaskState::Created,
         protocol_type: Some(protocol_type),
         note,
+        group_certificates_sent: Some(false),
     };
 
     let task_id: Uuid = diesel::insert_into(task::table)
@@ -175,6 +177,7 @@ where
             task::key_type,
             task::protocol_type,
             task::note,
+            task::group_certificates_sent,
             task_result::all_columns.nullable(),
         ))
         .first(connection)
@@ -209,6 +212,7 @@ where
             task::key_type,
             task::protocol_type,
             task::note,
+            task::group_certificates_sent,
             task_result::all_columns.nullable(),
         ))
         .load(connection)
@@ -243,6 +247,7 @@ where
             task::key_type,
             task::protocol_type,
             task::note,
+            task::group_certificates_sent,
             task_result::all_columns.nullable(),
         ))
         .load(connection)
@@ -264,6 +269,21 @@ where
         .on_conflict(task_result::task_id) // All devices happen to set the result
         .do_update()
         .set(&task_result)
+        .execute(connection)
+        .await?;
+    Ok(())
+}
+
+pub async fn set_task_group_certificates_sent<Conn>(
+    connection: &mut Conn,
+    task_id: &Uuid,
+    group_certificates_sent: Option<bool>,
+) -> Result<(), PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    diesel::update(task::table.filter(task::id.eq(task_id)))
+        .set(task::group_certificates_sent.eq(group_certificates_sent))
         .execute(connection)
         .await?;
     Ok(())
