@@ -129,6 +129,17 @@ impl Repository {
         activate_device(connection, target_identifier).await
     }
 
+    pub async fn device_activated(
+        &self,
+        target_identifier: &[u8],
+    ) -> Result<bool, PersistenceError> {
+        match self.activate_device(target_identifier).await {
+            Ok(_) => Ok(true),
+            Err(PersistenceError::ExecutionError(diesel::result::Error::NotFound)) => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
+
     /* Groups */
     pub async fn add_group(
         &self,

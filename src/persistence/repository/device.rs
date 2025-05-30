@@ -3,6 +3,7 @@ use diesel::QueryDsl;
 use diesel::{pg::Pg, ExpressionMethods, SelectableHelper};
 use diesel_async::AsyncConnection;
 use diesel_async::RunQueryDsl;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::persistence::enums::DeviceKind;
@@ -28,11 +29,15 @@ pub async fn get_devices_with_ids<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    let devices = device::table
+    let device_map: Vec<Device> = device::table
         .filter(device::id.eq_any(device_ids))
         .order_by(device::id)
         .load(connection)
         .await?;
+    let devices = device_ids
+        .iter()
+        .filter_map(|&id| device_map.iter().find(|dev| &dev.id == id).cloned())
+        .collect();
     Ok(devices)
 }
 

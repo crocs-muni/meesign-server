@@ -272,8 +272,7 @@ impl State {
     }
 
     pub async fn device_activated(&self, device_id: &[u8]) -> Result<bool, Error> {
-        // FIXME: Should return false if `device_id` does not exist
-        self.activate_device(device_id).await.map(|_| true)
+        Ok(self.get_repo().device_activated(device_id).await?)
     }
 
     pub async fn get_devices(&self) -> Result<Vec<Device>, Error> {
