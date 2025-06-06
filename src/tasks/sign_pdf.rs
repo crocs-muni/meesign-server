@@ -8,17 +8,22 @@ use crate::tasks::sign::SignTask;
 use crate::tasks::{Task, TaskResult, TaskStatus};
 use async_trait::async_trait;
 use log::{error, info, warn};
+use lazy_static::lazy_static;
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tempfile::NamedTempFile;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+lazy_static! {
+    static ref PDF_HELPERS: Mutex<HashMap<Uuid, Child>> = Mutex::new(HashMap::new());
+}
+
 pub struct SignPDFTask {
     sign_task: SignTask,
     result: Option<Result<Vec<u8>, String>>,
-    pdfhelper: Option<Child>,
 }
 
 impl SignPDFTask {
@@ -39,7 +44,6 @@ impl SignPDFTask {
         Ok(SignPDFTask {
             sign_task,
             result: None,
-            pdfhelper: None,
         })
     }
 
@@ -81,7 +85,7 @@ impl SignPDFTask {
             self.result = Some(Err("Task failed (invalid PDF)".to_string()));
             return Ok(()); // TODO: double check that behavior won't change if we return as err
         }
-        self.pdfhelper = Some(pdfhelper);
+        PDF_HELPERS.lock().unwrap().insert(self.get_id().clone(), pdfhelper);
         self.sign_task.set_preprocessed(hash);
         self.sign_task.start_task(repository).await
     }
@@ -93,16 +97,32 @@ impl SignPDFTask {
     async fn finalize_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
         self.sign_task.finalize_task(repository.clone()).await?;
         if let Some(TaskResult::Signed(signature)) = self.sign_task.get_result() {
-            let signed = include_signature(self.pdfhelper.as_mut().unwrap(), &signature);
-            self.pdfhelper = None;
+            let mut pdfhelper = PDF_HELPERS
+                .lock()
+                .unwrap()
+                .remove(self.get_id())
+                .unwrap();
+            let signed = include_signature(
+                &mut pdfhelper,
+                &signature,
+            );
 
             info!(
                 "PDF signed by group_id={}",
                 hex::encode(self.sign_task.get_group().identifier())
             );
-            self.result = Some(Ok(signed));
+
+            let result = Ok(signed);
+            repository
+                .set_task_result(self.get_id(), &result)
+                .await?;
+            self.result = Some(result);
         } else {
-            self.result = Some(Err("Task failed (signature not output)".to_string()));
+            let result = Err("Task failed (signature not output)".to_string());
+            repository
+                .set_task_result(self.get_id(), &result)
+                .await?;
+            self.result = Some(result);
         }
         Ok(())
     }
@@ -167,9 +187,12 @@ impl Task for SignPDFTask {
         }
 
         if self.is_approved().await {
-            if let Some(pdfhelper) = self.pdfhelper.as_mut() {
+            if let Some(mut pdfhelper) = PDF_HELPERS
+                .lock()
+                .unwrap()
+                .remove(self.get_id())
+            {
                 pdfhelper.kill().unwrap();
-                self.pdfhelper = None;
             }
             self.sign_task.attempts += 1;
             self.start_task(repository).await?;
@@ -236,11 +259,14 @@ impl Task for SignPDFTask {
     where
         Self: Sized,
     {
+        let result = match model.result.clone() {
+            Some(val) => val.try_into_option()?,
+            None => None,
+        };
         let sign_task = SignTask::from_model(model, devices, communicator, repository).await?;
         Ok(Self {
             sign_task,
-            result: None,
-            pdfhelper: None,
+            result,
         })
     }
 
