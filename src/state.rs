@@ -230,6 +230,27 @@ impl State {
                     )
                     .await?
             }
+            crate::proto::TaskType::SignChallenge => {
+                let task_devices = task.get_devices();
+                let device_ids: Vec<&[u8]> = task_devices
+                    .iter()
+                    .map(|device| device.id.as_slice())
+                    .collect();
+                self.get_repo()
+                    .create_sign_task(
+                        Some(task.get_id()),
+                        group_id,
+                        &device_ids,
+                        task.get_threshold(),
+                        "name",
+                        task.get_data().unwrap(),
+                        task.get_request(),
+                        crate::persistence::TaskType::SignChallenge,
+                        key_type.into(),
+                        protocol_type.into(),
+                    )
+                    .await?
+            }
             _ => {
                 todo!()
             }
@@ -494,6 +515,16 @@ impl State {
                 }
                 crate::persistence::TaskType::SignPdf => {
                     let task = SignPDFTask::from_model(
+                        task,
+                        devices,
+                        communicator.clone(),
+                        self.repo.clone(),
+                    )
+                    .await?;
+                    Ok(Box::new(task) as Box<dyn Task + Send + Sync>)
+                }
+                crate::persistence::TaskType::SignChallenge => {
+                    let task = SignTask::from_model(
                         task,
                         devices,
                         communicator.clone(),

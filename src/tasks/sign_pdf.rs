@@ -90,8 +90,8 @@ impl SignPDFTask {
         self.sign_task.advance_task().await
     }
 
-    async fn finalize_task(&mut self) -> Result<(), Error> {
-        self.sign_task.finalize_task().await?;
+    async fn finalize_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
+        self.sign_task.finalize_task(repository.clone()).await?;
         if let Some(TaskResult::Signed(signature)) = self.sign_task.get_result() {
             let signed = include_signature(self.pdfhelper.as_mut().unwrap(), &signature);
             self.pdfhelper = None;
@@ -113,7 +113,7 @@ impl SignPDFTask {
         } else if self.sign_task.protocol.round() < self.sign_task.protocol.last_round() {
             self.advance_task().await
         } else {
-            self.finalize_task().await
+            self.finalize_task(repository).await
         }
     }
 }

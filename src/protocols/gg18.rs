@@ -128,6 +128,14 @@ impl GG18Sign {
         }
     }
 
+    pub fn from_model(repository: Arc<Repository>, task_id: Uuid, round: u16) -> Self {
+        Self {
+            round,
+            repository,
+            task_id,
+        }
+    }
+
     async fn set_round(&mut self, round: u16) -> Result<(), Error> {
         self.round = round;
         self.repository.set_round(&self.task_id, round).await?;

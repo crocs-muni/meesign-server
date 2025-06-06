@@ -7,7 +7,7 @@ use crate::persistence::{Device, PersistenceError, Repository};
 use crate::proto::{ProtocolType, SignRequest, TaskType};
 use crate::protocols::frost::FROSTSign;
 use crate::protocols::gg18::GG18Sign;
-use crate::protocols::Protocol;
+use crate::protocols::{Protocol, create_threshold_protocol};
 use crate::tasks::{Task, TaskResult, TaskStatus};
 use crate::{get_timestamp, utils};
 use async_trait::async_trait;
@@ -17,7 +17,7 @@ use prost::Message as _;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use super::group::create_protocol;
+use crate::utils::hextrunc;
 
 pub struct SignTask {
     id: Uuid,
@@ -66,7 +66,7 @@ impl SignTask {
             preprocessed: None,
             protocol: match protocol_type {
                 ProtocolType::Gg18 => Box::new(GG18Sign::new(repository, id)),
-                ProtocolType::Frost => Box::new(FROSTSign::new()),
+                ProtocolType::Frost => Box::new(FROSTSign::new(repository, id)),
                 _ => {
                     warn!("Protocol type {:?} does not support signing", protocol_type);
                     return Err("Unsupported protocol type for signing".into());
@@ -101,12 +101,13 @@ impl SignTask {
         self.protocol.advance(self.communicator.write().await).await
     }
 
-    pub(super) async fn finalize_task(&mut self) -> Result<(), Error> {
+    pub(super) async fn finalize_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
         let signature = self
             .protocol
             .finalize(self.communicator.write().await)
             .await?;
         if signature.is_none() {
+            // FIXME: Store result in repo
             self.result = Some(Err("Task failed (signature not output)".to_string()));
             return Ok(()); // TODO: can we return an error here without affecting client devices?
         }
@@ -117,7 +118,12 @@ impl SignTask {
             utils::hextrunc(self.group.identifier())
         );
 
-        self.result = Some(Ok(signature));
+        let result = Ok(signature);
+        repository
+            .set_task_result(&self.id, &result)
+            .await?;
+        self.result = Some(result);
+
         self.communicator.write().await.clear_input();
         Ok(())
     }
@@ -128,7 +134,7 @@ impl SignTask {
         } else if self.protocol.round() < self.protocol.last_round() {
             self.advance_task().await
         } else {
-            self.finalize_task().await
+            self.finalize_task(repository).await
         }
     }
 
@@ -170,6 +176,7 @@ impl SignTask {
         Ok(false)
     }
 
+    // TODO: deduplicate across sign and decrypt
     pub(super) async fn decide_internal(
         &mut self,
         device_id: &[u8],
@@ -181,6 +188,7 @@ impl SignTask {
 
         if self.result.is_none() && self.protocol.round() == 0 {
             if self.communicator.read().await.reject_count() >= self.group.reject_threshold() {
+                // FIXME: Store result in repo
                 self.result = Some(Err("Task declined".to_string()));
                 return Some(false);
             } else if self.communicator.read().await.accept_count() >= self.group.threshold() {
@@ -352,20 +360,18 @@ impl Task for SignTask {
             .get_group(&task_model.group_id.unwrap())
             .await?
             .unwrap();
-        let device_count = devices.len() as u32;
         let group = Group::try_from_model(group, devices)?;
         let request = task_model
             .request
             .ok_or(PersistenceError::DataInconsistencyError(
                 "Request not set for a sign task".into(),
             ))?;
-        let protocol: Box<dyn Protocol + Send + Sync> = create_protocol(
+        let protocol = create_threshold_protocol(
             group.protocol(),
             group.key_type(),
-            device_count,
-            task_model.threshold as u32,
             repository.clone(),
             task_model.id,
+            task_model.protocol_round as u16,
         )?;
 
         let data = task_model
