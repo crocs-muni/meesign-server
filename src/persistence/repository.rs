@@ -277,31 +277,37 @@ impl Repository {
     pub async fn create_decrypt_task(
         &self,
         id: Option<&Uuid>,
-        group_identifier: &[u8],
+        group_id: &[u8],
+        devices: &[&[u8]],
+        threshold: u32,
         name: &str,
-        data: &Vec<u8>,
+        task_data: &[u8],
+        request: &[u8],
+        key_type: KeyType,
+        protocol: ProtocolType,
     ) -> Result<Task, PersistenceError> {
-        unimplemented!()
-        // let connection = &mut self.get_async_connection().await?;
-        // connection
-        //     .transaction(|connection| {
-        //         async move {
-        //             create_task(
-        //                 connection,
-        //                 id,
-        //                 TaskType::Decrypt,
-        //                 name,
-        //                 Some(data),
-        //                 &vec![],
-        //                 None,
-        //                 None,
-        //                 None,
-        //             )
-        //             .await
-        //         }
-        //         .scope_boxed()
-        //     })
-        //     .await
+        let connection = &mut self.get_async_connection().await?;
+        connection
+            .transaction(|connection| {
+                async move {
+                    create_task(
+                        connection,
+                        id,
+                        group_id,
+                        TaskType::Decrypt,
+                        name,
+                        devices,
+                        Some(task_data),
+                        request,
+                        threshold,
+                        Some(key_type),
+                        Some(protocol), // todo: should we fetch these from group?
+                    )
+                    .await
+                }
+                .scope_boxed()
+            })
+            .await
     }
 
     pub async fn get_task(
@@ -317,7 +323,6 @@ impl Repository {
             return Ok(None);
         }
         let task = task.unwrap();
-        // TODO: also for other task types
 
         let task: Box<dyn TaskTrait> = match task.task_type {
             TaskType::Group => Box::new(GroupTask::from_model(task, device_ids, communicator, repository)
@@ -332,7 +337,7 @@ impl Repository {
             TaskType::Decrypt => Box::new(DecryptTask::from_model(task, device_ids, communicator, repository)
                 .await
                 .unwrap()),
-        }; // as Box<dyn TaskTrait>;
+        };
         Ok(Some(task))
     }
 

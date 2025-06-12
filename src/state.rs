@@ -157,12 +157,13 @@ impl State {
         let group = crate::group::Group::try_from_model(group, devices)?;
         let task = match group.key_type() {
             KeyType::Decrypt => {
-                let task = DecryptTask::new(
+                let task = DecryptTask::try_new(
                     group.clone(),
                     name.to_string(),
                     data.to_vec(),
                     data_type.to_string(),
-                );
+                    self.repo.clone(),
+                )?;
                 Box::new(task) as Box<dyn Task + Sync + Send>
             }
             KeyType::SignPdf | KeyType::SignChallenge => {
@@ -251,8 +252,25 @@ impl State {
                     )
                     .await?
             }
-            _ => {
-                todo!()
+            crate::proto::TaskType::Decrypt => {
+                let task_devices = task.get_devices();
+                let device_ids: Vec<&[u8]> = task_devices
+                    .iter()
+                    .map(|device| device.id.as_slice())
+                    .collect();
+                self.get_repo()
+                    .create_decrypt_task(
+                        Some(task.get_id()),
+                        group_id,
+                        &device_ids,
+                        task.get_threshold(),
+                        "name",
+                        task.get_data().unwrap(),
+                        task.get_request(),
+                        key_type.into(),
+                        protocol_type.into(),
+                    )
+                    .await?
             }
         };
         if let Some(_communicator) = self
@@ -502,7 +520,7 @@ impl State {
             });
 
             // TODO refactor
-            match task.task_type {
+            let task: Box<dyn Task + Send + Sync> = match task.task_type {
                 crate::persistence::TaskType::Group => {
                     let task = GroupTask::from_model(
                         task,
@@ -511,7 +529,7 @@ impl State {
                         self.repo.clone(),
                     )
                     .await?;
-                    Ok(Box::new(task) as Box<dyn Task + Send + Sync>)
+                    Box::new(task)
                 }
                 crate::persistence::TaskType::SignPdf => {
                     let task = SignPDFTask::from_model(
@@ -521,7 +539,7 @@ impl State {
                         self.repo.clone(),
                     )
                     .await?;
-                    Ok(Box::new(task) as Box<dyn Task + Send + Sync>)
+                    Box::new(task)
                 }
                 crate::persistence::TaskType::SignChallenge => {
                     let task = SignTask::from_model(
@@ -531,10 +549,20 @@ impl State {
                         self.repo.clone(),
                     )
                     .await?;
-                    Ok(Box::new(task) as Box<dyn Task + Send + Sync>)
+                    Box::new(task)
                 }
-                _ => unimplemented!(),
-            }
+                crate::persistence::TaskType::Decrypt => {
+                    let task = DecryptTask::from_model(
+                        task,
+                        devices,
+                        communicator.clone(),
+                        self.repo.clone(),
+                    )
+                    .await?;
+                    Box::new(task)
+                }
+            };
+            Ok(task)
         }))
         .await
         .into_iter()

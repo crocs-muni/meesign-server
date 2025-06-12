@@ -3,12 +3,10 @@ use std::sync::Arc;
 use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::group::Group;
-use crate::persistence::Device;
-use crate::persistence::Repository;
-use crate::persistence::Task as TaskModel;
+use crate::persistence::{Device, PersistenceError, Repository, Task as TaskModel};
 use crate::proto::{DecryptRequest, ProtocolType, TaskType};
 use crate::protocols::elgamal::ElgamalDecrypt;
-use crate::protocols::Protocol;
+use crate::protocols::{Protocol, create_threshold_protocol};
 use crate::tasks::{Task, TaskResult, TaskStatus};
 use crate::{get_timestamp, utils};
 use async_trait::async_trait;
@@ -21,7 +19,7 @@ use uuid::Uuid;
 pub struct DecryptTask {
     id: Uuid,
     group: Group,
-    communicator: Communicator,
+    communicator: Arc<RwLock<Communicator>>,
     result: Option<Result<Vec<u8>, String>>,
     pub(super) data: Vec<u8>,
     pub(super) protocol: Box<dyn Protocol + Send + Sync>,
@@ -31,12 +29,21 @@ pub struct DecryptTask {
 }
 
 impl DecryptTask {
-    pub fn new(group: Group, name: String, data: Vec<u8>, data_type: String) -> Self {
-        // let mut devices: Vec<Arc<Device>> = group.devices().to_vec();
-        let mut devices: Vec<Device> = todo!();
+    pub fn try_new(
+        group: Group,
+        name: String,
+        data: Vec<u8>,
+        data_type: String,
+        repository: Arc<Repository>,
+    ) -> Result<Self, String> {
+        let mut devices: Vec<Device> = group.devices().to_vec();
         devices.sort_by_key(|x| x.identifier().to_vec());
 
-        let communicator = Communicator::new(devices, group.threshold(), ProtocolType::Elgamal);
+        let communicator = Arc::new(RwLock::new(Communicator::new(
+            devices,
+            group.threshold(),
+            group.protocol(),
+        )));
 
         let request = (DecryptRequest {
             group_id: group.identifier().to_vec(),
@@ -46,33 +53,43 @@ impl DecryptTask {
         })
         .encode_to_vec();
 
-        DecryptTask {
-            id: Uuid::new_v4(),
+        let id = Uuid::new_v4();
+        Ok(DecryptTask {
+            id,
             group,
             communicator,
             result: None,
             data,
-            protocol: Box::new(ElgamalDecrypt::new()),
+            protocol: Box::new(ElgamalDecrypt::new(repository, id)),
             request,
             last_update: get_timestamp(),
             attempts: 0,
-        }
+        })
     }
 
-    pub(super) async fn start_task(&mut self, repository: Arc<Repository>) {
-        assert!(self.communicator.accept_count() >= self.group.threshold());
-        self.protocol.initialize(todo!(), &self.data).await;
+    pub(super) async fn start_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
+        assert!(self.communicator.read().await.accept_count() >= self.group.threshold());
+        self.protocol
+            .initialize(
+                self.communicator.write().await,
+                &self.data,
+            )
+            .await
     }
 
-    pub(super) async fn advance_task(&mut self) {
-        self.protocol.advance(todo!()).await;
+    pub(super) async fn advance_task(&mut self) -> Result<(), Error> {
+        self.protocol.advance(self.communicator.write().await).await
     }
 
-    pub(super) async fn finalize_task(&mut self) {
-        let decrypted = self.protocol.finalize(todo!()).await.unwrap();
+    pub(super) async fn finalize_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
+        let decrypted = self
+            .protocol
+            .finalize(self.communicator.write().await)
+            .await?;
         if decrypted.is_none() {
+            // FIXME: Store result in repo
             self.result = Some(Err("Task failed (data not output)".to_string()));
-            return;
+            return Ok(()); // TODO: can we return an error here without affecting client devices?
         }
         let decrypted = decrypted.unwrap();
 
@@ -81,17 +98,23 @@ impl DecryptTask {
             utils::hextrunc(self.group.identifier())
         );
 
-        self.result = Some(Ok(decrypted));
-        self.communicator.clear_input();
+        let result = Ok(decrypted);
+        repository
+            .set_task_result(&self.id, &result)
+            .await?;
+        self.result = Some(result);
+
+        self.communicator.write().await.clear_input();
+        Ok(())
     }
 
-    pub(super) async fn next_round(&mut self, repository: Arc<Repository>) {
+    pub(super) async fn next_round(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
         if self.protocol.round() == 0 {
-            self.start_task(repository).await;
+            self.start_task(repository).await
         } else if self.protocol.round() < self.protocol.last_round() {
-            self.advance_task().await;
+            self.advance_task().await
         } else {
-            self.finalize_task().await;
+            self.finalize_task(repository).await
         }
     }
 
@@ -99,8 +122,9 @@ impl DecryptTask {
         &mut self,
         device_id: &[u8],
         data: &Vec<Vec<u8>>,
+        repository: Arc<Repository>,
     ) -> Result<bool, Error> {
-        if self.communicator.accept_count() < self.group.threshold() {
+        if self.communicator.read().await.accept_count() < self.group.threshold() {
             return Err(Error::GeneralProtocolError(
                 "Not enough agreements to proceed with the protocol.".into(),
             ));
@@ -118,40 +142,99 @@ impl DecryptTask {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| Error::GeneralProtocolError("Expected ClientMessage".into()))?;
 
-        self.communicator.receive_messages(device_id, messages);
-        self.last_update = get_timestamp();
+        self.communicator
+            .write()
+            .await
+            .receive_messages(device_id, messages);
+        self.set_last_update(repository).await?;
 
-        if self.communicator.round_received() && self.protocol.round() <= self.protocol.last_round()
+        if self.communicator.read().await.round_received() && self.protocol.round() <= self.protocol.last_round()
         {
             return Ok(true);
         }
         Ok(false)
     }
 
-    pub(super) fn decide_internal(&mut self, device_id: &[u8], decision: bool) -> Option<bool> {
-        self.communicator.decide(device_id, decision);
-        self.last_update = get_timestamp();
+    // TODO: deduplicate across sign and decrypt
+    pub(super) async fn decide_internal(
+        &mut self,
+        device_id: &[u8],
+        decision: bool,
+        repository: Arc<Repository>,
+    ) -> Option<bool> {
+        self.communicator.write().await.decide(device_id, decision);
+        self.set_last_update(repository).await.unwrap();
+
         if self.result.is_none() && self.protocol.round() == 0 {
-            if self.communicator.reject_count() >= self.group.reject_threshold() {
+            if self.communicator.read().await.reject_count() >= self.group.reject_threshold() {
+                // FIXME: Store result in repo
                 self.result = Some(Err("Task declined".to_string()));
                 return Some(false);
-            } else if self.communicator.accept_count() >= self.group.threshold() {
+            } else if self.communicator.read().await.accept_count() >= self.group.threshold() {
                 return Some(true);
             }
         }
         None
+    }
+
+    async fn set_last_update(&mut self, repository: Arc<Repository>) -> Result<u64, Error> {
+        self.last_update = get_timestamp();
+        repository.set_task_last_update(&self.id).await?;
+        Ok(self.last_update)
+    }
+
+    async fn increment_attempt_count(&mut self, repository: Arc<Repository>) -> Result<u32, Error> {
+        self.attempts += 1;
+        Ok(repository.increment_task_attempt_count(&self.id).await?)
     }
 }
 
 #[async_trait]
 impl Task for DecryptTask {
     async fn from_model(
-        model: TaskModel,
+        task_model: TaskModel,
         devices: Vec<Device>,
         communicator: Arc<RwLock<Communicator>>,
         repository: Arc<Repository>,
     ) -> Result<Self, Error> {
-        todo!()
+        let result = match task_model.result {
+            Some(val) => val.try_into_option()?,
+            None => None,
+        };
+        let group = repository
+            .get_group(&task_model.group_id.unwrap())
+            .await?
+            .unwrap();
+        let group = Group::try_from_model(group, devices)?;
+        let request = task_model
+            .request
+            .ok_or(PersistenceError::DataInconsistencyError(
+                "Request not set for a sign task".into(),
+            ))?;
+        let protocol = create_threshold_protocol(
+            group.protocol(),
+            group.key_type(),
+            repository.clone(),
+            task_model.id,
+            task_model.protocol_round as u16,
+        )?;
+        let data = task_model
+            .task_data
+            .ok_or(PersistenceError::DataInconsistencyError(
+                "Task data not set for a sign task".into(),
+            ))?;
+        let task = Self {
+            id: task_model.id,
+            group,
+            communicator,
+            result,
+            data,
+            protocol,
+            request,
+            last_update: task_model.last_update.timestamp() as u64,
+            attempts: task_model.attempt_count as u32,
+        };
+        Ok(task)
     }
 
     fn get_status(&self) -> TaskStatus {
@@ -177,7 +260,10 @@ impl Task for DecryptTask {
             return Vec::new();
         }
 
-        self.communicator.get_messages(device_id.unwrap())
+        self.communicator
+            .read()
+            .await
+            .get_messages(device_id.unwrap())
     }
 
     fn get_result(&self) -> Option<TaskResult> {
@@ -190,8 +276,8 @@ impl Task for DecryptTask {
 
     async fn get_decisions(&self) -> (u32, u32) {
         (
-            self.communicator.accept_count(),
-            self.communicator.reject_count(),
+            self.communicator.read().await.accept_count(),
+            self.communicator.read().await.reject_count(),
         )
     }
 
@@ -201,22 +287,24 @@ impl Task for DecryptTask {
         data: &Vec<Vec<u8>>,
         repository: Arc<Repository>,
     ) -> Result<bool, Error> {
-        let result = self.update_internal(device_id, data).await;
+        let result = self
+            .update_internal(device_id, data, repository.clone())
+            .await;
         if let Ok(true) = result {
-            self.next_round(repository).await;
+            self.next_round(repository).await.unwrap();
         };
         result
     }
 
     async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, Error> {
-        self.last_update = get_timestamp();
+        self.set_last_update(repository.clone()).await?;
         if self.result.is_some() {
             return Ok(false);
         }
 
         if self.is_approved().await {
-            self.attempts += 1;
-            self.start_task(repository).await;
+            self.increment_attempt_count(repository.clone()).await?;
+            self.start_task(repository).await?;
             Ok(true)
         } else {
             Ok(false)
@@ -228,22 +316,21 @@ impl Task for DecryptTask {
     }
 
     async fn is_approved(&self) -> bool {
-        self.communicator.accept_count() >= self.group.threshold()
+        self.communicator.read().await.accept_count() >= self.group.threshold()
     }
 
     fn get_devices(&self) -> &Vec<Device> {
-        // self.group.devices().to_vec()
-        todo!();
+        &self.group.devices()
     }
 
     async fn waiting_for(&self, device: &[u8]) -> bool {
         if self.protocol.round() == 0 {
-            return !self.communicator.device_decided(device);
+            return !self.communicator.read().await.device_decided(device);
         } else if self.protocol.round() >= self.protocol.last_round() {
-            return !self.communicator.device_acknowledged(device);
+            return !self.communicator.read().await.device_acknowledged(device);
         }
 
-        self.communicator.waiting_for(device)
+        self.communicator.read().await.waiting_for(device)
     }
 
     async fn decide(
@@ -252,19 +339,21 @@ impl Task for DecryptTask {
         decision: bool,
         repository: Arc<Repository>,
     ) -> Option<bool> {
-        let result = self.decide_internal(device_id, decision);
+        let result = self
+            .decide_internal(device_id, decision, repository.clone())
+            .await;
         if let Some(true) = result {
-            self.next_round(repository).await;
+            self.next_round(repository).await.unwrap();
         };
         result
     }
 
     async fn acknowledge(&mut self, device_id: &[u8]) {
-        self.communicator.acknowledge(device_id);
+        self.communicator.write().await.acknowledge(device_id);
     }
 
     async fn device_acknowledged(&self, device_id: &[u8]) -> bool {
-        self.communicator.device_acknowledged(device_id)
+        self.communicator.read().await.device_acknowledged(device_id)
     }
 
     fn get_request(&self) -> &[u8] {
@@ -280,7 +369,7 @@ impl Task for DecryptTask {
     }
 
     fn get_communicator(&self) -> Arc<RwLock<Communicator>> {
-        todo!()
+        self.communicator.clone()
     }
 
     fn get_threshold(&self) -> u32 {
