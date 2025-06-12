@@ -10,7 +10,7 @@ use crate::proto::{KeyType, ProtocolType, TaskType};
 use crate::protocols::elgamal::ElgamalGroup;
 use crate::protocols::frost::FROSTGroup;
 use crate::protocols::gg18::GG18Group;
-use crate::protocols::Protocol;
+use crate::protocols::{Protocol, create_keygen_protocol};
 use crate::tasks::{Task, TaskResult, TaskStatus};
 use crate::{get_timestamp, utils};
 use async_trait::async_trait;
@@ -53,13 +53,14 @@ impl GroupTask {
         let id = Uuid::new_v4();
 
         let devices_len = devices.len() as u32;
-        let protocol: Box<dyn Protocol + Send + Sync> = create_protocol(
+        let protocol = create_keygen_protocol(
             protocol_type,
             key_type,
             devices_len,
             threshold,
             repository,
             id.clone(),
+            0,
         )?;
 
         if devices_len < 1 {
@@ -235,38 +236,6 @@ impl GroupTask {
     }
 }
 
-pub fn create_protocol(
-    protocol_type: proto::ProtocolType,
-    key_type: proto::KeyType,
-    devices_len: u32,
-    threshold: u32,
-    repository: Arc<Repository>,
-    task_id: Uuid,
-) -> Result<Box<dyn Protocol + Send + Sync>, String> {
-    let protocol: Box<dyn Protocol + Send + Sync> = match (protocol_type, key_type) {
-        (ProtocolType::Gg18, KeyType::SignPdf) => {
-            Box::new(GG18Group::new(devices_len, threshold, repository, task_id))
-        }
-        (ProtocolType::Gg18, KeyType::SignChallenge) => {
-            Box::new(GG18Group::new(devices_len, threshold, repository, task_id))
-        }
-        (ProtocolType::Frost, KeyType::SignChallenge) => {
-            Box::new(FROSTGroup::new(devices_len, threshold))
-        }
-        (ProtocolType::Elgamal, KeyType::Decrypt) => {
-            Box::new(ElgamalGroup::new(devices_len, threshold))
-        }
-        _ => {
-            warn!(
-                "Protocol {:?} does not support {:?} key type",
-                protocol_type, key_type
-            );
-            return Err("Unsupported protocol type and key type combination".into());
-        }
-    };
-    Ok(protocol)
-}
-
 #[async_trait]
 impl Task for GroupTask {
     fn get_status(&self) -> TaskStatus {
@@ -290,14 +259,30 @@ impl Task for GroupTask {
         communicator: Arc<RwLock<Communicator>>,
         repository: Arc<Repository>,
     ) -> Result<Self, Error> {
-        // TODO: make this universal
-        let protocol = Box::new(GG18Group::from_model(
+        if model.key_type.is_none() || model.request.is_none() {
+            return Err(PersistenceError::DataInconsistencyError(
+                "TaskModel is not data-consistent. KeyType of request is not set".into(),
+            )
+            .into());
+        }
+        let key_type = model.key_type.unwrap().into();
+        if model.protocol_type.is_none() {
+            return Err(PersistenceError::DataInconsistencyError(
+                "TaskModel is not data-consistent. ProtocolType of request is not set".into(),
+            )
+            .into());
+        }
+        let protocol_type = model.protocol_type.unwrap().into();
+
+        let protocol = create_keygen_protocol(
+            protocol_type,
+            key_type,
             devices.len() as u32,
             model.threshold as u32,
             repository.clone(),
             model.id,
             model.protocol_round as u16,
-        ));
+        )?;
 
         // TODO: refactor
         let result = if let Some(result) = model.result {
@@ -328,13 +313,6 @@ impl Task for GroupTask {
         } else {
             "".into() // TODO add field to the task table
         };
-        if model.key_type.is_none() || model.request.is_none() {
-            return Err(PersistenceError::DataInconsistencyError(
-                "TaskModel is not data-consistent. KeyType of request is not set".into(),
-            )
-            .into());
-        }
-        let key_type = model.key_type.unwrap().into();
         let request = model.request.unwrap().into();
         Ok(Self {
             name,

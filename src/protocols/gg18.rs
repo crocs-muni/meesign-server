@@ -20,7 +20,7 @@ pub struct GG18Group {
 
 impl GG18Group {
     pub fn new(parties: u32, threshold: u32, repository: Arc<Repository>, task_id: Uuid) -> Self {
-        GG18Group {
+        Self {
             parties,
             threshold,
             round: 0,
@@ -36,7 +36,7 @@ impl GG18Group {
         task_id: Uuid,
         round: u16,
     ) -> Self {
-        GG18Group {
+        Self {
             parties,
             threshold,
             repository,
@@ -160,8 +160,7 @@ impl Protocol for GG18Sign {
             .encode_to_vec()
         });
 
-        self.set_round(1).await?;
-        Ok(())
+        self.set_round(1).await
     }
 
     async fn advance(

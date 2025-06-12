@@ -1,25 +1,60 @@
 use crate::communicator::Communicator;
 use crate::error::Error;
+use crate::persistence::Repository;
 use crate::proto::ProtocolType;
 use crate::protocols::Protocol;
 use async_trait::async_trait;
 use meesign_crypto::proto::{Message, ProtocolGroupInit, ProtocolInit};
 use meesign_crypto::protocol::elgamal as protocol;
+use std::sync::Arc;
 use tokio::sync::RwLockWriteGuard;
+use uuid::Uuid;
 
 pub struct ElgamalGroup {
     parties: u32,
     threshold: u32,
     round: u16,
+    repository: Arc<Repository>,
+    task_id: Uuid,
 }
 
 impl ElgamalGroup {
-    pub fn new(parties: u32, threshold: u32) -> Self {
-        ElgamalGroup {
+    pub fn new(parties: u32, threshold: u32, repository: Arc<Repository>, task_id: Uuid) -> Self {
+        Self {
             parties,
             threshold,
             round: 0,
+            repository,
+            task_id,
         }
+    }
+
+    pub fn from_model(
+        parties: u32,
+        threshold: u32,
+        repository: Arc<Repository>,
+        task_id: Uuid,
+        round: u16,
+    ) -> Self {
+        Self {
+            parties,
+            threshold,
+            repository,
+            task_id,
+            round,
+        }
+    }
+
+    async fn set_round(&mut self, round: u16) -> Result<(), Error> {
+        self.round = round;
+        self.repository.set_round(&self.task_id, round).await?;
+        Ok(())
+    }
+
+    async fn increment_round(&mut self) -> Result<(), Error> {
+        self.round += 1;
+        self.repository.increment_round(&self.task_id).await?;
+        Ok(())
     }
 }
 
@@ -43,8 +78,7 @@ impl Protocol for ElgamalGroup {
             .encode_to_vec()
         });
 
-        self.round = 1;
-        Ok(())
+        self.set_round(1).await
     }
 
     async fn advance(
@@ -54,8 +88,7 @@ impl Protocol for ElgamalGroup {
         assert!((0..self.last_round()).contains(&self.round));
 
         communicator.relay();
-        self.round += 1;
-        Ok(())
+        self.increment_round().await
     }
 
     async fn finalize(
@@ -63,7 +96,7 @@ impl Protocol for ElgamalGroup {
         communicator: RwLockWriteGuard<'_, Communicator>,
     ) -> Result<Option<Vec<u8>>, Error> {
         assert_eq!(self.last_round(), self.round);
-        self.round += 1;
+        self.increment_round().await?;
         Ok(communicator.get_final_message())
     }
 
@@ -82,11 +115,37 @@ impl Protocol for ElgamalGroup {
 
 pub struct ElgamalDecrypt {
     round: u16,
+    repository: Arc<Repository>,
+    task_id: Uuid,
 }
 
 impl ElgamalDecrypt {
-    pub fn new() -> Self {
-        Self { round: 0 }
+    pub fn new(repository: Arc<Repository>, task_id: Uuid) -> Self {
+        Self {
+            round: 0,
+            repository,
+            task_id,
+        }
+    }
+
+    pub fn from_model(repository: Arc<Repository>, task_id: Uuid, round: u16) -> Self {
+        Self {
+            round,
+            repository,
+            task_id,
+        }
+    }
+
+    async fn set_round(&mut self, round: u16) -> Result<(), Error> {
+        self.round = round;
+        self.repository.set_round(&self.task_id, round).await?;
+        Ok(())
+    }
+
+    async fn increment_round(&mut self) -> Result<(), Error> {
+        self.round += 1;
+        self.repository.increment_round(&self.task_id).await?;
+        Ok(())
     }
 }
 
@@ -109,8 +168,7 @@ impl Protocol for ElgamalDecrypt {
             .encode_to_vec()
         });
 
-        self.round = 1;
-        Ok(())
+        self.set_round(1).await
     }
 
     async fn advance(
@@ -120,8 +178,7 @@ impl Protocol for ElgamalDecrypt {
         assert!((0..self.last_round()).contains(&self.round));
 
         communicator.relay();
-        self.round += 1;
-        Ok(())
+        self.increment_round().await
     }
 
     async fn finalize(
@@ -129,7 +186,7 @@ impl Protocol for ElgamalDecrypt {
         communicator: RwLockWriteGuard<'_, Communicator>,
     ) -> Result<Option<Vec<u8>>, Error> {
         assert_eq!(self.last_round(), self.round);
-        self.round += 1;
+        self.increment_round().await?;
         Ok(communicator.get_final_message())
     }
 
