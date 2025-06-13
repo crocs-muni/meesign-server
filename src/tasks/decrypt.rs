@@ -71,20 +71,20 @@ impl DecryptTask {
         assert!(self.communicator.read().await.accept_count() >= self.group.threshold());
         self.protocol
             .initialize(
-                self.communicator.write().await,
+                &mut *self.communicator.write().await,
                 &self.data,
             )
             .await
     }
 
     pub(super) async fn advance_task(&mut self) -> Result<(), Error> {
-        self.protocol.advance(self.communicator.write().await).await
+        self.protocol.advance(&mut *self.communicator.write().await).await
     }
 
     pub(super) async fn finalize_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
         let decrypted = self
             .protocol
-            .finalize(self.communicator.write().await)
+            .finalize(&mut *self.communicator.write().await)
             .await?;
         if decrypted.is_none() {
             // FIXME: Store result in repo

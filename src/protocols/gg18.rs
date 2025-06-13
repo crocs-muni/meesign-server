@@ -7,7 +7,6 @@ use crate::{communicator::Communicator, persistence::Repository};
 use async_trait::async_trait;
 use meesign_crypto::proto::{Message, ProtocolGroupInit, ProtocolInit};
 use meesign_crypto::protocol::gg18 as protocol;
-use tokio::sync::RwLockWriteGuard;
 use uuid::Uuid;
 
 pub struct GG18Group {
@@ -62,7 +61,7 @@ impl GG18Group {
 impl Protocol for GG18Group {
     async fn initialize(
         &mut self,
-        mut communicator: RwLockWriteGuard<'_, Communicator>,
+        communicator: &mut Communicator,
         _: &[u8],
     ) -> Result<(), Error> {
         communicator.set_active_devices(None);
@@ -83,7 +82,7 @@ impl Protocol for GG18Group {
 
     async fn advance(
         &mut self,
-        mut communicator: RwLockWriteGuard<'_, Communicator>,
+        communicator: &mut Communicator,
     ) -> Result<(), Error> {
         assert!((0..self.last_round()).contains(&self.round));
 
@@ -93,7 +92,7 @@ impl Protocol for GG18Group {
 
     async fn finalize(
         &mut self,
-        communicator: RwLockWriteGuard<'_, Communicator>,
+        communicator: &mut Communicator,
     ) -> Result<Option<Vec<u8>>, Error> {
         assert_eq!(self.last_round(), self.round);
         self.increment_round().await?;
@@ -153,7 +152,7 @@ impl GG18Sign {
 impl Protocol for GG18Sign {
     async fn initialize(
         &mut self,
-        mut communicator: RwLockWriteGuard<'_, Communicator>,
+        communicator: &mut Communicator,
         data: &[u8],
     ) -> Result<(), Error> {
         communicator.set_active_devices(None);
@@ -173,7 +172,7 @@ impl Protocol for GG18Sign {
 
     async fn advance(
         &mut self,
-        mut communicator: RwLockWriteGuard<'_, Communicator>,
+        communicator: &mut Communicator,
     ) -> Result<(), Error> {
         assert!((0..self.last_round()).contains(&self.round));
 
@@ -183,7 +182,7 @@ impl Protocol for GG18Sign {
 
     async fn finalize(
         &mut self,
-        communicator: RwLockWriteGuard<'_, Communicator>,
+        communicator: &mut Communicator,
     ) -> Result<Option<Vec<u8>>, Error> {
         assert_eq!(self.last_round(), self.round);
         self.increment_round().await?;

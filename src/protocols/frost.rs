@@ -7,7 +7,6 @@ use async_trait::async_trait;
 use meesign_crypto::proto::{Message, ProtocolGroupInit, ProtocolInit};
 use meesign_crypto::protocol::frost as protocol;
 use std::sync::Arc;
-use tokio::sync::RwLockWriteGuard;
 use uuid::Uuid;
 
 pub struct FROSTGroup {
@@ -61,7 +60,7 @@ impl FROSTGroup {
 impl Protocol for FROSTGroup {
     async fn initialize(
         &mut self,
-        mut communicator: RwLockWriteGuard<'_, Communicator>,
+        communicator: &mut Communicator,
         _: &[u8],
     ) -> Result<(), Error> {
         communicator.set_active_devices(None);
@@ -82,7 +81,7 @@ impl Protocol for FROSTGroup {
 
     async fn advance(
         &mut self,
-        mut communicator: RwLockWriteGuard<'_, Communicator>,
+        communicator: &mut Communicator,
     ) -> Result<(), Error> {
         assert!((0..self.last_round()).contains(&self.round));
 
@@ -92,7 +91,7 @@ impl Protocol for FROSTGroup {
 
     async fn finalize(
         &mut self,
-        communicator: RwLockWriteGuard<'_, Communicator>,
+        communicator: &mut Communicator,
     ) -> Result<Option<Vec<u8>>, Error> {
         assert_eq!(self.last_round(), self.round);
         self.increment_round().await?;
@@ -152,7 +151,7 @@ impl FROSTSign {
 impl Protocol for FROSTSign {
     async fn initialize(
         &mut self,
-        mut communicator: RwLockWriteGuard<'_, Communicator>,
+        communicator: &mut Communicator,
         data: &[u8],
     ) -> Result<(), Error> {
         communicator.set_active_devices(None);
@@ -172,7 +171,7 @@ impl Protocol for FROSTSign {
 
     async fn advance(
         &mut self,
-        mut communicator: RwLockWriteGuard<'_, Communicator>,
+        communicator: &mut Communicator,
     ) -> Result<(), Error> {
         assert!((0..self.last_round()).contains(&self.round));
 
@@ -182,7 +181,7 @@ impl Protocol for FROSTSign {
 
     async fn finalize(
         &mut self,
-        communicator: RwLockWriteGuard<'_, Communicator>,
+        communicator: &mut Communicator,
     ) -> Result<Option<Vec<u8>>, Error> {
         assert_eq!(self.last_round(), self.round);
         self.increment_round().await?;

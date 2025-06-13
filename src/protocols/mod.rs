@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use log::warn;
 use std::sync::Arc;
-use tokio::sync::RwLockWriteGuard;
 use uuid::Uuid;
 
 use crate::communicator::Communicator;
@@ -27,16 +26,16 @@ impl ProtocolType {
 pub trait Protocol {
     async fn initialize(
         &mut self,
-        communicator: RwLockWriteGuard<'_, Communicator>,
+        communicator: &mut Communicator,
         data: &[u8],
     ) -> Result<(), Error>;
     async fn advance(
         &mut self,
-        communicator: RwLockWriteGuard<'_, Communicator>,
+        communicator: &mut Communicator,
     ) -> Result<(), Error>;
     async fn finalize(
         &mut self,
-        communicator: RwLockWriteGuard<'_, Communicator>,
+        communicator: &mut Communicator,
     ) -> Result<Option<Vec<u8>>, Error>;
     fn round(&self) -> u16;
     fn last_round(&self) -> u16;

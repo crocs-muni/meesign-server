@@ -130,14 +130,14 @@ impl GroupTask {
 
     async fn start_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
         self.protocol
-            .initialize(self.communicator.write().await, &[])
+            .initialize(&mut *self.communicator.write().await, &[])
             .await?;
         Ok(())
     }
 
     async fn advance_task(&mut self) {
         self.protocol
-            .advance(self.communicator.write().await)
+            .advance(&mut *self.communicator.write().await)
             .await
             .unwrap();
     }
@@ -145,7 +145,7 @@ impl GroupTask {
     async fn finalize_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
         let identifier = self
             .protocol
-            .finalize(self.communicator.write().await)
+            .finalize(&mut *self.communicator.write().await)
             .await?;
         let Some(identifier) = identifier else {
             let error_message = "Task failed (group key not output)".to_string();
