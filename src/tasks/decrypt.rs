@@ -87,8 +87,10 @@ impl DecryptTask {
             .finalize(&mut *self.communicator.write().await)
             .await?;
         if decrypted.is_none() {
-            // FIXME: Store result in repo
-            self.result = Some(Err("Task failed (data not output)".to_string()));
+            self.set_result(
+                Err("Task failed (data not output)".to_string()),
+                repository,
+            ).await?;
             return Ok(()); // TODO: can we return an error here without affecting client devices?
         }
         let decrypted = decrypted.unwrap();
@@ -98,11 +100,7 @@ impl DecryptTask {
             utils::hextrunc(self.group.identifier())
         );
 
-        let result = Ok(decrypted);
-        repository
-            .set_task_result(&self.id, &result)
-            .await?;
-        self.result = Some(result);
+        self.set_result(Ok(decrypted), repository).await?;
 
         self.communicator.write().await.clear_input();
         Ok(())
@@ -163,18 +161,25 @@ impl DecryptTask {
         repository: Arc<Repository>,
     ) -> Option<bool> {
         self.communicator.write().await.decide(device_id, decision);
-        self.set_last_update(repository).await.unwrap();
+        self.set_last_update(repository.clone()).await.unwrap();
 
         if self.result.is_none() && self.protocol.round() == 0 {
             if self.communicator.read().await.reject_count() >= self.group.reject_threshold() {
-                // FIXME: Store result in repo
-                self.result = Some(Err("Task declined".to_string()));
+                self.set_result(Err("Task declined".to_string()), repository).await.unwrap();
                 return Some(false);
             } else if self.communicator.read().await.accept_count() >= self.group.threshold() {
                 return Some(true);
             }
         }
         None
+    }
+
+    async fn set_result(&mut self, result: Result<Vec<u8>, String>, repository: Arc<Repository>) -> Result<(), Error> {
+        repository
+            .set_task_result(self.get_id(), &result)
+            .await?;
+        self.result = Some(result);
+        Ok(())
     }
 
     async fn set_last_update(&mut self, repository: Arc<Repository>) -> Result<u64, Error> {

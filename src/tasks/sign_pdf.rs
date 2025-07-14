@@ -51,13 +51,19 @@ impl SignPDFTask {
         let file = NamedTempFile::new();
         if file.is_err() {
             error!("Could not create temporary file");
-            self.result = Some(Err("Task failed (server error)".to_string()));
+            self.set_result(
+                Err("Task failed (server error)".to_string()),
+                repository,
+            ).await?;
             return Ok(()); // TODO: double check that behavior won't change if we return as err
         }
         let mut file = file.unwrap();
         if file.write_all(&self.sign_task.data).is_err() {
             error!("Could not write in temporary file");
-            self.result = Some(Err("Task failed (server error)".to_string()));
+            self.set_result(
+                Err("Task failed (server error)".to_string()),
+                repository,
+            ).await?;
             return Ok(()); // TODO: double check that behavior won't change if we return as err
         }
 
@@ -72,7 +78,10 @@ impl SignPDFTask {
 
         if pdfhelper.is_err() {
             error!("Could not start PDFHelper");
-            self.result = Some(Err("Task failed (server error)".to_string()));
+            self.set_result(
+                Err("Task failed (server error)".to_string()),
+                repository,
+            ).await?;
             return Ok(()); // TODO: double check that behavior won't change if we return as err
         }
         let mut pdfhelper = pdfhelper.unwrap();
@@ -82,7 +91,10 @@ impl SignPDFTask {
             self.sign_task.get_group().certificate().unwrap(),
         );
         if hash.is_empty() {
-            self.result = Some(Err("Task failed (invalid PDF)".to_string()));
+            self.set_result(
+                Err("Task failed (invalid PDF)".to_string()),
+                repository,
+            ).await?;
             return Ok(()); // TODO: double check that behavior won't change if we return as err
         }
         PDF_HELPERS.lock().unwrap().insert(self.get_id().clone(), pdfhelper);
@@ -112,17 +124,12 @@ impl SignPDFTask {
                 hex::encode(self.sign_task.get_group().identifier())
             );
 
-            let result = Ok(signed);
-            repository
-                .set_task_result(self.get_id(), &result)
-                .await?;
-            self.result = Some(result);
+            self.set_result(Ok(signed), repository).await?;
         } else {
-            let result = Err("Task failed (signature not output)".to_string());
-            repository
-                .set_task_result(self.get_id(), &result)
-                .await?;
-            self.result = Some(result);
+            self.set_result(
+                Err("Task failed (signature not output)".to_string()),
+                repository,
+            ).await?;
         }
         Ok(())
     }
@@ -135,6 +142,14 @@ impl SignPDFTask {
         } else {
             self.finalize_task(repository).await
         }
+    }
+
+    async fn set_result(&mut self, result: Result<Vec<u8>, String>, repository: Arc<Repository>) -> Result<(), Error> {
+        repository
+            .set_task_result(self.get_id(), &result)
+            .await?;
+        self.result = Some(result);
+        Ok(())
     }
 }
 
