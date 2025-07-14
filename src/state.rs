@@ -408,9 +408,9 @@ impl State {
         };
         drop(communicator);
         let change = task.decide(device, decision, repo).await;
-        if change.is_some() {
+        if let Some(approved) = change {
             self.send_updates(task_id).await?;
-            if change.unwrap() {
+            if approved {
                 log::info!(
                     "Task approved task_id={}",
                     utils::hextrunc(task_id.as_bytes())
