@@ -216,16 +216,16 @@ impl Communicator {
             .collect::<Vec<_>>();
 
         let latest_acceptable_time = Local::now() - Duration::seconds(5);
-        let connected_devices = match pg_pool {
+        let connected_devices: Vec<_> = match pg_pool {
             Some(pg_pool) => {
                 todo!();
                 agreeing_devices
                     .iter()
                     .filter(|device| device.last_active() > &latest_acceptable_time)
                     .map(Deref::deref)
-                    .collect::<Vec<_>>()
+                    .collect()
             }
-            None => self.device_list.iter().collect::<Vec<_>>(),
+            None => agreeing_devices.clone(),
         };
 
         let (devices, indices): (&Vec<&Device>, Vec<_>) =
