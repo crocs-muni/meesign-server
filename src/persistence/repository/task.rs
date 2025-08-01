@@ -151,17 +151,9 @@ where
         ))
 }
 
-pub async fn get_task<Conn>(
-    connection: &mut Conn,
-    task_id: &Uuid,
-) -> Result<Option<Task>, PersistenceError>
-where
-    Conn: AsyncConnection<Backend = Pg>,
-{
-    let task: Option<Task> = match task::table
-        .left_outer_join(task_result::table)
-        .filter(task::id.eq(task_id))
-        .select((
+macro_rules! task_model_columns {
+    () => {
+        (
             task::id,
             task::protocol_round,
             task::attempt_count,
@@ -179,7 +171,21 @@ where
             task::note,
             task::group_certificates_sent,
             task_result::all_columns.nullable(),
-        ))
+        )
+    };
+}
+
+pub async fn get_task<Conn>(
+    connection: &mut Conn,
+    task_id: &Uuid,
+) -> Result<Option<Task>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    let task: Option<Task> = match task::table
+        .left_outer_join(task_result::table)
+        .filter(task::id.eq(task_id))
+        .select(task_model_columns!())
         .first(connection)
         .await
     {
@@ -196,25 +202,7 @@ where
 {
     let tasks = task::table
         .left_outer_join(task_result::table)
-        .select((
-            task::id,
-            task::protocol_round,
-            task::attempt_count,
-            task::error_message,
-            task::threshold,
-            task::last_update,
-            task::task_data,
-            task::preprocessed,
-            task::request,
-            task::group_id,
-            task::task_type,
-            task::task_state,
-            task::key_type,
-            task::protocol_type,
-            task::note,
-            task::group_certificates_sent,
-            task_result::all_columns.nullable(),
-        ))
+        .select(task_model_columns!())
         .load(connection)
         .await?;
     Ok(tasks)
@@ -231,25 +219,7 @@ where
         .left_outer_join(task_result::table)
         .inner_join(task_participant::table)
         .filter(task_participant::device_id.eq(identifier))
-        .select((
-            task::id,
-            task::protocol_round,
-            task::attempt_count,
-            task::error_message,
-            task::threshold,
-            task::last_update,
-            task::task_data,
-            task::preprocessed,
-            task::request,
-            task::group_id,
-            task::task_type,
-            task::task_state,
-            task::key_type,
-            task::protocol_type,
-            task::note,
-            task::group_certificates_sent,
-            task_result::all_columns.nullable(),
-        ))
+        .select(task_model_columns!())
         .distinct()  // NOTE: Because of multiple shares, participants can be duplicated
         .load(connection)
         .await?;
