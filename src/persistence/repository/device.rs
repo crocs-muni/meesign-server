@@ -50,12 +50,30 @@ where
 {
     let devices: Vec<Device> = task_participant::table
         .inner_join(device::table)
-        .inner_join(task::table)
+        .inner_join(task::table)  // TODO: Can we remove this join?
         .filter(task::id.eq(task_id))
         .select(Device::as_returning())
         .load(connection)
         .await?;
     Ok(devices)
+}
+
+pub async fn get_tasks_devices<Conn>(
+    connection: &mut Conn,
+    task_ids: &[Uuid],
+) -> Result<Vec<(Uuid, Device)>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    let tasks_devices = task_participant::table
+        .inner_join(device::table)
+        .inner_join(task::table)
+        .filter(task::id.eq_any(task_ids))
+        .select((task::id, Device::as_returning()))
+        .order_by(task::id)
+        .load(connection)
+        .await?;
+    Ok(tasks_devices)
 }
 
 pub async fn get_group_device_ids<Conn>(

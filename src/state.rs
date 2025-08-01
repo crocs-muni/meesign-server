@@ -2,6 +2,7 @@ use chrono::{DateTime, Local};
 use dashmap::DashMap;
 use futures::future;
 use log::{debug, error, warn};
+use std::collections::HashMap;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -507,62 +508,82 @@ impl State {
         &self,
         task_models: Vec<TaskModel>,
     ) -> Result<Vec<Box<dyn Task + Send + Sync>>, Error> {
-        // TODO: do the grouping in DB
-        let tasks = future::join_all(task_models.into_iter().map(|task| async {
-            let devices = self.get_repo().get_task_devices(&task.id).await?;
-            let communicator = self.communicators.entry(task.id).or_insert_with(|| {
-                // TODO: decide what to do when the server has restarted and the task communicator is not present
-                Arc::new(RwLock::new(Communicator::new(
-                    devices.clone(),
-                    task.threshold as u32,
-                    task.protocol_type.unwrap().into(),
-                )))
-            });
+        // NOTE: Sorted and unique task models (strict inequality)
+        assert!(task_models.windows(2).all(|w| w[0].id < w[1].id));
 
-            // TODO refactor
-            let task: Box<dyn Task + Send + Sync> = match task.task_type {
-                crate::persistence::TaskType::Group => {
-                    let task = GroupTask::from_model(
-                        task,
-                        devices,
-                        communicator.clone(),
-                        self.repo.clone(),
-                    )
-                    .await?;
-                    Box::new(task)
-                }
-                crate::persistence::TaskType::SignPdf => {
-                    let task = SignPDFTask::from_model(
-                        task,
-                        devices,
-                        communicator.clone(),
-                        self.repo.clone(),
-                    )
-                    .await?;
-                    Box::new(task)
-                }
-                crate::persistence::TaskType::SignChallenge => {
-                    let task = SignTask::from_model(
-                        task,
-                        devices,
-                        communicator.clone(),
-                        self.repo.clone(),
-                    )
-                    .await?;
-                    Box::new(task)
-                }
-                crate::persistence::TaskType::Decrypt => {
-                    let task = DecryptTask::from_model(
-                        task,
-                        devices,
-                        communicator.clone(),
-                        self.repo.clone(),
-                    )
-                    .await?;
-                    Box::new(task)
-                }
-            };
-            Ok(task)
+        let task_ids: Vec<_> = task_models
+            .iter()
+            .map(|task| task.id.clone())
+            .collect();
+
+        let task_id_device_pairs = self
+            .get_repo()
+            .get_tasks_devices(&task_ids)
+            .await?;
+
+        let mut task_id_devices: HashMap<_, Vec<_>> = HashMap::new();
+
+        for (task_id, device) in task_id_device_pairs {
+            task_id_devices.entry(task_id).or_default().push(device);
+        }
+
+        let tasks = future::join_all(task_models.into_iter().map(|task| {
+            let devices = task_id_devices.remove(&task.id).unwrap();
+            async {
+                let communicator = self.communicators.entry(task.id).or_insert_with(|| {
+                    // TODO: decide what to do when the server has restarted and the task communicator is not present
+                    Arc::new(RwLock::new(Communicator::new(
+                        devices.clone(),
+                        task.threshold as u32,
+                        task.protocol_type.unwrap().into(),
+                    )))
+                });
+
+                // TODO refactor
+                let task: Box<dyn Task + Send + Sync> = match task.task_type {
+                    crate::persistence::TaskType::Group => {
+                        let task = GroupTask::from_model(
+                            task,
+                            devices,
+                            communicator.clone(),
+                            self.repo.clone(),
+                        )
+                        .await?;
+                        Box::new(task)
+                    }
+                    crate::persistence::TaskType::SignPdf => {
+                        let task = SignPDFTask::from_model(
+                            task,
+                            devices,
+                            communicator.clone(),
+                            self.repo.clone(),
+                        )
+                        .await?;
+                        Box::new(task)
+                    }
+                    crate::persistence::TaskType::SignChallenge => {
+                        let task = SignTask::from_model(
+                            task,
+                            devices,
+                            communicator.clone(),
+                            self.repo.clone(),
+                        )
+                        .await?;
+                        Box::new(task)
+                    }
+                    crate::persistence::TaskType::Decrypt => {
+                        let task = DecryptTask::from_model(
+                            task,
+                            devices,
+                            communicator.clone(),
+                            self.repo.clone(),
+                        )
+                        .await?;
+                        Box::new(task)
+                    }
+                };
+                Ok(task)
+            }
         }))
         .await
         .into_iter()

@@ -250,6 +250,7 @@ where
             task::group_certificates_sent,
             task_result::all_columns.nullable(),
         ))
+        .distinct()  // NOTE: Because of multiple shares, participants can be duplicated
         .load(connection)
         .await?;
     Ok(tasks)

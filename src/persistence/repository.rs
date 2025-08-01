@@ -24,7 +24,7 @@ use self::{
     },
 };
 use self::{
-    device::{get_group_device_ids, get_task_devices},
+    device::{get_group_device_ids, get_task_devices, get_tasks_devices},
     task::{create_group_task, create_task},
 };
 use self::{
@@ -121,6 +121,11 @@ impl Repository {
     pub async fn get_task_devices(&self, task_id: &Uuid) -> Result<Vec<Device>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         get_task_devices(connection, task_id).await
+    }
+
+    pub async fn get_tasks_devices(&self, task_ids: &[Uuid]) -> Result<Vec<(Uuid, Device)>, PersistenceError> {
+        let connection = &mut self.get_async_connection().await?;
+        get_tasks_devices(connection, task_ids).await
     }
 
     pub async fn activate_device(
