@@ -333,12 +333,12 @@ impl State {
     }
 
     pub async fn get_task(&self, task_id: &Uuid) -> Result<Box<dyn Task>, Error> {
-        let Some(communicator) = self.communicators.get(task_id) else {
+        let Some(communicator) = self.get_communicator(task_id) else {
             return Err(Error::GeneralProtocolError("Invalid task id".into()));
         };
         let Some(task) = self
             .get_repo()
-            .get_task(task_id, communicator.clone(), self.repo.clone())
+            .get_task(task_id, communicator, self.repo.clone())
             .await?
         else {
             return Err(Error::GeneralProtocolError("Invalid task id".into()));
@@ -397,17 +397,16 @@ impl State {
         decision: bool,
     ) -> Result<bool, Error> {
         let repo = self.repo.clone();
-        let Some(communicator) = self.communicators.get(task_id) else {
+        let Some(communicator) = self.get_communicator(task_id) else {
             return Err(Error::GeneralProtocolError("Invalid task id".into()));
         };
         let Some(mut task) = self
             .get_repo()
-            .get_task(task_id, communicator.clone(), self.repo.clone())
+            .get_task(task_id, communicator, self.repo.clone())
             .await?
         else {
             return Err(Error::GeneralProtocolError("Invalid task id".into()));
         };
-        drop(communicator);
         let change = task.decide(device, decision, repo).await;
         if let Some(approved) = change {
             self.send_updates(task_id).await?;
@@ -464,10 +463,10 @@ impl State {
     }
 
     pub async fn send_updates(&mut self, task_id: &Uuid) -> Result<(), Error> {
-        let communicator = self.communicators.get(task_id).unwrap(); // TODO
+        let communicator = self.get_communicator(task_id).unwrap(); // TODO remove unwrap?
         let Some(task) = self
             .get_repo()
-            .get_task(task_id, communicator.clone(), self.repo.clone())
+            .get_task(task_id, communicator, self.repo.clone())
             .await?
         else {
             return Err(Error::GeneralProtocolError(format!(
@@ -492,7 +491,6 @@ impl State {
             }
         }
 
-        drop(communicator); // so we can have a mutable borrow of self
         for device_id in remove {
             self.remove_subscriber(&device_id);
         }
@@ -502,6 +500,10 @@ impl State {
 
     fn get_repo(&self) -> &Arc<Repository> {
         &self.repo
+    }
+
+    fn get_communicator(&self, task_id: &Uuid) -> Option<Arc<RwLock<Communicator>>> {
+        self.communicators.get(task_id).as_deref().cloned()
     }
 
     async fn tasks_from_task_models(
