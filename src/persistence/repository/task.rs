@@ -203,6 +203,7 @@ where
     let tasks = task::table
         .left_outer_join(task_result::table)
         .select(task_model_columns!())
+        .order_by(task::id.asc())
         .load(connection)
         .await?;
     Ok(tasks)
@@ -220,7 +221,8 @@ where
         .inner_join(task_participant::table)
         .filter(task_participant::device_id.eq(identifier))
         .select(task_model_columns!())
-        .distinct()  // NOTE: Because of multiple shares, participants can be duplicated
+        .order_by(task::id.asc())
+        .distinct_on(task::id)  // NOTE: Because of multiple shares, participants can be duplicated
         .load(connection)
         .await?;
     Ok(tasks)
