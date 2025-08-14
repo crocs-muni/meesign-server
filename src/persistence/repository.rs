@@ -329,20 +329,9 @@ impl Repository {
         }
         let task = task.unwrap();
 
-        let task: Box<dyn TaskTrait> = match task.task_type {
-            TaskType::Group => Box::new(GroupTask::from_model(task, device_ids, communicator, repository)
-                .await
-                .unwrap()),
-            TaskType::SignChallenge => Box::new(SignTask::from_model(task, device_ids, communicator, repository)
-                .await
-                .unwrap()),
-            TaskType::SignPdf => Box::new(SignPDFTask::from_model(task, device_ids, communicator, repository)
-                .await
-                .unwrap()),
-            TaskType::Decrypt => Box::new(DecryptTask::from_model(task, device_ids, communicator, repository)
-                .await
-                .unwrap()),
-        };
+        let task = crate::tasks::from_model(task, device_ids, communicator, repository)
+            .await
+            .unwrap();
         Ok(Some(task))
     }
 
