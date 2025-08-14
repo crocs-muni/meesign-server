@@ -2,12 +2,7 @@ use chrono::{DateTime, Local};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::{
-    communicator::Communicator,
-    tasks::{group::GroupTask, sign::SignTask, sign_pdf::SignPDFTask,
-            decrypt::DecryptTask, Task as TaskTrait,
-    },
-};
+use crate::{communicator::Communicator, tasks::Task as TaskTrait};
 
 use super::{
     enums::{DeviceKind, KeyType, ProtocolType, TaskType},
@@ -20,11 +15,11 @@ use self::{
     group::get_group,
     task::{
         get_device_tasks, get_tasks, increment_round, increment_task_attempt_count, set_round,
-        set_task_last_update, set_task_result, set_task_group_certificates_sent,
+        set_task_group_certificates_sent, set_task_last_update, set_task_result,
     },
 };
 use self::{
-    device::{get_group_device_ids, get_task_devices, get_tasks_devices},
+    device::{get_task_devices, get_tasks_devices},
     task::{create_group_task, create_task},
 };
 use self::{
@@ -123,7 +118,10 @@ impl Repository {
         get_task_devices(connection, task_id).await
     }
 
-    pub async fn get_tasks_devices(&self, task_ids: &[Uuid]) -> Result<Vec<(Uuid, Device)>, PersistenceError> {
+    pub async fn get_tasks_devices(
+        &self,
+        task_ids: &[Uuid],
+    ) -> Result<Vec<(Uuid, Device)>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         get_tasks_devices(connection, task_ids).await
     }
@@ -202,6 +200,7 @@ impl Repository {
         get_device_groups(connection, identifier).await
     }
 
+    #[allow(unused_variables)]
     pub async fn does_group_contain_device(
         &self,
         group_id: &[u8],

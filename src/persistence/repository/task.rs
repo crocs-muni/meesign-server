@@ -222,7 +222,7 @@ where
         .filter(task_participant::device_id.eq(identifier))
         .select(task_model_columns!())
         .order_by(task::id.asc())
-        .distinct_on(task::id)  // NOTE: Because of multiple shares, participants can be duplicated
+        .distinct_on(task::id) // NOTE: Because of multiple shares, participants can be duplicated
         .load(connection)
         .await?;
     Ok(tasks)

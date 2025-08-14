@@ -8,7 +8,6 @@ use diesel_async::{AsyncConnection, RunQueryDsl};
 use uuid::Uuid;
 
 use crate::persistence::models::NewGroupParticipant;
-use crate::persistence::schema::device;
 use crate::persistence::schema::group;
 use crate::persistence::schema::group_participant;
 use crate::persistence::schema::task;

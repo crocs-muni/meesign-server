@@ -119,36 +119,17 @@ pub async fn from_model(
 ) -> Result<Box<dyn Task + Send + Sync>, Error> {
     let task: Box<dyn Task + Send + Sync> = match task_model.task_type {
         TaskType::Group => Box::new(
-            group::GroupTask::from_model(
-                task_model,
-                devices,
-                communicator,
-                repository,
-            ).await?
+            group::GroupTask::from_model(task_model, devices, communicator, repository).await?,
         ),
         TaskType::SignPdf => Box::new(
-            sign_pdf::SignPDFTask::from_model(
-                task_model,
-                devices,
-                communicator,
-                repository,
-            ).await?
+            sign_pdf::SignPDFTask::from_model(task_model, devices, communicator, repository)
+                .await?,
         ),
         TaskType::SignChallenge => Box::new(
-            sign::SignTask::from_model(
-                task_model,
-                devices,
-                communicator,
-                repository,
-            ).await?
+            sign::SignTask::from_model(task_model, devices, communicator, repository).await?,
         ),
         TaskType::Decrypt => Box::new(
-            decrypt::DecryptTask::from_model(
-                task_model,
-                devices,
-                communicator,
-                repository,
-            ).await?
+            decrypt::DecryptTask::from_model(task_model, devices, communicator, repository).await?,
         ),
     };
     Ok(task)

@@ -3,7 +3,6 @@ use diesel::QueryDsl;
 use diesel::{pg::Pg, ExpressionMethods, SelectableHelper};
 use diesel_async::AsyncConnection;
 use diesel_async::RunQueryDsl;
-use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::persistence::enums::DeviceKind;
@@ -50,7 +49,7 @@ where
 {
     let devices: Vec<Device> = task_participant::table
         .inner_join(device::table)
-        .inner_join(task::table)  // TODO: Can we remove this join?
+        .inner_join(task::table) // TODO: Can we remove this join?
         .filter(task::id.eq(task_id))
         .select(Device::as_returning())
         .load(connection)

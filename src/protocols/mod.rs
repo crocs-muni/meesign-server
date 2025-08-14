@@ -31,14 +31,9 @@ pub trait Protocol {
         communicator: &mut Communicator,
         data: &[u8],
     ) -> Result<(), Error>;
-    async fn advance(
-        &mut self,
-        communicator: &mut Communicator,
-    ) -> Result<(), Error>;
-    async fn finalize(
-        &mut self,
-        communicator: &mut Communicator,
-    ) -> Result<Option<Vec<u8>>, Error>;
+    async fn advance(&mut self, communicator: &mut Communicator) -> Result<(), Error>;
+    async fn finalize(&mut self, communicator: &mut Communicator)
+        -> Result<Option<Vec<u8>>, Error>;
     fn round(&self) -> u16;
     fn last_round(&self) -> u16;
     fn get_type(&self) -> ProtocolType;
@@ -54,31 +49,45 @@ pub fn create_keygen_protocol(
     task_id: Uuid,
     round: u16,
 ) -> Result<Box<dyn Protocol + Send + Sync>, String> {
-
-    let protocol: Box<dyn Protocol + Send + Sync> = match (protocol_type, key_type) {
-        (ProtocolType::Gg18, KeyType::SignPdf) => Box::new(
-            gg18::GG18Group::from_model(devices_len, threshold, repository, task_id, round),
-        ),
-        (ProtocolType::Gg18, KeyType::SignChallenge) => Box::new(
-            gg18::GG18Group::from_model(devices_len, threshold, repository, task_id, round),
-        ),
-        (ProtocolType::Frost, KeyType::SignChallenge) => Box::new(
-            frost::FROSTGroup::from_model(devices_len, threshold, repository, task_id, round),
-        ),
-        (ProtocolType::Musig2, KeyType::SignChallenge) => Box::new(
-            musig2::MuSig2Group::from_model(devices_len, repository, task_id, round),
-        ),
-        (ProtocolType::Elgamal, KeyType::Decrypt) => Box::new(
-            elgamal::ElgamalGroup::from_model(devices_len, threshold, repository, task_id, round),
-        ),
-        _ => {
-            warn!(
-                "Protocol {:?} does not support {:?} key type",
-                protocol_type, key_type
-            );
-            return Err("Unsupported protocol type and key type combination".into());
-        }
-    };
+    let protocol: Box<dyn Protocol + Send + Sync> =
+        match (protocol_type, key_type) {
+            (ProtocolType::Gg18, KeyType::SignPdf) => Box::new(gg18::GG18Group::from_model(
+                devices_len,
+                threshold,
+                repository,
+                task_id,
+                round,
+            )),
+            (ProtocolType::Gg18, KeyType::SignChallenge) => Box::new(gg18::GG18Group::from_model(
+                devices_len,
+                threshold,
+                repository,
+                task_id,
+                round,
+            )),
+            (ProtocolType::Frost, KeyType::SignChallenge) => Box::new(
+                frost::FROSTGroup::from_model(devices_len, threshold, repository, task_id, round),
+            ),
+            (ProtocolType::Musig2, KeyType::SignChallenge) => Box::new(
+                musig2::MuSig2Group::from_model(devices_len, repository, task_id, round),
+            ),
+            (ProtocolType::Elgamal, KeyType::Decrypt) => {
+                Box::new(elgamal::ElgamalGroup::from_model(
+                    devices_len,
+                    threshold,
+                    repository,
+                    task_id,
+                    round,
+                ))
+            }
+            _ => {
+                warn!(
+                    "Protocol {:?} does not support {:?} key type",
+                    protocol_type, key_type
+                );
+                return Err("Unsupported protocol type and key type combination".into());
+            }
+        };
     Ok(protocol)
 }
 
@@ -91,21 +100,21 @@ pub fn create_threshold_protocol(
     round: u16,
 ) -> Result<Box<dyn Protocol + Send + Sync>, String> {
     let protocol: Box<dyn Protocol + Send + Sync> = match (protocol_type, key_type) {
-        (ProtocolType::Gg18, KeyType::SignPdf) => Box::new(
-            gg18::GG18Sign::from_model(repository, task_id, round),
-        ),
-        (ProtocolType::Gg18, KeyType::SignChallenge) => Box::new(
-            gg18::GG18Sign::from_model(repository, task_id, round),
-        ),
-        (ProtocolType::Frost, KeyType::SignChallenge) => Box::new(
-            frost::FROSTSign::from_model(repository, task_id, round),
-        ),
-        (ProtocolType::Musig2, KeyType::SignChallenge) => Box::new(
-            musig2::MuSig2Sign::from_model(repository, task_id, round),
-        ),
-        (ProtocolType::Elgamal, KeyType::Decrypt) => Box::new(
-            elgamal::ElgamalDecrypt::from_model(repository, task_id, round),
-        ),
+        (ProtocolType::Gg18, KeyType::SignPdf) => {
+            Box::new(gg18::GG18Sign::from_model(repository, task_id, round))
+        }
+        (ProtocolType::Gg18, KeyType::SignChallenge) => {
+            Box::new(gg18::GG18Sign::from_model(repository, task_id, round))
+        }
+        (ProtocolType::Frost, KeyType::SignChallenge) => {
+            Box::new(frost::FROSTSign::from_model(repository, task_id, round))
+        }
+        (ProtocolType::Musig2, KeyType::SignChallenge) => {
+            Box::new(musig2::MuSig2Sign::from_model(repository, task_id, round))
+        }
+        (ProtocolType::Elgamal, KeyType::Decrypt) => Box::new(elgamal::ElgamalDecrypt::from_model(
+            repository, task_id, round,
+        )),
         _ => {
             warn!(
                 "Protocol {:?} does not support {:?} key type",

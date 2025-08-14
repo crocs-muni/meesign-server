@@ -1,5 +1,5 @@
 use futures::future;
-use log::{debug, error, warn, info};
+use log::{debug, error, info, warn};
 use openssl::asn1::{Asn1Integer, Asn1Time};
 use openssl::bn::BigNum;
 use openssl::hash::MessageDigest;

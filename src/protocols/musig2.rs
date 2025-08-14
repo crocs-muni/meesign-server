@@ -17,16 +17,18 @@ pub struct MuSig2Group {
 }
 
 impl MuSig2Group {
-    pub fn new(parties: u32, repository: Arc<Repository>, task_id: Uuid) -> Self {
-        Self { parties, round: 0, repository, task_id }
-    }
     pub fn from_model(
         parties: u32,
         repository: Arc<Repository>,
         task_id: Uuid,
         round: u16,
     ) -> Self {
-        Self { parties, round, repository, task_id}
+        Self {
+            parties,
+            round,
+            repository,
+            task_id,
+        }
     }
 
     async fn set_round(&mut self, round: u16) -> Result<(), Error> {
@@ -44,11 +46,7 @@ impl MuSig2Group {
 
 #[async_trait]
 impl Protocol for MuSig2Group {
-    async fn initialize(
-        &mut self,
-        communicator: &mut Communicator,
-        _: &[u8],
-    ) -> Result<(), Error> {
+    async fn initialize(&mut self, communicator: &mut Communicator, _: &[u8]) -> Result<(), Error> {
         communicator.set_active_devices(None);
         let parties = self.parties;
         communicator.send_all(|idx| {
@@ -64,10 +62,7 @@ impl Protocol for MuSig2Group {
         self.set_round(1).await
     }
 
-    async fn advance(
-        &mut self,
-        communicator: &mut Communicator,
-    ) -> Result<(), Error> {
+    async fn advance(&mut self, communicator: &mut Communicator) -> Result<(), Error> {
         assert!((0..self.last_round()).contains(&self.round));
 
         communicator.relay();
@@ -154,10 +149,7 @@ impl Protocol for MuSig2Sign {
         self.set_round(1).await
     }
 
-    async fn advance(
-        &mut self,
-        communicator: &mut Communicator,
-    ) -> Result<(), Error> {
+    async fn advance(&mut self, communicator: &mut Communicator) -> Result<(), Error> {
         assert!((0..self.last_round()).contains(&self.round));
 
         communicator.relay();

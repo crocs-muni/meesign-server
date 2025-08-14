@@ -8,7 +8,7 @@ use crate::proto::{ProtocolType, SignRequest, TaskType};
 use crate::protocols::frost::FROSTSign;
 use crate::protocols::gg18::GG18Sign;
 use crate::protocols::musig2::MuSig2Sign;
-use crate::protocols::{Protocol, create_threshold_protocol};
+use crate::protocols::{create_threshold_protocol, Protocol};
 use crate::tasks::{Task, TaskResult, TaskStatus};
 use crate::{get_timestamp, utils};
 use async_trait::async_trait;
@@ -17,8 +17,6 @@ use meesign_crypto::proto::{ClientMessage, Message as _};
 use prost::Message as _;
 use tokio::sync::RwLock;
 use uuid::Uuid;
-
-use crate::utils::hextrunc;
 
 pub struct SignTask {
     id: Uuid,
@@ -89,7 +87,7 @@ impl SignTask {
         self.preprocessed = Some(preprocessed);
     }
 
-    pub(super) async fn start_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
+    pub(super) async fn start_task(&mut self) -> Result<(), Error> {
         assert!(self.communicator.read().await.accept_count() >= self.group.threshold());
         self.protocol
             .initialize(
@@ -100,7 +98,9 @@ impl SignTask {
     }
 
     pub(super) async fn advance_task(&mut self) -> Result<(), Error> {
-        self.protocol.advance(&mut *self.communicator.write().await).await
+        self.protocol
+            .advance(&mut *self.communicator.write().await)
+            .await
     }
 
     pub(super) async fn finalize_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
@@ -112,7 +112,8 @@ impl SignTask {
             self.set_result(
                 Err("Task failed (signature not output)".to_string()),
                 repository,
-            ).await?;
+            )
+            .await?;
             return Ok(()); // TODO: can we return an error here without affecting client devices?
         }
         let signature = signature.unwrap();
@@ -130,7 +131,7 @@ impl SignTask {
 
     pub(super) async fn next_round(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
         if self.protocol.round() == 0 {
-            self.start_task(repository).await
+            self.start_task().await
         } else if self.protocol.round() < self.protocol.last_round() {
             self.advance_task().await
         } else {
@@ -188,7 +189,9 @@ impl SignTask {
 
         if self.result.is_none() && self.protocol.round() == 0 {
             if self.communicator.read().await.reject_count() >= self.group.reject_threshold() {
-                self.set_result(Err("Task declined".to_string()), repository).await.unwrap();
+                self.set_result(Err("Task declined".to_string()), repository)
+                    .await
+                    .unwrap();
                 return Some(false);
             } else if self.communicator.read().await.accept_count() >= self.group.threshold() {
                 return Some(true);
@@ -197,10 +200,12 @@ impl SignTask {
         None
     }
 
-    async fn set_result(&mut self, result: Result<Vec<u8>, String>, repository: Arc<Repository>) -> Result<(), Error> {
-        repository
-            .set_task_result(&self.id, &result)
-            .await?;
+    async fn set_result(
+        &mut self,
+        result: Result<Vec<u8>, String>,
+        repository: Arc<Repository>,
+    ) -> Result<(), Error> {
+        repository.set_task_result(&self.id, &result).await?;
         self.result = Some(result);
         Ok(())
     }
@@ -286,7 +291,7 @@ impl Task for SignTask {
 
         if self.is_approved().await {
             self.increment_attempt_count(repository.clone()).await?;
-            self.start_task(repository).await?;
+            self.start_task().await?;
             Ok(true)
         } else {
             Ok(false)

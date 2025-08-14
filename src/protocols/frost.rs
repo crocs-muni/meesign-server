@@ -18,15 +18,6 @@ pub struct FROSTGroup {
 }
 
 impl FROSTGroup {
-    pub fn new(parties: u32, threshold: u32, repository: Arc<Repository>, task_id: Uuid) -> Self {
-        Self {
-            parties,
-            threshold,
-            round: 0,
-            repository,
-            task_id,
-        }
-    }
     pub fn from_model(
         parties: u32,
         threshold: u32,
@@ -58,11 +49,7 @@ impl FROSTGroup {
 
 #[async_trait]
 impl Protocol for FROSTGroup {
-    async fn initialize(
-        &mut self,
-        communicator: &mut Communicator,
-        _: &[u8],
-    ) -> Result<(), Error> {
+    async fn initialize(&mut self, communicator: &mut Communicator, _: &[u8]) -> Result<(), Error> {
         communicator.set_active_devices(None);
         let parties = self.parties;
         let threshold = self.threshold;
@@ -79,10 +66,7 @@ impl Protocol for FROSTGroup {
         self.set_round(1).await
     }
 
-    async fn advance(
-        &mut self,
-        communicator: &mut Communicator,
-    ) -> Result<(), Error> {
+    async fn advance(&mut self, communicator: &mut Communicator) -> Result<(), Error> {
         assert!((0..self.last_round()).contains(&self.round));
 
         communicator.relay();
@@ -169,10 +153,7 @@ impl Protocol for FROSTSign {
         self.set_round(1).await
     }
 
-    async fn advance(
-        &mut self,
-        communicator: &mut Communicator,
-    ) -> Result<(), Error> {
+    async fn advance(&mut self, communicator: &mut Communicator) -> Result<(), Error> {
         assert!((0..self.last_round()).contains(&self.round));
 
         communicator.relay();

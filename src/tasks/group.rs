@@ -5,13 +5,8 @@ use crate::persistence::Device;
 use crate::persistence::PersistenceError;
 use crate::persistence::Repository;
 use crate::persistence::Task as TaskModel;
-use crate::proto;
 use crate::proto::{KeyType, ProtocolType, TaskType};
-use crate::protocols::elgamal::ElgamalGroup;
-use crate::protocols::frost::FROSTGroup;
-use crate::protocols::gg18::GG18Group;
-use crate::protocols::musig2::MuSig2Group;
-use crate::protocols::{Protocol, create_keygen_protocol};
+use crate::protocols::{create_keygen_protocol, Protocol};
 use crate::tasks::{Task, TaskResult, TaskStatus};
 use crate::{get_timestamp, utils};
 use async_trait::async_trait;
@@ -77,7 +72,8 @@ impl GroupTask {
 
         let group_task_threshold = devices.len() as u32;
         let device_ids = devices.iter().map(|x| x.identifier().to_vec()).collect();
-        let communicator = Communicator::new(devices.clone(), group_task_threshold, protocol.get_type());
+        let communicator =
+            Communicator::new(devices.clone(), group_task_threshold, protocol.get_type());
         let communicator = Arc::new(RwLock::new(communicator));
 
         let request = (crate::proto::GroupRequest {
@@ -129,7 +125,7 @@ impl GroupTask {
         Ok(repository.increment_task_attempt_count(&self.id).await?)
     }
 
-    async fn start_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
+    async fn start_task(&mut self) -> Result<(), Error> {
         self.protocol
             .initialize(&mut *self.communicator.write().await, &[])
             .await?;
@@ -196,7 +192,7 @@ impl GroupTask {
         if !self.certificates_sent {
             self.send_certificates(repository).await.unwrap();
         } else if self.protocol.round() == 0 {
-            self.start_task(repository).await.unwrap();
+            self.start_task().await.unwrap();
         } else if self.protocol.round() < self.protocol.last_round() {
             self.advance_task().await
         } else {
@@ -208,10 +204,7 @@ impl GroupTask {
         self.communicator.write().await.set_active_devices(None);
 
         let certs: HashMap<u32, Vec<u8>> = {
-            let communicator_read = self
-                .communicator
-                .read()
-                .await;
+            let communicator_read = self.communicator.read().await;
             self.devices
                 .iter()
                 .flat_map(|dev| {
@@ -232,7 +225,9 @@ impl GroupTask {
 
         self.communicator.write().await.send_all(|_| certs.clone());
         self.certificates_sent = true;
-        repository.set_task_group_certificates_sent(&self.id, Some(true)).await?;
+        repository
+            .set_task_group_certificates_sent(&self.id, Some(true))
+            .await?;
         Ok(())
     }
 }
@@ -410,7 +405,7 @@ impl Task for GroupTask {
 
         if self.is_approved().await {
             self.increment_attempt_count(repository.clone()).await?;
-            self.start_task(repository).await.unwrap();
+            self.start_task().await.unwrap();
             Ok(true)
         } else {
             Ok(false)

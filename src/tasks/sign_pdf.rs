@@ -7,8 +7,8 @@ use crate::proto::TaskType;
 use crate::tasks::sign::SignTask;
 use crate::tasks::{Task, TaskResult, TaskStatus};
 use async_trait::async_trait;
-use log::{error, info, warn};
 use lazy_static::lazy_static;
+use log::{error, info, warn};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};
@@ -51,19 +51,15 @@ impl SignPDFTask {
         let file = NamedTempFile::new();
         if file.is_err() {
             error!("Could not create temporary file");
-            self.set_result(
-                Err("Task failed (server error)".to_string()),
-                repository,
-            ).await?;
+            self.set_result(Err("Task failed (server error)".to_string()), repository)
+                .await?;
             return Ok(()); // TODO: double check that behavior won't change if we return as err
         }
         let mut file = file.unwrap();
         if file.write_all(&self.sign_task.data).is_err() {
             error!("Could not write in temporary file");
-            self.set_result(
-                Err("Task failed (server error)".to_string()),
-                repository,
-            ).await?;
+            self.set_result(Err("Task failed (server error)".to_string()), repository)
+                .await?;
             return Ok(()); // TODO: double check that behavior won't change if we return as err
         }
 
@@ -78,10 +74,8 @@ impl SignPDFTask {
 
         if pdfhelper.is_err() {
             error!("Could not start PDFHelper");
-            self.set_result(
-                Err("Task failed (server error)".to_string()),
-                repository,
-            ).await?;
+            self.set_result(Err("Task failed (server error)".to_string()), repository)
+                .await?;
             return Ok(()); // TODO: double check that behavior won't change if we return as err
         }
         let mut pdfhelper = pdfhelper.unwrap();
@@ -91,15 +85,16 @@ impl SignPDFTask {
             self.sign_task.get_group().certificate().unwrap(),
         );
         if hash.is_empty() {
-            self.set_result(
-                Err("Task failed (invalid PDF)".to_string()),
-                repository,
-            ).await?;
+            self.set_result(Err("Task failed (invalid PDF)".to_string()), repository)
+                .await?;
             return Ok(()); // TODO: double check that behavior won't change if we return as err
         }
-        PDF_HELPERS.lock().unwrap().insert(self.get_id().clone(), pdfhelper);
+        PDF_HELPERS
+            .lock()
+            .unwrap()
+            .insert(self.get_id().clone(), pdfhelper);
         self.sign_task.set_preprocessed(hash);
-        self.sign_task.start_task(repository).await
+        self.sign_task.start_task().await
     }
 
     async fn advance_task(&mut self) -> Result<(), Error> {
@@ -109,15 +104,8 @@ impl SignPDFTask {
     async fn finalize_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
         self.sign_task.finalize_task(repository.clone()).await?;
         if let Some(TaskResult::Signed(signature)) = self.sign_task.get_result() {
-            let mut pdfhelper = PDF_HELPERS
-                .lock()
-                .unwrap()
-                .remove(self.get_id())
-                .unwrap();
-            let signed = include_signature(
-                &mut pdfhelper,
-                &signature,
-            );
+            let mut pdfhelper = PDF_HELPERS.lock().unwrap().remove(self.get_id()).unwrap();
+            let signed = include_signature(&mut pdfhelper, &signature);
 
             info!(
                 "PDF signed by group_id={}",
@@ -129,7 +117,8 @@ impl SignPDFTask {
             self.set_result(
                 Err("Task failed (signature not output)".to_string()),
                 repository,
-            ).await?;
+            )
+            .await?;
         }
         Ok(())
     }
@@ -144,10 +133,12 @@ impl SignPDFTask {
         }
     }
 
-    async fn set_result(&mut self, result: Result<Vec<u8>, String>, repository: Arc<Repository>) -> Result<(), Error> {
-        repository
-            .set_task_result(self.get_id(), &result)
-            .await?;
+    async fn set_result(
+        &mut self,
+        result: Result<Vec<u8>, String>,
+        repository: Arc<Repository>,
+    ) -> Result<(), Error> {
+        repository.set_task_result(self.get_id(), &result).await?;
         self.result = Some(result);
         Ok(())
     }
@@ -202,11 +193,7 @@ impl Task for SignPDFTask {
         }
 
         if self.is_approved().await {
-            if let Some(mut pdfhelper) = PDF_HELPERS
-                .lock()
-                .unwrap()
-                .remove(self.get_id())
-            {
+            if let Some(mut pdfhelper) = PDF_HELPERS.lock().unwrap().remove(self.get_id()) {
                 pdfhelper.kill().unwrap();
             }
             self.sign_task.attempts += 1;
@@ -279,10 +266,7 @@ impl Task for SignPDFTask {
             None => None,
         };
         let sign_task = SignTask::from_model(model, devices, communicator, repository).await?;
-        Ok(Self {
-            sign_task,
-            result,
-        })
+        Ok(Self { sign_task, result })
     }
 
     fn get_id(&self) -> &Uuid {

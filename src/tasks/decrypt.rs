@@ -4,9 +4,9 @@ use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::group::Group;
 use crate::persistence::{Device, PersistenceError, Repository, Task as TaskModel};
-use crate::proto::{DecryptRequest, ProtocolType, TaskType};
+use crate::proto::{DecryptRequest, TaskType};
 use crate::protocols::elgamal::ElgamalDecrypt;
-use crate::protocols::{Protocol, create_threshold_protocol};
+use crate::protocols::{create_threshold_protocol, Protocol};
 use crate::tasks::{Task, TaskResult, TaskStatus};
 use crate::{get_timestamp, utils};
 use async_trait::async_trait;
@@ -67,18 +67,17 @@ impl DecryptTask {
         })
     }
 
-    pub(super) async fn start_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
+    pub(super) async fn start_task(&mut self) -> Result<(), Error> {
         assert!(self.communicator.read().await.accept_count() >= self.group.threshold());
         self.protocol
-            .initialize(
-                &mut *self.communicator.write().await,
-                &self.data,
-            )
+            .initialize(&mut *self.communicator.write().await, &self.data)
             .await
     }
 
     pub(super) async fn advance_task(&mut self) -> Result<(), Error> {
-        self.protocol.advance(&mut *self.communicator.write().await).await
+        self.protocol
+            .advance(&mut *self.communicator.write().await)
+            .await
     }
 
     pub(super) async fn finalize_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
@@ -87,10 +86,8 @@ impl DecryptTask {
             .finalize(&mut *self.communicator.write().await)
             .await?;
         if decrypted.is_none() {
-            self.set_result(
-                Err("Task failed (data not output)".to_string()),
-                repository,
-            ).await?;
+            self.set_result(Err("Task failed (data not output)".to_string()), repository)
+                .await?;
             return Ok(()); // TODO: can we return an error here without affecting client devices?
         }
         let decrypted = decrypted.unwrap();
@@ -108,7 +105,7 @@ impl DecryptTask {
 
     pub(super) async fn next_round(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
         if self.protocol.round() == 0 {
-            self.start_task(repository).await
+            self.start_task().await
         } else if self.protocol.round() < self.protocol.last_round() {
             self.advance_task().await
         } else {
@@ -146,7 +143,8 @@ impl DecryptTask {
             .receive_messages(device_id, messages);
         self.set_last_update(repository).await?;
 
-        if self.communicator.read().await.round_received() && self.protocol.round() <= self.protocol.last_round()
+        if self.communicator.read().await.round_received()
+            && self.protocol.round() <= self.protocol.last_round()
         {
             return Ok(true);
         }
@@ -165,7 +163,9 @@ impl DecryptTask {
 
         if self.result.is_none() && self.protocol.round() == 0 {
             if self.communicator.read().await.reject_count() >= self.group.reject_threshold() {
-                self.set_result(Err("Task declined".to_string()), repository).await.unwrap();
+                self.set_result(Err("Task declined".to_string()), repository)
+                    .await
+                    .unwrap();
                 return Some(false);
             } else if self.communicator.read().await.accept_count() >= self.group.threshold() {
                 return Some(true);
@@ -174,10 +174,12 @@ impl DecryptTask {
         None
     }
 
-    async fn set_result(&mut self, result: Result<Vec<u8>, String>, repository: Arc<Repository>) -> Result<(), Error> {
-        repository
-            .set_task_result(self.get_id(), &result)
-            .await?;
+    async fn set_result(
+        &mut self,
+        result: Result<Vec<u8>, String>,
+        repository: Arc<Repository>,
+    ) -> Result<(), Error> {
+        repository.set_task_result(self.get_id(), &result).await?;
         self.result = Some(result);
         Ok(())
     }
@@ -309,7 +311,7 @@ impl Task for DecryptTask {
 
         if self.is_approved().await {
             self.increment_attempt_count(repository.clone()).await?;
-            self.start_task(repository).await?;
+            self.start_task().await?;
             Ok(true)
         } else {
             Ok(false)
@@ -358,7 +360,10 @@ impl Task for DecryptTask {
     }
 
     async fn device_acknowledged(&self, device_id: &[u8]) -> bool {
-        self.communicator.read().await.device_acknowledged(device_id)
+        self.communicator
+            .read()
+            .await
+            .device_acknowledged(device_id)
     }
 
     fn get_request(&self) -> &[u8] {

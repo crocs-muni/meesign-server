@@ -1,14 +1,11 @@
 use crate::persistence::Device;
 use crate::persistence::PgPool;
 use crate::proto::ProtocolType;
-use chrono::Duration;
-use chrono::Local;
 use meesign_crypto::auth::verify_broadcast;
 use meesign_crypto::proto::{ClientMessage, Message, ServerMessage};
 use rand::prelude::SliceRandom;
 use rand::thread_rng;
 use std::collections::HashMap;
-use std::ops::Deref;
 use tonic::codegen::Arc;
 
 /// Communication state of a Task
@@ -215,15 +212,15 @@ impl Communicator {
             .filter(|device| self.decisions.get(device.identifier()) > Some(&0))
             .collect::<Vec<_>>();
 
-        let latest_acceptable_time = Local::now() - Duration::seconds(5);
         let connected_devices: Vec<_> = match pg_pool {
-            Some(pg_pool) => {
+            Some(_pg_pool) => {
                 todo!();
-                agreeing_devices
-                    .iter()
-                    .filter(|device| device.last_active() > &latest_acceptable_time)
-                    .map(Deref::deref)
-                    .collect()
+                //let latest_acceptable_time = Local::now() - Duration::seconds(5);
+                // agreeing_devices
+                //     .iter()
+                //     .filter(|device| device.last_active() > &latest_acceptable_time)
+                //     .map(Deref::deref)
+                //     .collect()
             }
             None => agreeing_devices.clone(),
         };

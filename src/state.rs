@@ -10,7 +10,7 @@ use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::interfaces::grpc::format_task;
 use crate::persistence::{Device, DeviceKind, Group, NameValidator, Repository, Task as TaskModel};
-use crate::proto::{self, KeyType, ProtocolType, TaskType};
+use crate::proto::{KeyType, ProtocolType};
 use crate::tasks::decrypt::DecryptTask;
 use crate::tasks::group::GroupTask;
 use crate::tasks::sign::SignTask;
@@ -297,9 +297,9 @@ impl State {
         let mut filtered_tasks = Vec::new();
         // TODO: can we simplify the condition so that we can filter it in DB? Maybe store task acknowledgements in task_participant
         for task in tasks.into_iter() {
-            if (task.get_status() != TaskStatus::Finished
+            if task.get_status() != TaskStatus::Finished
                 || (task.get_status() == TaskStatus::Finished
-                    && !task.device_acknowledged(device).await))
+                    && !task.device_acknowledged(device).await)
             {
                 filtered_tasks.push(task as Box<dyn Task>);
             }
@@ -513,15 +513,9 @@ impl State {
         // NOTE: Sorted and unique task models (strict inequality)
         assert!(task_models.windows(2).all(|w| w[0].id < w[1].id));
 
-        let task_ids: Vec<_> = task_models
-            .iter()
-            .map(|task| task.id.clone())
-            .collect();
+        let task_ids: Vec<_> = task_models.iter().map(|task| task.id.clone()).collect();
 
-        let task_id_device_pairs = self
-            .get_repo()
-            .get_tasks_devices(&task_ids)
-            .await?;
+        let task_id_device_pairs = self.get_repo().get_tasks_devices(&task_ids).await?;
 
         let mut task_id_devices: HashMap<_, Vec<_>> = HashMap::new();
 
@@ -532,21 +526,22 @@ impl State {
         let tasks = future::join_all(task_models.into_iter().map(|task| {
             let devices = task_id_devices.remove(&task.id).unwrap();
             async {
-                let communicator = self.communicators.entry(task.id).or_insert_with(|| {
-                    // TODO: decide what to do when the server has restarted and the task communicator is not present
-                    Arc::new(RwLock::new(Communicator::new(
-                        devices.clone(),
-                        task.threshold as u32,
-                        task.protocol_type.unwrap().into(),
-                    )))
-                }).clone();
+                let communicator = self
+                    .communicators
+                    .entry(task.id)
+                    .or_insert_with(|| {
+                        // TODO: decide what to do when the server has restarted and the task communicator is not present
+                        Arc::new(RwLock::new(Communicator::new(
+                            devices.clone(),
+                            task.threshold as u32,
+                            task.protocol_type.unwrap().into(),
+                        )))
+                    })
+                    .clone();
 
-                let task = crate::tasks::from_model(
-                    task,
-                    devices,
-                    communicator,
-                    self.get_repo().clone(),
-                ).await?;
+                let task =
+                    crate::tasks::from_model(task, devices, communicator, self.get_repo().clone())
+                        .await?;
                 Ok(task)
             }
         }))
