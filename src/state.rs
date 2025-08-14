@@ -539,51 +539,14 @@ impl State {
                         task.threshold as u32,
                         task.protocol_type.unwrap().into(),
                     )))
-                });
+                }).clone();
 
-                // TODO refactor
-                let task: Box<dyn Task + Send + Sync> = match task.task_type {
-                    crate::persistence::TaskType::Group => {
-                        let task = GroupTask::from_model(
-                            task,
-                            devices,
-                            communicator.clone(),
-                            self.repo.clone(),
-                        )
-                        .await?;
-                        Box::new(task)
-                    }
-                    crate::persistence::TaskType::SignPdf => {
-                        let task = SignPDFTask::from_model(
-                            task,
-                            devices,
-                            communicator.clone(),
-                            self.repo.clone(),
-                        )
-                        .await?;
-                        Box::new(task)
-                    }
-                    crate::persistence::TaskType::SignChallenge => {
-                        let task = SignTask::from_model(
-                            task,
-                            devices,
-                            communicator.clone(),
-                            self.repo.clone(),
-                        )
-                        .await?;
-                        Box::new(task)
-                    }
-                    crate::persistence::TaskType::Decrypt => {
-                        let task = DecryptTask::from_model(
-                            task,
-                            devices,
-                            communicator.clone(),
-                            self.repo.clone(),
-                        )
-                        .await?;
-                        Box::new(task)
-                    }
-                };
+                let task = crate::tasks::from_model(
+                    task,
+                    devices,
+                    communicator,
+                    self.get_repo().clone(),
+                ).await?;
                 Ok(task)
             }
         }))
