@@ -11,6 +11,7 @@ use crate::proto::{KeyType, ProtocolType};
 pub mod elgamal;
 pub mod frost;
 pub mod gg18;
+pub mod musig2;
 
 impl ProtocolType {
     pub fn check_threshold(self, threshold: u32, group_size: u32) -> bool {
@@ -18,6 +19,7 @@ impl ProtocolType {
             ProtocolType::Gg18 | ProtocolType::Elgamal | ProtocolType::Frost => {
                 threshold >= 2 && threshold <= group_size
             }
+            ProtocolType::Musig2 => threshold >= 2 && threshold == group_size,
         }
     }
 }
@@ -63,6 +65,9 @@ pub fn create_keygen_protocol(
         (ProtocolType::Frost, KeyType::SignChallenge) => Box::new(
             frost::FROSTGroup::from_model(devices_len, threshold, repository, task_id, round),
         ),
+        (ProtocolType::Musig2, KeyType::SignChallenge) => Box::new(
+            musig2::MuSig2Group::from_model(devices_len, repository, task_id, round),
+        ),
         (ProtocolType::Elgamal, KeyType::Decrypt) => Box::new(
             elgamal::ElgamalGroup::from_model(devices_len, threshold, repository, task_id, round),
         ),
@@ -94,6 +99,9 @@ pub fn create_threshold_protocol(
         ),
         (ProtocolType::Frost, KeyType::SignChallenge) => Box::new(
             frost::FROSTSign::from_model(repository, task_id, round),
+        ),
+        (ProtocolType::Musig2, KeyType::SignChallenge) => Box::new(
+            musig2::MuSig2Sign::from_model(repository, task_id, round),
         ),
         (ProtocolType::Elgamal, KeyType::Decrypt) => Box::new(
             elgamal::ElgamalDecrypt::from_model(repository, task_id, round),

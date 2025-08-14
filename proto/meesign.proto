@@ -28,6 +28,7 @@ enum ProtocolType {
   GG18 = 0;
   ELGAMAL = 1;
   FROST = 2;
+  MUSIG2 = 3;
 }
 
 enum KeyType {

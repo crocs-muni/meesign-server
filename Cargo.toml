@@ -1,6 +1,6 @@
 [package]
 name = "meesign-server"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 
 [dependencies]
@@ -23,7 +23,7 @@ tempfile = "3.3.0"
 lazy_static = "1.4.0"
 openssl = "0.10.60"
 sha2 = "0.10.6"
-meesign-crypto = { git = "https://github.com/crocs-muni/meesign-crypto", rev = "b0e7f14", default-features = false, features = ["elgamal-encrypt"] }
+meesign-crypto = { git = "https://github.com/crocs-muni/meesign-crypto", rev = "ccf6b1d", default-features = false, features = ["elgamal-encrypt"] }
 diesel = { version = "2.1.0", features = ["postgres", "chrono", "uuid"] }
 diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }
 diesel-async = { version = "0.4.1", features = ["postgres", "deadpool"] }

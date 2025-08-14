@@ -10,6 +10,7 @@ pub enum ProtocolType {
     Gg18,
     ElGamal,
     Frost,
+    Musig2,
 }
 
 impl From<proto::ProtocolType> for ProtocolType {
@@ -18,6 +19,7 @@ impl From<proto::ProtocolType> for ProtocolType {
             proto::ProtocolType::Gg18 => Self::Gg18,
             proto::ProtocolType::Elgamal => Self::ElGamal,
             proto::ProtocolType::Frost => Self::Frost,
+            proto::ProtocolType::Musig2 => Self::Musig2,
         }
     }
 }
@@ -86,6 +88,7 @@ impl From<ProtocolType> for proto::ProtocolType {
             ProtocolType::Gg18 => Self::Gg18,
             ProtocolType::ElGamal => Self::Elgamal,
             ProtocolType::Frost => Self::Frost,
+            ProtocolType::Musig2 => Self::Musig2,
         }
     }
 }

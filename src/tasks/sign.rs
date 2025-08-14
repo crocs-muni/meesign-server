@@ -7,6 +7,7 @@ use crate::persistence::{Device, PersistenceError, Repository};
 use crate::proto::{ProtocolType, SignRequest, TaskType};
 use crate::protocols::frost::FROSTSign;
 use crate::protocols::gg18::GG18Sign;
+use crate::protocols::musig2::MuSig2Sign;
 use crate::protocols::{Protocol, create_threshold_protocol};
 use crate::tasks::{Task, TaskResult, TaskStatus};
 use crate::{get_timestamp, utils};
@@ -67,6 +68,7 @@ impl SignTask {
             protocol: match protocol_type {
                 ProtocolType::Gg18 => Box::new(GG18Sign::new(repository, id)),
                 ProtocolType::Frost => Box::new(FROSTSign::new(repository, id)),
+                ProtocolType::Musig2 => Box::new(MuSig2Sign::new(repository, id)),
                 _ => {
                     warn!("Protocol type {:?} does not support signing", protocol_type);
                     return Err("Unsupported protocol type for signing".into());
