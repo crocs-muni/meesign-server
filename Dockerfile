@@ -18,6 +18,7 @@ RUN curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v${P
     unzip ./protoc-${PROTOC_VERSION}-linux-x86_64.zip -d $HOME/.local && \
     rm -rf ./protoc-${PROTOC_VERSION}-linux-x86_64.zip && \
     protoc --version
+RUN sudo ln -s /usr/bin/musl-gcc /usr/bin/x86_64-linux-musl-gcc
 RUN cargo build --release --target x86_64-unknown-linux-musl
 
 
