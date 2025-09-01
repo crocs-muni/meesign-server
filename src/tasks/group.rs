@@ -72,9 +72,22 @@ impl GroupTask {
 
         let group_task_threshold = devices.len() as u32;
         let device_ids = devices.iter().map(|x| x.identifier().to_vec()).collect();
-        let communicator =
-            Communicator::new(devices.clone(), group_task_threshold, protocol.get_type());
-        let communicator = Arc::new(RwLock::new(communicator));
+
+        let decisions = devices
+            .iter()
+            .map(|x| (x.identifier().clone(), 0))
+            .collect();
+        let acknowledgements = devices
+            .iter()
+            .map(|x| (x.identifier().clone(), false))
+            .collect();
+        let communicator = Arc::new(RwLock::new(Communicator::new(
+            devices.clone(),
+            group_task_threshold,
+            protocol.get_type(),
+            decisions,
+            acknowledgements,
+        )));
 
         let request = (crate::proto::GroupRequest {
             device_ids,

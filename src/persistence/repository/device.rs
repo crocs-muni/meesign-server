@@ -52,6 +52,7 @@ where
         .inner_join(task::table) // TODO: Can we remove this join?
         .filter(task::id.eq(task_id))
         .select(Device::as_returning())
+        .order_by(device::id)
         .load(connection)
         .await?;
     Ok(devices)

@@ -4,6 +4,7 @@ use diesel::ExpressionMethods;
 use diesel::NullableExpressionMethods;
 use diesel::{pg::Pg, QueryDsl};
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::utils::NameValidator;
@@ -226,6 +227,89 @@ where
         .load(connection)
         .await?;
     Ok(tasks)
+}
+
+pub async fn set_task_decision<Conn>(
+    connection: &mut Conn,
+    task_id: &Uuid,
+    device_id: &[u8],
+    accept: bool,
+) -> Result<(), PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    diesel::update(
+        task_participant::table
+            .filter(task_participant::task_id.eq(task_id))
+            .filter(task_participant::device_id.eq(device_id)),
+    )
+    .set(task_participant::decision.eq(Some(accept)))
+    .execute(connection)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_task_decisions<Conn>(
+    connection: &mut Conn,
+    task_id: &Uuid,
+) -> Result<HashMap<Vec<u8>, i8>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    let mut decisions = HashMap::new();
+    let pairs = task_participant::table
+        .select((task_participant::device_id, task_participant::decision))
+        .filter(task_participant::task_id.eq(task_id))
+        .load::<(Vec<u8>, Option<bool>)>(connection)
+        .await?;
+    for (device_id, vote) in pairs {
+        *decisions.entry(device_id).or_default() += match vote {
+            Some(true) => 1,
+            Some(false) => -1,
+            None => 0,
+        };
+    }
+    Ok(decisions)
+}
+
+pub async fn set_task_acknowledgement<Conn>(
+    connection: &mut Conn,
+    task_id: &Uuid,
+    device_id: &[u8],
+) -> Result<(), PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    diesel::update(
+        task_participant::table
+            .filter(task_participant::task_id.eq(task_id))
+            .filter(task_participant::device_id.eq(device_id)),
+    )
+    .set(task_participant::acknowledgment.eq(Some(true)))
+    .execute(connection)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_task_acknowledgements<Conn>(
+    connection: &mut Conn,
+    task_id: &Uuid,
+) -> Result<HashMap<Vec<u8>, bool>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    let acknowledgements = task_participant::table
+        .select((
+            task_participant::device_id,
+            task_participant::acknowledgment,
+        ))
+        .filter(task_participant::task_id.eq(task_id))
+        .load::<(Vec<u8>, Option<bool>)>(connection)
+        .await?
+        .into_iter()
+        .map(|(device_id, acknowledgement)| (device_id, acknowledgement.unwrap_or(false)))
+        .collect();
+    Ok(acknowledgements)
 }
 
 pub async fn set_task_result<Conn>(

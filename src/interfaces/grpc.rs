@@ -478,9 +478,16 @@ impl MeeSign for MeeSignService {
 
         let mut state = self.state.lock().await;
         state.activate_device(&device_id).await?;
-        state
-            .acknowledge_task(&Uuid::from_slice(&task_id).unwrap(), &device_id)
-            .await;
+
+        let task_id = Uuid::from_slice(&task_id).unwrap();
+        if let Err(err) = state.acknowledge_task(&task_id, &device_id).await {
+            error!(
+                "Couldn't acknowledge task {} for device {}: {}",
+                task_id,
+                utils::hextrunc(&device_id),
+                err
+            );
+        }
 
         Ok(Response::new(msg::Resp {
             message: "OK".into(),

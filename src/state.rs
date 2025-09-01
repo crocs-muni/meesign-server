@@ -9,7 +9,9 @@ use uuid::Uuid;
 use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::interfaces::grpc::format_task;
-use crate::persistence::{Device, DeviceKind, Group, NameValidator, Repository, Task as TaskModel};
+use crate::persistence::{
+    Device, DeviceKind, Group, NameValidator, Repository, Task as TaskModel, TaskType,
+};
 use crate::proto::{KeyType, ProtocolType};
 use crate::tasks::decrypt::DecryptTask;
 use crate::tasks::group::GroupTask;
@@ -333,17 +335,14 @@ impl State {
     }
 
     pub async fn get_task(&self, task_id: &Uuid) -> Result<Box<dyn Task>, Error> {
-        let Some(communicator) = self.get_communicator(task_id) else {
+        let Some(model) = self.repo.get_task(task_id).await? else {
             return Err(Error::GeneralProtocolError("Invalid task id".into()));
         };
-        let Some(task) = self
-            .get_repo()
-            .get_task(task_id, communicator, self.repo.clone())
-            .await?
-        else {
-            return Err(Error::GeneralProtocolError("Invalid task id".into()));
-        };
+        let devices = self.repo.get_task_devices(task_id).await?;
+        let communicator = self.get_communicator(task_id).await?;
 
+        let task =
+            crate::tasks::from_model(model, devices, communicator, self.repo.clone()).await?;
         Ok(task)
     }
 
@@ -396,18 +395,11 @@ impl State {
         device: &[u8],
         decision: bool,
     ) -> Result<bool, Error> {
-        let repo = self.repo.clone();
-        let Some(communicator) = self.get_communicator(task_id) else {
-            return Err(Error::GeneralProtocolError("Invalid task id".into()));
-        };
-        let Some(mut task) = self
-            .get_repo()
-            .get_task(task_id, communicator, self.repo.clone())
-            .await?
-        else {
-            return Err(Error::GeneralProtocolError("Invalid task id".into()));
-        };
-        let change = task.decide(device, decision, repo).await;
+        let mut task = self.get_task(task_id).await?;
+        let change = task.decide(device, decision, self.repo.clone()).await;
+        self.repo
+            .set_task_decision(task_id, device, decision)
+            .await?;
         if let Some(approved) = change {
             self.send_updates(task_id).await?;
             if approved {
@@ -426,9 +418,11 @@ impl State {
         Ok(false)
     }
 
-    pub async fn acknowledge_task(&mut self, task_id: &Uuid, device: &[u8]) {
-        let mut task = self.get_task(task_id).await.unwrap();
+    pub async fn acknowledge_task(&mut self, task_id: &Uuid, device: &[u8]) -> Result<(), Error> {
+        let mut task = self.get_task(task_id).await?;
         task.acknowledge(device).await;
+        self.repo.set_task_acknowledgement(task_id, device).await?;
+        Ok(())
     }
 
     pub async fn restart_task(&mut self, task_id: &Uuid) -> Result<bool, Error> {
@@ -463,17 +457,7 @@ impl State {
     }
 
     pub async fn send_updates(&mut self, task_id: &Uuid) -> Result<(), Error> {
-        let communicator = self.get_communicator(task_id).unwrap(); // TODO remove unwrap?
-        let Some(task) = self
-            .get_repo()
-            .get_task(task_id, communicator, self.repo.clone())
-            .await?
-        else {
-            return Err(Error::GeneralProtocolError(format!(
-                "Couldn't find task with id {}",
-                task_id
-            )));
-        };
+        let task = self.get_task(task_id).await?;
         let mut remove = Vec::new();
 
         for device_id in task.get_devices().iter().map(|device| device.identifier()) {
@@ -502,8 +486,34 @@ impl State {
         &self.repo
     }
 
-    fn get_communicator(&self, task_id: &Uuid) -> Option<Arc<RwLock<Communicator>>> {
-        self.communicators.get(task_id).as_deref().cloned()
+    async fn get_communicator(&self, task_id: &Uuid) -> Result<Arc<RwLock<Communicator>>, Error> {
+        use dashmap::mapref::entry::Entry;
+        let communicator = match self.communicators.entry(task_id.clone()) {
+            Entry::Occupied(entry) => entry.into_ref(),
+            Entry::Vacant(entry) => {
+                let Some(model) = self.repo.get_task(task_id).await? else {
+                    return Err(Error::GeneralProtocolError("Invalid task id".into()));
+                };
+                let mut devices = self.repo.get_task_devices(task_id).await?;
+                devices.sort_by_key(|dev| dev.identifier().clone());
+                let decisions = self.repo.get_task_decisions(task_id).await?;
+                let acknowledgements = self.repo.get_task_acknowledgements(task_id).await?;
+                let threshold = match model.task_type {
+                    TaskType::Group => devices.len() as u32,
+                    _ => model.threshold as u32,
+                };
+
+                entry.insert(Arc::new(RwLock::new(Communicator::new(
+                    devices.clone(),
+                    threshold,
+                    model.protocol_type.unwrap().into(),
+                    decisions,
+                    acknowledgements,
+                ))))
+            }
+        }
+        .clone();
+        Ok(communicator)
     }
 
     async fn tasks_from_task_models(
@@ -526,18 +536,7 @@ impl State {
         let tasks = future::join_all(task_models.into_iter().map(|task| {
             let devices = task_id_devices.remove(&task.id).unwrap();
             async {
-                let communicator = self
-                    .communicators
-                    .entry(task.id)
-                    .or_insert_with(|| {
-                        // TODO: decide what to do when the server has restarted and the task communicator is not present
-                        Arc::new(RwLock::new(Communicator::new(
-                            devices.clone(),
-                            task.threshold as u32,
-                            task.protocol_type.unwrap().into(),
-                        )))
-                    })
-                    .clone();
+                let communicator = self.get_communicator(&task.id).await?;
 
                 let task =
                     crate::tasks::from_model(task, devices, communicator, self.get_repo().clone())

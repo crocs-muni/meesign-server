@@ -34,20 +34,18 @@ impl Communicator {
     /// # Arguments
     /// * `devices` - Sorted list of devices; items of the list need to be unique
     /// * `threshold` - The minimal number of devices to successfully complete the task
-    pub fn new(device_list: Vec<Device>, threshold: u32, protocol_type: ProtocolType) -> Self {
+    pub fn new(
+        device_list: Vec<Device>,
+        threshold: u32,
+        protocol_type: ProtocolType,
+        decisions: HashMap<Vec<u8>, i8>,
+        acknowledgements: HashMap<Vec<u8>, bool>,
+    ) -> Self {
         assert!(device_list.len() > 1);
         assert!(threshold <= device_list.len() as u32);
         // TODO uncomment once is_sorted is stabilized
         // assert!(devices.is_sorted());
 
-        let decisions = device_list
-            .iter()
-            .map(|x| (x.identifier().clone(), 0))
-            .collect();
-        let acknowledgements = device_list
-            .iter()
-            .map(|x| (x.identifier().clone(), false))
-            .collect();
         let mut communicator = Communicator {
             threshold,
             device_list,

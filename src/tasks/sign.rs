@@ -42,10 +42,21 @@ impl SignTask {
         devices.sort_by_key(|x| x.identifier().to_vec());
         let protocol_type = group.protocol();
 
+        let decisions = devices
+            .iter()
+            .map(|x| (x.identifier().clone(), 0))
+            .collect();
+        let acknowledgements = devices
+            .iter()
+            .map(|x| (x.identifier().clone(), false))
+            .collect();
+
         let communicator = Arc::new(RwLock::new(Communicator::new(
             devices,
             group.threshold(),
             protocol_type,
+            decisions,
+            acknowledgements,
         )));
 
         let request = (SignRequest {

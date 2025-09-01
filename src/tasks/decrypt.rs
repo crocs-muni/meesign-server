@@ -39,10 +39,21 @@ impl DecryptTask {
         let mut devices: Vec<Device> = group.devices().to_vec();
         devices.sort_by_key(|x| x.identifier().to_vec());
 
+        let decisions = devices
+            .iter()
+            .map(|x| (x.identifier().clone(), 0))
+            .collect();
+        let acknowledgements = devices
+            .iter()
+            .map(|x| (x.identifier().clone(), false))
+            .collect();
+
         let communicator = Arc::new(RwLock::new(Communicator::new(
             devices,
             group.threshold(),
             group.protocol(),
+            decisions,
+            acknowledgements,
         )));
 
         let request = (DecryptRequest {
