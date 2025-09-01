@@ -108,6 +108,7 @@ impl Group {
 
 #[cfg(test)]
 mod tests {
+    use crate::persistence::DeviceKind;
     use std::vec;
 
     use super::*;
@@ -160,6 +161,8 @@ mod tests {
     fn sample_group() {
         let identifier = vec![0x01, 0x02, 0x03, 0x04];
         let name = String::from("Sample Group");
+        let mut devices = prepare_devices(6);
+        let extra_device = devices.pop().unwrap();
         let threshold = 3;
         let protocol_type = ProtocolType::Gg18;
         let key_type = KeyType::SignPdf;
@@ -167,7 +170,7 @@ mod tests {
             identifier.clone(),
             name.clone(),
             threshold,
-            vec![], // TODO: fix tests
+            devices.clone(),
             protocol_type,
             key_type,
             None,
@@ -177,8 +180,29 @@ mod tests {
         assert_eq!(group.name(), &name);
         assert_eq!(group.threshold(), threshold);
         assert_eq!(group.reject_threshold(), 3);
+        for (left_device, right_device) in group.devices().iter().zip(devices.iter()) {
+            assert_eq!(left_device.identifier(), right_device.identifier());
+        }
+        assert!(!group
+            .devices()
+            .iter()
+            .any(|dev| dev.identifier() == extra_device.identifier()));
         assert_eq!(group.protocol(), protocol_type.into());
         assert_eq!(group.key_type(), key_type.into());
         assert_eq!(group.certificate(), None);
+    }
+
+    fn prepare_devices(n: usize) -> Vec<Device> {
+        assert!(n < u8::MAX as usize);
+        (0..n)
+            .map(|i| {
+                Device::new(
+                    vec![i as u8],
+                    format!("d{}", i),
+                    DeviceKind::User,
+                    vec![0xf0 | i as u8],
+                )
+            })
+            .collect()
     }
 }
