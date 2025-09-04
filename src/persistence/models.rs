@@ -19,6 +19,12 @@ pub struct NewDevice<'a> {
     pub certificate: &'a Vec<u8>,
 }
 
+#[derive(Clone)]
+pub struct Participant {
+    pub device: Device,
+    pub shares: u32,
+}
+
 #[derive(Queryable, Selectable, Clone, PartialEq, Eq)]
 #[diesel(table_name = device)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
@@ -69,12 +75,11 @@ pub struct Group {
     pub name: String,
     pub threshold: i32,
     pub protocol: ProtocolType,
-    pub round: i32,
     pub key_type: KeyType,
     pub certificate: Option<Vec<u8>>,
     pub note: Option<String>,
     #[serde(flatten)]
-    pub device_ids: Vec<Vec<u8>>,
+    pub participant_ids_shares: Vec<(Vec<u8>, u32)>,
 }
 
 #[derive(Insertable)]
@@ -84,7 +89,6 @@ pub struct NewGroup<'a> {
     pub name: &'a str,
     pub threshold: i32,
     pub protocol: ProtocolType,
-    pub round: i32,
     pub key_type: KeyType,
     pub certificate: Option<&'a [u8]>,
     pub note: Option<&'a str>,
@@ -95,15 +99,16 @@ pub struct NewGroup<'a> {
 pub struct NewGroupParticipant<'a> {
     pub device_id: &'a [u8],
     pub group_id: &'a [u8],
+    pub shares: i32,
 }
 
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = group_participant)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct GroupParticipant {
-    pub id: i32,
     pub device_id: Vec<u8>,
     pub group_id: Vec<u8>,
+    pub shares: i32,
 }
 
 #[derive(Insertable)]
@@ -111,6 +116,7 @@ pub struct GroupParticipant {
 pub struct NewTaskParticipant<'a> {
     pub device_id: &'a [u8],
     pub task_id: &'a Uuid,
+    pub shares: i32,
     pub decision: Option<bool>,
     pub acknowledgment: Option<bool>,
 }
@@ -161,18 +167,17 @@ pub struct NewTask<'a> {
 #[diesel(check_for_backend(diesel::pg::Pg))]
 #[diesel(table_name=task_result)]
 pub struct TaskResult {
-    pub id: i32,
     pub task_id: Uuid,
-    pub is_successfull: bool,
+    pub is_successful: bool,
     pub data: Option<Vec<u8>>,
     pub error_message: Option<String>,
 }
 
 impl TaskResult {
     pub fn try_into_option(self) -> Result<Option<Result<Vec<u8>, String>>, PersistenceError> {
-        if self.is_successfull && self.data.is_some() {
+        if self.is_successful && self.data.is_some() {
             Ok(Some(Ok(self.data.unwrap())))
-        } else if !self.is_successfull && self.error_message.is_some() {
+        } else if !self.is_successful && self.error_message.is_some() {
             Ok(Some(Err(self.error_message.unwrap())))
         } else {
             Err(PersistenceError::DataInconsistencyError(format!(
@@ -187,7 +192,7 @@ impl TaskResult {
 #[diesel(table_name=task_result)]
 pub struct NewTaskResult<'a> {
     pub task_id: &'a Uuid,
-    pub is_successfull: bool,
+    pub is_successful: bool,
     pub data: Option<&'a [u8]>,
     pub error_message: Option<&'a str>,
 }
@@ -197,13 +202,13 @@ impl<'a> NewTaskResult<'a> {
         match result {
             Ok(data) => Self {
                 task_id,
-                is_successfull: true,
+                is_successful: true,
                 data: Some(data.as_slice()),
                 error_message: None,
             },
             Err(error_message) => Self {
                 task_id,
-                is_successfull: false,
+                is_successful: false,
                 data: None,
                 error_message: Some(error_message),
             },

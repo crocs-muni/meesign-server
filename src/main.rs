@@ -65,6 +65,11 @@ mod proto {
         pub fn from_model(model: GroupModel) -> Self {
             let protocol: crate::proto::ProtocolType = model.protocol.into();
             let key_type: crate::proto::KeyType = model.key_type.into();
+            let device_ids = model
+                .participant_ids_shares
+                .into_iter()
+                .map(|(device_id, _)| device_id)
+                .collect();
             Self {
                 identifier: model.id,
                 name: model.name,
@@ -72,7 +77,7 @@ mod proto {
                 protocol: protocol.into(),
                 key_type: key_type.into(),
                 note: model.note,
-                device_ids: model.device_ids,
+                device_ids,
             }
         }
     }

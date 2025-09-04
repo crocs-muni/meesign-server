@@ -2,7 +2,7 @@ use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::get_timestamp;
 use crate::group::Group;
-use crate::persistence::{Device, Repository};
+use crate::persistence::{Participant, Repository};
 use crate::proto::TaskType;
 use crate::tasks::sign::SignTask;
 use crate::tasks::{Task, TaskResult, TaskStatus};
@@ -212,8 +212,8 @@ impl Task for SignPDFTask {
         self.sign_task.is_approved().await
     }
 
-    fn get_devices(&self) -> &Vec<Device> {
-        self.sign_task.get_devices()
+    fn get_participants(&self) -> &Vec<Participant> {
+        self.sign_task.get_participants()
     }
 
     async fn waiting_for(&self, device: &[u8]) -> bool {
@@ -254,7 +254,7 @@ impl Task for SignPDFTask {
 
     async fn from_model(
         model: crate::persistence::Task,
-        devices: Vec<Device>,
+        participants: Vec<Participant>,
         communicator: Arc<RwLock<Communicator>>,
         repository: Arc<Repository>,
     ) -> Result<Self, crate::error::Error>
@@ -265,7 +265,7 @@ impl Task for SignPDFTask {
             Some(val) => val.try_into_option()?,
             None => None,
         };
-        let sign_task = SignTask::from_model(model, devices, communicator, repository).await?;
+        let sign_task = SignTask::from_model(model, participants, communicator, repository).await?;
         Ok(Self { sign_task, result })
     }
 

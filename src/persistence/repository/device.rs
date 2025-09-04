@@ -6,11 +6,10 @@ use diesel_async::RunQueryDsl;
 use uuid::Uuid;
 
 use crate::persistence::enums::DeviceKind;
-use crate::persistence::schema::{device, task_participant};
-use crate::persistence::schema::{group_participant, task};
+use crate::persistence::schema::{device, group_participant, task, task_participant};
 use crate::persistence::{
     error::PersistenceError,
-    models::{Device, NewDevice},
+    models::{Device, NewDevice, Participant},
     repository::utils::NameValidator,
 };
 
@@ -40,58 +39,77 @@ where
     Ok(devices)
 }
 
-pub async fn get_task_devices<Conn>(
+pub async fn get_group_participants<Conn>(
     connection: &mut Conn,
-    task_id: &Uuid,
-) -> Result<Vec<Device>, PersistenceError>
+    group_id: &[u8],
+) -> Result<Vec<Participant>, PersistenceError>
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    let devices: Vec<Device> = task_participant::table
+    let devices = group_participant::table
         .inner_join(device::table)
-        .inner_join(task::table) // TODO: Can we remove this join?
-        .filter(task::id.eq(task_id))
-        .select(Device::as_returning())
-        .order_by(device::id)
-        .load(connection)
-        .await?;
+        .filter(group_participant::group_id.eq(group_id))
+        .select((Device::as_returning(), group_participant::shares))
+        .load::<(Device, i32)>(connection)
+        .await?
+        .into_iter()
+        .map(|(device, shares)| Participant {
+            device,
+            shares: shares as u32,
+        })
+        .collect();
     Ok(devices)
 }
 
-pub async fn get_tasks_devices<Conn>(
+pub async fn get_task_participants<Conn>(
+    connection: &mut Conn,
+    task_id: &Uuid,
+) -> Result<Vec<Participant>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    let devices = task_participant::table
+        .inner_join(device::table)
+        .filter(task_participant::task_id.eq(task_id))
+        .select((Device::as_returning(), task_participant::shares))
+        .load::<(Device, i32)>(connection)
+        .await?
+        .into_iter()
+        .map(|(device, shares)| Participant {
+            device,
+            shares: shares as u32,
+        })
+        .collect();
+    Ok(devices)
+}
+
+pub async fn get_tasks_participants<Conn>(
     connection: &mut Conn,
     task_ids: &[Uuid],
-) -> Result<Vec<(Uuid, Device)>, PersistenceError>
+) -> Result<Vec<(Uuid, Participant)>, PersistenceError>
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
     let tasks_devices = task_participant::table
-        .inner_join(device::table)
         .inner_join(task::table)
+        .inner_join(device::table)
         .filter(task::id.eq_any(task_ids))
-        .select((task::id, Device::as_returning()))
+        .select((task::id, (Device::as_returning(), task_participant::shares)))
         .order_by(task::id)
-        .load(connection)
-        .await?;
-    Ok(tasks_devices)
-}
-
-pub async fn get_group_device_ids<Conn>(
-    connection: &mut Conn,
-    group_id: &[u8],
-) -> Result<Vec<Vec<u8>>, PersistenceError>
-where
-    Conn: AsyncConnection<Backend = Pg>,
-{
-    let device_ids: Vec<Vec<u8>> = group_participant::table
-        .filter(group_participant::group_id.eq(group_id))
-        .select(group_participant::device_id)
-        .load::<Vec<u8>>(connection)
+        .load::<(Uuid, (Device, i32))>(connection)
         .await?
         .into_iter()
+        .map(|(task_id, (device, shares))| {
+            (
+                task_id,
+                Participant {
+                    device,
+                    shares: shares as u32,
+                },
+            )
+        })
         .collect();
-
-    Ok(device_ids)
+    Ok(tasks_devices)
 }
 
 pub async fn activate_device<Conn>(

@@ -1,11 +1,11 @@
 use crate::error::Error;
-use crate::persistence::{Device, Group as GroupModel};
+use crate::persistence::{Group as GroupModel, Participant};
 use crate::proto::{KeyType, ProtocolType};
 #[derive(Clone)]
 pub struct Group {
     identifier: Vec<u8>,
     name: String,
-    devices: Vec<Device>,
+    participants: Vec<Participant>,
     threshold: u32,
     protocol: ProtocolType,
     key_type: KeyType,
@@ -18,7 +18,7 @@ impl Group {
         identifier: Vec<u8>,
         name: String,
         threshold: u32,
-        devices: Vec<Device>,
+        participants: Vec<Participant>,
         protocol: ProtocolType,
         key_type: KeyType,
         certificate: Option<Vec<u8>>,
@@ -29,7 +29,7 @@ impl Group {
         Group {
             identifier,
             name,
-            devices,
+            participants,
             threshold,
             protocol,
             key_type,
@@ -45,15 +45,16 @@ impl Group {
     pub fn name(&self) -> &str {
         &self.name
     }
-    pub fn devices(&self) -> &Vec<Device> {
-        &self.devices
+    pub fn participants(&self) -> &Vec<Participant> {
+        &self.participants
     }
     pub fn threshold(&self) -> u32 {
         self.threshold
     }
 
     pub fn reject_threshold(&self) -> u32 {
-        self.devices.len() as u32 - self.threshold + 1 // rejects >= threshold_reject => fail
+        let total_parties: u32 = self.participants.iter().map(|p| p.shares).sum();
+        total_parties - self.threshold + 1 // rejects >= threshold_reject => fail
     }
 
     pub fn protocol(&self) -> ProtocolType {
@@ -73,12 +74,15 @@ impl Group {
     }
 
     // TODO: consider merging Group with GroupModel
-    pub fn try_from_model(value: GroupModel, devices: Vec<Device>) -> Result<Self, Error> {
+    pub fn try_from_model(
+        value: GroupModel,
+        participants: Vec<Participant>,
+    ) -> Result<Self, Error> {
         Ok(Self {
             identifier: value.id,
             name: value.name,
             threshold: value.threshold as u32,
-            devices,
+            participants,
             protocol: value.protocol.into(),
             key_type: value.key_type.into(),
             certificate: value.certificate,
@@ -108,7 +112,7 @@ impl Group {
 
 #[cfg(test)]
 mod tests {
-    use crate::persistence::DeviceKind;
+    use crate::persistence::{Device, DeviceKind};
     use std::vec;
 
     use super::*;
@@ -161,8 +165,8 @@ mod tests {
     fn sample_group() {
         let identifier = vec![0x01, 0x02, 0x03, 0x04];
         let name = String::from("Sample Group");
-        let mut devices = prepare_devices(6);
-        let extra_device = devices.pop().unwrap();
+        let mut participants = prepare_participants(6);
+        let extra_participant = participants.pop().unwrap();
         let threshold = 3;
         let protocol_type = ProtocolType::Gg18;
         let key_type = KeyType::SignPdf;
@@ -170,7 +174,7 @@ mod tests {
             identifier.clone(),
             name.clone(),
             threshold,
-            devices.clone(),
+            participants.clone(),
             protocol_type,
             key_type,
             None,
@@ -180,28 +184,29 @@ mod tests {
         assert_eq!(group.name(), &name);
         assert_eq!(group.threshold(), threshold);
         assert_eq!(group.reject_threshold(), 3);
-        for (left_device, right_device) in group.devices().iter().zip(devices.iter()) {
-            assert_eq!(left_device.identifier(), right_device.identifier());
+        for (a, b) in group.participants().iter().zip(participants.iter()) {
+            assert_eq!(a.device.identifier(), b.device.identifier());
         }
         assert!(!group
-            .devices()
+            .participants()
             .iter()
-            .any(|dev| dev.identifier() == extra_device.identifier()));
+            .any(|p| p.device.identifier() == extra_participant.device.identifier()));
         assert_eq!(group.protocol(), protocol_type.into());
         assert_eq!(group.key_type(), key_type.into());
         assert_eq!(group.certificate(), None);
     }
 
-    fn prepare_devices(n: usize) -> Vec<Device> {
+    fn prepare_participants(n: usize) -> Vec<Participant> {
         assert!(n < u8::MAX as usize);
         (0..n)
             .map(|i| {
-                Device::new(
+                let device = Device::new(
                     vec![i as u8],
                     format!("d{}", i),
                     DeviceKind::User,
                     vec![0xf0 | i as u8],
-                )
+                );
+                Participant { device, shares: 1 }
             })
             .collect()
     }

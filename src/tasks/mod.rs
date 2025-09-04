@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::group::Group;
-use crate::persistence::Device;
+use crate::persistence::Participant;
 use crate::persistence::Repository;
 use crate::persistence::Task as TaskModel;
 use crate::persistence::TaskType;
@@ -75,7 +75,7 @@ pub trait Task: Send + Sync {
     /// True if the task has been approved
     async fn is_approved(&self) -> bool;
 
-    fn get_devices(&self) -> &Vec<Device>;
+    fn get_participants(&self) -> &Vec<Participant>;
     async fn waiting_for(&self, device_id: &[u8]) -> bool;
 
     /// Store `decision` by `device_id`
@@ -98,7 +98,7 @@ pub trait Task: Send + Sync {
     fn get_attempts(&self) -> u32;
     async fn from_model(
         model: TaskModel,
-        devices: Vec<Device>,
+        participants: Vec<Participant>,
         communicator: Arc<RwLock<Communicator>>,
         repository: Arc<Repository>,
     ) -> Result<Self, Error>
@@ -113,23 +113,25 @@ pub trait Task: Send + Sync {
 /// Instantiates a task from a task model
 pub async fn from_model(
     task_model: TaskModel,
-    devices: Vec<Device>,
+    participants: Vec<Participant>,
     communicator: Arc<RwLock<Communicator>>,
     repository: Arc<Repository>,
 ) -> Result<Box<dyn Task + Send + Sync>, Error> {
     let task: Box<dyn Task + Send + Sync> = match task_model.task_type {
         TaskType::Group => Box::new(
-            group::GroupTask::from_model(task_model, devices, communicator, repository).await?,
+            group::GroupTask::from_model(task_model, participants, communicator, repository)
+                .await?,
         ),
         TaskType::SignPdf => Box::new(
-            sign_pdf::SignPDFTask::from_model(task_model, devices, communicator, repository)
+            sign_pdf::SignPDFTask::from_model(task_model, participants, communicator, repository)
                 .await?,
         ),
         TaskType::SignChallenge => Box::new(
-            sign::SignTask::from_model(task_model, devices, communicator, repository).await?,
+            sign::SignTask::from_model(task_model, participants, communicator, repository).await?,
         ),
         TaskType::Decrypt => Box::new(
-            decrypt::DecryptTask::from_model(task_model, devices, communicator, repository).await?,
+            decrypt::DecryptTask::from_model(task_model, participants, communicator, repository)
+                .await?,
         ),
     };
     Ok(task)

@@ -4,7 +4,7 @@ use uuid::Uuid;
 use super::{
     enums::{DeviceKind, KeyType, ProtocolType, TaskType},
     error::PersistenceError,
-    models::{Device, Group, Task},
+    models::{Device, Group, Participant, Task},
 };
 
 use self::{
@@ -17,7 +17,7 @@ use self::{
     },
 };
 use self::{
-    device::{get_task_devices, get_tasks_devices},
+    device::{get_group_participants, get_task_participants, get_tasks_participants},
     task::{create_group_task, create_task},
 };
 use self::{
@@ -112,17 +112,28 @@ impl Repository {
         get_devices_with_ids(connection, device_ids).await
     }
 
-    pub async fn get_task_devices(&self, task_id: &Uuid) -> Result<Vec<Device>, PersistenceError> {
+    pub async fn get_group_participants(
+        &self,
+        group_id: &[u8],
+    ) -> Result<Vec<Participant>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
-        get_task_devices(connection, task_id).await
+        get_group_participants(connection, group_id).await
     }
 
-    pub async fn get_tasks_devices(
+    pub async fn get_task_participants(
+        &self,
+        task_id: &Uuid,
+    ) -> Result<Vec<Participant>, PersistenceError> {
+        let connection = &mut self.get_async_connection().await?;
+        get_task_participants(connection, task_id).await
+    }
+
+    pub async fn get_tasks_participants(
         &self,
         task_ids: &[Uuid],
-    ) -> Result<Vec<(Uuid, Device)>, PersistenceError> {
+    ) -> Result<Vec<(Uuid, Participant)>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
-        get_tasks_devices(connection, task_ids).await
+        get_tasks_participants(connection, task_ids).await
     }
 
     pub async fn activate_device(
@@ -212,7 +223,7 @@ impl Repository {
     pub async fn create_group_task<'a>(
         &self,
         id: Option<&Uuid>,
-        devices: &[&[u8]],
+        participants: &[(&[u8], u32)],
         threshold: u32,
         protocol_type: ProtocolType,
         key_type: KeyType,
@@ -226,7 +237,7 @@ impl Repository {
                     create_group_task(
                         connection,
                         id,
-                        devices,
+                        participants,
                         threshold,
                         key_type,
                         protocol_type,
@@ -244,7 +255,7 @@ impl Repository {
         &self,
         id: Option<&Uuid>,
         group_id: &[u8],
-        devices: &[&[u8]],
+        participants: &[(&[u8], u32)],
         threshold: u32,
         name: &str,
         task_data: &[u8],
@@ -263,7 +274,7 @@ impl Repository {
                         group_id,
                         task_type,
                         name,
-                        devices,
+                        participants,
                         Some(task_data),
                         request,
                         threshold,
@@ -281,7 +292,7 @@ impl Repository {
         &self,
         id: Option<&Uuid>,
         group_id: &[u8],
-        devices: &[&[u8]],
+        participants: &[(&[u8], u32)],
         threshold: u32,
         name: &str,
         task_data: &[u8],
@@ -299,7 +310,7 @@ impl Repository {
                         group_id,
                         TaskType::Decrypt,
                         name,
-                        devices,
+                        participants,
                         Some(task_data),
                         request,
                         threshold,

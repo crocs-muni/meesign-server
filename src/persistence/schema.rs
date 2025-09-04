@@ -45,7 +45,6 @@ diesel::table! {
         name -> Varchar,
         threshold -> Int4,
         protocol -> ProtocolType,
-        round -> Int4,
         key_type -> KeyType,
         certificate -> Nullable<Bytea>,
         note -> Nullable<Varchar>,
@@ -53,10 +52,10 @@ diesel::table! {
 }
 
 diesel::table! {
-    group_participant (id) {
-        id -> Int4,
-        device_id -> Bytea,
+    group_participant (group_id, device_id) {
         group_id -> Bytea,
+        device_id -> Bytea,
+        shares -> Int4,
     }
 }
 
@@ -88,20 +87,19 @@ diesel::table! {
 }
 
 diesel::table! {
-    task_participant (id) {
-        id -> Int4,
-        device_id -> Bytea,
+    task_participant (task_id, device_id) {
         task_id -> Uuid,
+        device_id -> Bytea,
+        shares -> Int4,
         decision -> Nullable<Bool>,
         acknowledgment -> Nullable<Bool>,
     }
 }
 
 diesel::table! {
-    task_result (id) {
-        id -> Int4,
+    task_result (task_id) {
         task_id -> Uuid,
-        is_successfull -> Bool,
+        is_successful -> Bool,
         data -> Nullable<Bytea>,
         error_message -> Nullable<Varchar>,
     }

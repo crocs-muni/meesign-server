@@ -1,10 +1,9 @@
 use std::convert::TryInto;
 
 use diesel::alias;
-use diesel::dsl::sql;
-use diesel::sql_types::{Array, Bytea};
-use diesel::{pg::Pg, result::Error::NotFound, ExpressionMethods, QueryDsl};
+use diesel::{pg::Pg, ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl};
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::persistence::models::NewGroupParticipant;
@@ -22,22 +21,51 @@ pub async fn get_groups<Conn>(connection: &mut Conn) -> Result<Vec<Group>, Persi
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    Ok(group::table
-        .left_outer_join(group_participant::table)
-        .group_by(group::id)
+    let group_participant_rows = group_participant::table
+        .select((
+            group_participant::group_id,
+            group_participant::device_id,
+            group_participant::shares,
+        ))
+        .load::<(Vec<u8>, Vec<u8>, i32)>(connection)
+        .await?;
+    let mut group_participants: HashMap<Vec<u8>, Vec<(Vec<u8>, u32)>> = HashMap::new();
+    for (group_id, device_id, shares) in group_participant_rows {
+        group_participants
+            .entry(group_id)
+            .or_default()
+            .push((device_id, shares as u32));
+    }
+    let groups = group::table
         .select((
             group::id,
             group::name,
             group::threshold,
             group::protocol,
-            group::round,
             group::key_type,
             group::certificate,
             group::note,
-            sql::<Array<Bytea>>("array_agg(group_participant.device_id ORDER BY group_participant.device_id ASC) AS group_ids"),
         ))
         .load(connection)
-        .await?)
+        .await?
+        .into_iter()
+        .map(
+            |(id, name, threshold, protocol, key_type, certificate, note)| {
+                let participant_ids_shares = group_participants.remove(&id).unwrap_or_default();
+                Group {
+                    id,
+                    name,
+                    threshold,
+                    protocol,
+                    key_type,
+                    certificate,
+                    note,
+                    participant_ids_shares,
+                }
+            },
+        )
+        .collect();
+    Ok(groups)
 }
 
 pub async fn add_group<'a, Conn>(
@@ -66,7 +94,6 @@ where
         threshold: threshold as i32,
         protocol,
         name,
-        round: 0,
         certificate,
         key_type,
         note,
@@ -77,17 +104,18 @@ where
         .execute(connection)
         .await?;
 
-    let device_ids: Vec<Vec<u8>> = task_participant::table
+    let devices: Vec<(Vec<u8>, i32)> = task_participant::table
         .inner_join(task::table)
         .filter(task::id.eq(group_task_id))
-        .select(task_participant::device_id)
+        .select((task_participant::device_id, task_participant::shares))
         .load(connection)
         .await?;
-    let group_participants: Vec<NewGroupParticipant> = device_ids
+    let group_participants: Vec<NewGroupParticipant> = devices
         .iter()
-        .map(|device_id| NewGroupParticipant {
+        .map(|(device_id, shares)| NewGroupParticipant {
             device_id,
             group_id: id,
+            shares: *shares,
         })
         .collect();
     let expected_affected_row_count = group_participants.len();
@@ -111,62 +139,109 @@ pub async fn get_group<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    let group: Option<Group> = match group::table
-        .left_outer_join(group_participant::table)
+    let participant_ids_shares = group_participant::table
+        .select((group_participant::device_id, group_participant::shares))
+        .filter(group_participant::group_id.eq(group_identifier))
+        .load::<(Vec<u8>, i32)>(connection)
+        .await?
+        .into_iter()
+        .map(|(device_id, shares)| (device_id, shares as u32))
+        .collect();
+    let group = group::table
         .filter(group::id.eq(group_identifier))
-        .group_by(group::id)
         .select((
             group::id,
             group::name,
             group::threshold,
             group::protocol,
-            group::round,
             group::key_type,
             group::certificate,
             group::note,
-            sql::<Array<Bytea>>("array_agg(group_participant.device_id ORDER BY group_participant.device_id ASC) AS group_ids"),
         ))
         .first(connection)
-        // .optional() TODO
         .await
-    {
-        Ok(val) => Some(val),
-        Err(NotFound) => None,
-        Err(err) => return Err(PersistenceError::ExecutionError(err)),
-    };
-
+        .optional()?
+        .map(
+            |(id, name, threshold, protocol, key_type, certificate, note)| Group {
+                id,
+                name,
+                threshold,
+                protocol,
+                key_type,
+                certificate,
+                note,
+                participant_ids_shares,
+            },
+        );
     Ok(group)
 }
 
 pub async fn get_device_groups<Conn>(
     connection: &mut Conn,
-    device_identifier: &[u8],
+    device_id: &[u8],
 ) -> Result<Vec<Group>, PersistenceError>
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    let device_group_ids = group_participant::table
-        .select(group_participant::group_id)
-        .filter(group_participant::device_id.eq(device_identifier));
     let group_participant2 = alias!(group_participant as group_participant2);
-    let groups: Vec<Group> = group::table
-        .left_outer_join(group_participant2)
-        .group_by(group::id)
-        .filter(group::id.eq_any(device_group_ids))
+
+    let group_participant_rows = group_participant::table
+        .inner_join(
+            group_participant2.on(group_participant2
+                .field(group_participant::group_id)
+                .eq(group_participant::group_id)),
+        )
+        .filter(
+            group_participant2
+                .field(group_participant::device_id)
+                .eq(device_id),
+        )
+        .select((
+            group_participant::group_id,
+            group_participant::device_id,
+            group_participant::shares,
+        ))
+        .load::<(Vec<u8>, Vec<u8>, i32)>(connection)
+        .await?;
+    let mut group_participants: HashMap<Vec<u8>, Vec<(Vec<u8>, u32)>> = HashMap::new();
+    for (group_id, device_id, shares) in group_participant_rows {
+        group_participants
+            .entry(group_id)
+            .or_default()
+            .push((device_id, shares as u32));
+    }
+
+    let groups = group::table
+        .inner_join(group_participant::table)
         .select((
             group::id,
             group::name,
             group::threshold,
             group::protocol,
-            group::round,
             group::key_type,
             group::certificate,
             group::note,
-            sql::<Array<Bytea>>("array_agg(group_participant2.device_id ORDER BY group_participant2.device_id ASC) AS group_ids"),
         ))
+        .filter(group_participant::device_id.eq(device_id))
         .load(connection)
-        .await?;
-
+        .await?
+        .into_iter()
+        .map(
+            |(id, name, threshold, protocol, key_type, certificate, note)| {
+                let participant_ids_shares = group_participants.remove(&id).unwrap_or_default();
+                Group {
+                    id,
+                    name,
+                    threshold,
+                    protocol,
+                    key_type,
+                    certificate,
+                    note,
+                    participant_ids_shares,
+                }
+            },
+        )
+        .collect();
     Ok(groups)
 }
 
@@ -197,7 +272,7 @@ mod test {
         let ctx = PersistencyUnitTestContext::new();
         let mut connection: AsyncPgConnection = ctx.get_test_connection().await?;
 
-        let devices = &vec![&DEVICE_1_ID[..], &DEVICE_2_ID[..]];
+        let participants = &vec![(&DEVICE_1_ID[..], 1), (&DEVICE_2_ID[..], 1)];
         let threshold = 2;
         add_device(
             &mut connection,
@@ -220,7 +295,7 @@ mod test {
         let group_creation_task = create_group_task(
             &mut connection,
             None,
-            devices,
+            participants,
             threshold,
             KeyType::SignPdf,
             ProtocolType::Gg18,
@@ -248,18 +323,18 @@ mod test {
         );
         let retrieved_group = retrieved_group.unwrap();
         assert_eq!(created_group, retrieved_group);
-        let mut device_ids = vec![DEVICE_1_ID.into(), DEVICE_2_ID.into()];
-        device_ids.sort();
+        let mut participant_ids_shares: Vec<(Vec<u8>, u32)> =
+            vec![(DEVICE_1_ID.into(), 1), (DEVICE_2_ID.into(), 1)];
+        participant_ids_shares.sort_by(|(a, _), (b, _)| a.cmp(b));
         let target_group = Group {
             id: Vec::from(GROUP_1_IDENTIFIER),
             name: GROUP_1_NAME.into(),
             threshold: threshold as i32,
             protocol: ProtocolType::Gg18,
-            round: 0,
             key_type: KeyType::SignPdf,
             certificate: Some(GROUP_1_CERT.into()),
             note,
-            device_ids,
+            participant_ids_shares,
         };
 
         assert_eq!(retrieved_group, target_group);
@@ -272,8 +347,8 @@ mod test {
         let ctx = PersistencyUnitTestContext::new();
         let mut connection: AsyncPgConnection = ctx.get_test_connection().await?;
 
-        let group_1_devices = &vec![&DEVICE_1_ID[..], &DEVICE_2_ID[..]];
-        let group_2_devices = &vec![&DEVICE_2_ID[..], &DEVICE_3_ID[..]];
+        let group_1_participants = &vec![(&DEVICE_1_ID[..], 1), (&DEVICE_2_ID[..], 1)];
+        let group_2_participants = &vec![(&DEVICE_2_ID[..], 1), (&DEVICE_3_ID[..], 1)];
         let threshold = 2;
 
         add_device(
@@ -304,7 +379,7 @@ mod test {
         let group1_creation_task = create_group_task(
             &mut connection,
             None,
-            group_1_devices,
+            group_1_participants,
             threshold,
             KeyType::Decrypt,
             ProtocolType::ElGamal,
@@ -328,7 +403,7 @@ mod test {
         let group2_creation_task = create_group_task(
             &mut connection,
             None,
-            group_2_devices,
+            group_2_participants,
             threshold,
             KeyType::SignChallenge,
             ProtocolType::Frost,

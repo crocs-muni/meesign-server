@@ -10,7 +10,7 @@ use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::interfaces::grpc::format_task;
 use crate::persistence::{
-    Device, DeviceKind, Group, NameValidator, Repository, Task as TaskModel, TaskType,
+    Device, DeviceKind, Group, NameValidator, Participant, Repository, Task as TaskModel, TaskType,
 };
 use crate::proto::{KeyType, ProtocolType};
 use crate::tasks::decrypt::DecryptTask;
@@ -67,10 +67,24 @@ impl State {
                 "Invalid group name {name}"
             )));
         }
-        let devices = self.get_repo().get_devices_with_ids(device_ids).await?;
+        let mut shares: HashMap<&[u8], u32> = HashMap::new();
+        for device_id in device_ids {
+            *shares.entry(device_id).or_default() += 1;
+        }
+        let device_ids: Vec<&[u8]> = shares.keys().cloned().collect();
+        let participants = self
+            .get_repo()
+            .get_devices_with_ids(&device_ids)
+            .await?
+            .into_iter()
+            .map(|device| {
+                let shares = shares[device.id.as_slice()];
+                Participant { device, shares }
+            })
+            .collect();
         let task = Box::new(GroupTask::try_new(
             name,
-            devices,
+            participants,
             threshold,
             protocol,
             key_type,
@@ -99,9 +113,8 @@ impl State {
             );
             return Err(Error::GeneralProtocolError("Invalid group_id".into()));
         };
-        let device_ids: Vec<&[u8]> = group.device_ids.iter().map(|id| id.as_ref()).collect();
-        let devices = self.repo.get_devices_with_ids(&device_ids).await?;
-        let group = crate::group::Group::try_from_model(group, devices)?;
+        let participants = self.repo.get_group_participants(group_id).await?;
+        let group = crate::group::Group::try_from_model(group, participants)?;
         let task = match group.key_type() {
             KeyType::SignPdf => {
                 let task = SignPDFTask::try_new(
@@ -155,9 +168,8 @@ impl State {
             );
             return Err(Error::GeneralProtocolError("Invalid group_id".into()));
         };
-        let device_ids: Vec<&[u8]> = group.device_ids.iter().map(|id| id.as_ref()).collect();
-        let devices = self.repo.get_devices_with_ids(&device_ids).await?;
-        let group = crate::group::Group::try_from_model(group, devices)?;
+        let participants = self.repo.get_group_participants(group_id).await?;
+        let group = crate::group::Group::try_from_model(group, participants)?;
         let task = match group.key_type() {
             KeyType::Decrypt => {
                 let task = DecryptTask::try_new(
@@ -196,15 +208,15 @@ impl State {
     ) -> Result<Uuid, Error> {
         let created_task = match task.get_type() {
             crate::proto::TaskType::Group => {
-                let task_devices = task.get_devices();
-                let device_ids: Vec<&[u8]> = task_devices
+                let task_participants = task.get_participants();
+                let participant_ids_shares: Vec<(&[u8], u32)> = task_participants
                     .iter()
-                    .map(|device| device.id.as_slice())
+                    .map(|participant| (participant.device.id.as_slice(), participant.shares))
                     .collect();
                 self.get_repo()
                     .create_group_task(
                         Some(task.get_id()),
-                        &device_ids,
+                        &participant_ids_shares,
                         task.get_threshold(),
                         protocol_type.into(),
                         key_type.into(),
@@ -214,16 +226,16 @@ impl State {
                     .await?
             }
             crate::proto::TaskType::SignPdf => {
-                let task_devices = task.get_devices();
-                let device_ids: Vec<&[u8]> = task_devices
+                let task_participants = task.get_participants();
+                let participant_ids_shares: Vec<(&[u8], u32)> = task_participants
                     .iter()
-                    .map(|device| device.id.as_slice())
+                    .map(|participant| (participant.device.id.as_slice(), participant.shares))
                     .collect();
                 self.get_repo()
                     .create_sign_task(
                         Some(task.get_id()),
                         group_id,
-                        &device_ids,
+                        &participant_ids_shares,
                         task.get_threshold(),
                         "name",
                         task.get_data().unwrap(),
@@ -235,16 +247,16 @@ impl State {
                     .await?
             }
             crate::proto::TaskType::SignChallenge => {
-                let task_devices = task.get_devices();
-                let device_ids: Vec<&[u8]> = task_devices
+                let task_participants = task.get_participants();
+                let participant_ids_shares: Vec<(&[u8], u32)> = task_participants
                     .iter()
-                    .map(|device| device.id.as_slice())
+                    .map(|participant| (participant.device.id.as_slice(), participant.shares))
                     .collect();
                 self.get_repo()
                     .create_sign_task(
                         Some(task.get_id()),
                         group_id,
-                        &device_ids,
+                        &participant_ids_shares,
                         task.get_threshold(),
                         "name",
                         task.get_data().unwrap(),
@@ -256,16 +268,16 @@ impl State {
                     .await?
             }
             crate::proto::TaskType::Decrypt => {
-                let task_devices = task.get_devices();
-                let device_ids: Vec<&[u8]> = task_devices
+                let task_participants = task.get_participants();
+                let participant_ids_shares: Vec<(&[u8], u32)> = task_participants
                     .iter()
-                    .map(|device| device.id.as_slice())
+                    .map(|participant| (participant.device.id.as_slice(), participant.shares))
                     .collect();
                 self.get_repo()
                     .create_decrypt_task(
                         Some(task.get_id()),
                         group_id,
-                        &device_ids,
+                        &participant_ids_shares,
                         task.get_threshold(),
                         "name",
                         task.get_data().unwrap(),
@@ -338,11 +350,11 @@ impl State {
         let Some(model) = self.repo.get_task(task_id).await? else {
             return Err(Error::GeneralProtocolError("Invalid task id".into()));
         };
-        let devices = self.repo.get_task_devices(task_id).await?;
+        let participants = self.repo.get_task_participants(task_id).await?;
         let communicator = self.get_communicator(task_id).await?;
 
         let task =
-            crate::tasks::from_model(model, devices, communicator, self.repo.clone()).await?;
+            crate::tasks::from_model(model, participants, communicator, self.repo.clone()).await?;
         Ok(task)
     }
 
@@ -460,7 +472,8 @@ impl State {
         let task = self.get_task(task_id).await?;
         let mut remove = Vec::new();
 
-        for device_id in task.get_devices().iter().map(|device| device.identifier()) {
+        for participant in task.get_participants() {
+            let device_id = participant.device.identifier();
             if let Some(tx) = self.subscribers.get(device_id) {
                 let result =
                     tx.try_send(Ok(format_task(task_id, &*task, Some(device_id), None).await));
@@ -494,17 +507,17 @@ impl State {
                 let Some(model) = self.repo.get_task(task_id).await? else {
                     return Err(Error::GeneralProtocolError("Invalid task id".into()));
                 };
-                let mut devices = self.repo.get_task_devices(task_id).await?;
-                devices.sort_by_key(|dev| dev.identifier().clone());
+                let mut participants = self.repo.get_task_participants(task_id).await?;
+                participants.sort_by(|a, b| a.device.identifier().cmp(b.device.identifier()));
                 let decisions = self.repo.get_task_decisions(task_id).await?;
                 let acknowledgements = self.repo.get_task_acknowledgements(task_id).await?;
                 let threshold = match model.task_type {
-                    TaskType::Group => devices.len() as u32,
+                    TaskType::Group => participants.iter().map(|p| p.shares).sum(),
                     _ => model.threshold as u32,
                 };
 
                 entry.insert(Arc::new(RwLock::new(Communicator::new(
-                    devices.clone(),
+                    participants,
                     threshold,
                     model.protocol_type.unwrap().into(),
                     decisions,
@@ -525,22 +538,29 @@ impl State {
 
         let task_ids: Vec<_> = task_models.iter().map(|task| task.id.clone()).collect();
 
-        let task_id_device_pairs = self.get_repo().get_tasks_devices(&task_ids).await?;
+        let task_id_participant_pairs = self.get_repo().get_tasks_participants(&task_ids).await?;
 
-        let mut task_id_devices: HashMap<_, Vec<_>> = HashMap::new();
+        let mut task_id_participants: HashMap<_, Vec<_>> = HashMap::new();
 
-        for (task_id, device) in task_id_device_pairs {
-            task_id_devices.entry(task_id).or_default().push(device);
+        for (task_id, device) in task_id_participant_pairs {
+            task_id_participants
+                .entry(task_id)
+                .or_default()
+                .push(device);
         }
 
         let tasks = future::join_all(task_models.into_iter().map(|task| {
-            let devices = task_id_devices.remove(&task.id).unwrap();
+            let participants = task_id_participants.remove(&task.id).unwrap();
             async {
                 let communicator = self.get_communicator(&task.id).await?;
 
-                let task =
-                    crate::tasks::from_model(task, devices, communicator, self.get_repo().clone())
-                        .await?;
+                let task = crate::tasks::from_model(
+                    task,
+                    participants,
+                    communicator,
+                    self.get_repo().clone(),
+                )
+                .await?;
                 Ok(task)
             }
         }))

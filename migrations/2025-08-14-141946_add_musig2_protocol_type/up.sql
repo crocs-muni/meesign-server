@@ -1,1 +1,0 @@
-ALTER TYPE protocol_type ADD VALUE IF NOT EXISTS 'Musig2';

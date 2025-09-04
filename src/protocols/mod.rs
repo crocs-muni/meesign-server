@@ -43,7 +43,7 @@ pub trait Protocol {
 pub fn create_keygen_protocol(
     protocol_type: ProtocolType,
     key_type: KeyType,
-    devices_len: u32,
+    total_shares: u32,
     threshold: u32,
     repository: Arc<Repository>,
     task_id: Uuid,
@@ -52,28 +52,28 @@ pub fn create_keygen_protocol(
     let protocol: Box<dyn Protocol + Send + Sync> =
         match (protocol_type, key_type) {
             (ProtocolType::Gg18, KeyType::SignPdf) => Box::new(gg18::GG18Group::from_model(
-                devices_len,
+                total_shares,
                 threshold,
                 repository,
                 task_id,
                 round,
             )),
             (ProtocolType::Gg18, KeyType::SignChallenge) => Box::new(gg18::GG18Group::from_model(
-                devices_len,
+                total_shares,
                 threshold,
                 repository,
                 task_id,
                 round,
             )),
             (ProtocolType::Frost, KeyType::SignChallenge) => Box::new(
-                frost::FROSTGroup::from_model(devices_len, threshold, repository, task_id, round),
+                frost::FROSTGroup::from_model(total_shares, threshold, repository, task_id, round),
             ),
             (ProtocolType::Musig2, KeyType::SignChallenge) => Box::new(
-                musig2::MuSig2Group::from_model(devices_len, repository, task_id, round),
+                musig2::MuSig2Group::from_model(total_shares, repository, task_id, round),
             ),
             (ProtocolType::Elgamal, KeyType::Decrypt) => {
                 Box::new(elgamal::ElgamalGroup::from_model(
-                    devices_len,
+                    total_shares,
                     threshold,
                     repository,
                     task_id,

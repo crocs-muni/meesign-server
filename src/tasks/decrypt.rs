@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::group::Group;
-use crate::persistence::{Device, PersistenceError, Repository, Task as TaskModel};
+use crate::persistence::{Participant, PersistenceError, Repository, Task as TaskModel};
 use crate::proto::{DecryptRequest, TaskType};
 use crate::protocols::elgamal::ElgamalDecrypt;
 use crate::protocols::{create_threshold_protocol, Protocol};
@@ -36,20 +36,20 @@ impl DecryptTask {
         data_type: String,
         repository: Arc<Repository>,
     ) -> Result<Self, String> {
-        let mut devices: Vec<Device> = group.devices().to_vec();
-        devices.sort_by_key(|x| x.identifier().to_vec());
+        let mut participants: Vec<Participant> = group.participants().to_vec();
+        participants.sort_by(|a, b| a.device.identifier().cmp(b.device.identifier()));
 
-        let decisions = devices
+        let decisions = participants
             .iter()
-            .map(|x| (x.identifier().clone(), 0))
+            .map(|p| (p.device.identifier().clone(), 0))
             .collect();
-        let acknowledgements = devices
+        let acknowledgements = participants
             .iter()
-            .map(|x| (x.identifier().clone(), false))
+            .map(|p| (p.device.identifier().clone(), false))
             .collect();
 
         let communicator = Arc::new(RwLock::new(Communicator::new(
-            devices,
+            participants,
             group.threshold(),
             group.protocol(),
             decisions,
@@ -211,7 +211,7 @@ impl DecryptTask {
 impl Task for DecryptTask {
     async fn from_model(
         task_model: TaskModel,
-        devices: Vec<Device>,
+        participants: Vec<Participant>,
         communicator: Arc<RwLock<Communicator>>,
         repository: Arc<Repository>,
     ) -> Result<Self, Error> {
@@ -223,7 +223,7 @@ impl Task for DecryptTask {
             .get_group(&task_model.group_id.unwrap())
             .await?
             .unwrap();
-        let group = Group::try_from_model(group, devices)?;
+        let group = Group::try_from_model(group, participants)?;
         let request = task_model
             .request
             .ok_or(PersistenceError::DataInconsistencyError(
@@ -337,8 +337,8 @@ impl Task for DecryptTask {
         self.communicator.read().await.accept_count() >= self.group.threshold()
     }
 
-    fn get_devices(&self) -> &Vec<Device> {
-        &self.group.devices()
+    fn get_participants(&self) -> &Vec<Participant> {
+        &self.group.participants()
     }
 
     async fn waiting_for(&self, device: &[u8]) -> bool {

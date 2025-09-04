@@ -23,7 +23,7 @@ pub async fn create_task<Conn>(
     group_id: &[u8],
     task_type: TaskType,
     name: &str,
-    devices: &[&[u8]],
+    participants: &[(&[u8], u32)],
     task_data: Option<&[u8]>,
     request: &[u8],
     threshold: u32,
@@ -63,11 +63,12 @@ where
         .get_result(connection)
         .await?;
 
-    let new_task_participants: Vec<NewTaskParticipant> = devices
+    let new_task_participants: Vec<NewTaskParticipant> = participants
         .into_iter()
-        .map(|device_id| NewTaskParticipant {
+        .map(|(device_id, shares)| NewTaskParticipant {
             device_id,
             task_id: &task_id,
+            shares: *shares as i32,
             decision: None,
             acknowledgment: None,
         })
@@ -89,7 +90,7 @@ where
 pub async fn create_group_task<Conn>(
     connection: &mut Conn,
     id: Option<&Uuid>,
-    devices: &[&[u8]],
+    participants: &[(&[u8], u32)],
     threshold: u32,
     key_type: KeyType,
     protocol_type: ProtocolType,
@@ -99,7 +100,8 @@ pub async fn create_group_task<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    if !(1..=devices.len() as u32).contains(&threshold) {
+    let total_shares: u32 = participants.iter().map(|(_, shares)| shares).sum();
+    if !(1..=total_shares).contains(&threshold) {
         return Err(PersistenceError::InvalidArgumentError(format!(
             "Invalid threshold {threshold}"
         )));
@@ -130,11 +132,12 @@ where
         .get_result(connection)
         .await?;
 
-    let new_task_participants: Vec<NewTaskParticipant> = devices
+    let new_task_participants: Vec<NewTaskParticipant> = participants
         .into_iter()
-        .map(|device_id| NewTaskParticipant {
+        .map(|(device_id, shares)| NewTaskParticipant {
             device_id,
             task_id: &task_id,
+            shares: *shares as i32,
             decision: None,
             acknowledgment: None,
         })
@@ -223,7 +226,6 @@ where
         .filter(task_participant::device_id.eq(identifier))
         .select(task_model_columns!())
         .order_by(task::id.asc())
-        .distinct_on(task::id) // NOTE: Because of multiple shares, participants can be duplicated
         .load(connection)
         .await?;
     Ok(tasks)
@@ -256,19 +258,25 @@ pub async fn get_task_decisions<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
-    let mut decisions = HashMap::new();
-    let pairs = task_participant::table
-        .select((task_participant::device_id, task_participant::decision))
+    let decisions = task_participant::table
+        .select((
+            task_participant::device_id,
+            task_participant::decision,
+            task_participant::shares,
+        ))
         .filter(task_participant::task_id.eq(task_id))
-        .load::<(Vec<u8>, Option<bool>)>(connection)
-        .await?;
-    for (device_id, vote) in pairs {
-        *decisions.entry(device_id).or_default() += match vote {
-            Some(true) => 1,
-            Some(false) => -1,
-            None => 0,
-        };
-    }
+        .load::<(Vec<u8>, Option<bool>, i32)>(connection)
+        .await?
+        .into_iter()
+        .map(|(device_id, decision, shares)| {
+            let vote = match decision {
+                Some(true) => shares as i8,
+                Some(false) => -shares as i8,
+                None => 0,
+            };
+            (device_id, vote)
+        })
+        .collect();
     Ok(decisions)
 }
 
