@@ -206,13 +206,13 @@ impl State {
         key_type: KeyType,
         protocol_type: ProtocolType,
     ) -> Result<Uuid, Error> {
+        let task_participants = task.get_participants();
+        let participant_ids_shares: Vec<(&[u8], u32)> = task_participants
+            .iter()
+            .map(|participant| (participant.device.id.as_slice(), participant.shares))
+            .collect();
         let created_task = match task.get_type() {
             crate::proto::TaskType::Group => {
-                let task_participants = task.get_participants();
-                let participant_ids_shares: Vec<(&[u8], u32)> = task_participants
-                    .iter()
-                    .map(|participant| (participant.device.id.as_slice(), participant.shares))
-                    .collect();
                 self.get_repo()
                     .create_group_task(
                         Some(task.get_id()),
@@ -225,14 +225,9 @@ impl State {
                     )
                     .await?
             }
-            crate::proto::TaskType::SignPdf => {
-                let task_participants = task.get_participants();
-                let participant_ids_shares: Vec<(&[u8], u32)> = task_participants
-                    .iter()
-                    .map(|participant| (participant.device.id.as_slice(), participant.shares))
-                    .collect();
+            task_type => {
                 self.get_repo()
-                    .create_sign_task(
+                    .create_threshold_task(
                         Some(task.get_id()),
                         group_id,
                         &participant_ids_shares,
@@ -240,48 +235,7 @@ impl State {
                         "name",
                         task.get_data().unwrap(),
                         task.get_request(),
-                        crate::persistence::TaskType::SignPdf,
-                        key_type.into(),
-                        protocol_type.into(),
-                    )
-                    .await?
-            }
-            crate::proto::TaskType::SignChallenge => {
-                let task_participants = task.get_participants();
-                let participant_ids_shares: Vec<(&[u8], u32)> = task_participants
-                    .iter()
-                    .map(|participant| (participant.device.id.as_slice(), participant.shares))
-                    .collect();
-                self.get_repo()
-                    .create_sign_task(
-                        Some(task.get_id()),
-                        group_id,
-                        &participant_ids_shares,
-                        task.get_threshold(),
-                        "name",
-                        task.get_data().unwrap(),
-                        task.get_request(),
-                        crate::persistence::TaskType::SignChallenge,
-                        key_type.into(),
-                        protocol_type.into(),
-                    )
-                    .await?
-            }
-            crate::proto::TaskType::Decrypt => {
-                let task_participants = task.get_participants();
-                let participant_ids_shares: Vec<(&[u8], u32)> = task_participants
-                    .iter()
-                    .map(|participant| (participant.device.id.as_slice(), participant.shares))
-                    .collect();
-                self.get_repo()
-                    .create_decrypt_task(
-                        Some(task.get_id()),
-                        group_id,
-                        &participant_ids_shares,
-                        task.get_threshold(),
-                        "name",
-                        task.get_data().unwrap(),
-                        task.get_request(),
+                        task_type.into(),
                         key_type.into(),
                         protocol_type.into(),
                     )

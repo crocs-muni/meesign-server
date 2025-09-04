@@ -61,6 +61,17 @@ mod proto {
         }
     }
 
+    impl From<TaskType> for crate::persistence::TaskType {
+        fn from(task_type: TaskType) -> Self {
+            match task_type {
+                TaskType::Group => Self::Group,
+                TaskType::SignChallenge => Self::SignChallenge,
+                TaskType::SignPdf => Self::SignPdf,
+                TaskType::Decrypt => Self::Decrypt,
+            }
+        }
+    }
+
     impl Group {
         pub fn from_model(model: GroupModel) -> Self {
             let protocol: crate::proto::ProtocolType = model.protocol.into();

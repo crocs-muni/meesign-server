@@ -251,7 +251,7 @@ impl Repository {
             .await
     }
 
-    pub async fn create_sign_task<'a>(
+    pub async fn create_threshold_task<'a>(
         &self,
         id: Option<&Uuid>,
         group_id: &[u8],
@@ -273,42 +273,6 @@ impl Repository {
                         id,
                         group_id,
                         task_type,
-                        name,
-                        participants,
-                        Some(task_data),
-                        request,
-                        threshold,
-                        Some(key_type),
-                        Some(protocol), // todo: should we fetch these from group?
-                    )
-                    .await
-                }
-                .scope_boxed()
-            })
-            .await
-    }
-
-    pub async fn create_decrypt_task(
-        &self,
-        id: Option<&Uuid>,
-        group_id: &[u8],
-        participants: &[(&[u8], u32)],
-        threshold: u32,
-        name: &str,
-        task_data: &[u8],
-        request: &[u8],
-        key_type: KeyType,
-        protocol: ProtocolType,
-    ) -> Result<Task, PersistenceError> {
-        let connection = &mut self.get_async_connection().await?;
-        connection
-            .transaction(|connection| {
-                async move {
-                    create_task(
-                        connection,
-                        id,
-                        group_id,
-                        TaskType::Decrypt,
                         name,
                         participants,
                         Some(task_data),
