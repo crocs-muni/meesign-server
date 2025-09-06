@@ -69,9 +69,6 @@ pub trait Task: Send + Sync {
     /// Ok(true) if task restarted successfully; Ok(false) otherwise.
     async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, Error>;
 
-    /// Get timestamp of the most recent task update
-    fn last_update(&self) -> u64;
-
     /// True if the task has been approved
     async fn is_approved(&self) -> bool;
 

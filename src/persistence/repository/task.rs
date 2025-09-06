@@ -1,4 +1,3 @@
-use chrono::{DateTime, Local};
 use diesel::result::Error::NotFound;
 use diesel::ExpressionMethods;
 use diesel::NullableExpressionMethods;
@@ -163,7 +162,6 @@ macro_rules! task_model_columns {
             task::attempt_count,
             task::error_message,
             task::threshold,
-            task::last_update,
             task::task_data,
             task::preprocessed,
             task::request,
@@ -383,22 +381,6 @@ where
         .get_result(connection)
         .await?;
     Ok(new_round as u16)
-}
-
-pub async fn set_task_last_update<Conn>(
-    connection: &mut Conn,
-    task_id: &Uuid,
-) -> Result<DateTime<Local>, PersistenceError>
-where
-    Conn: AsyncConnection<Backend = Pg>,
-{
-    let now = Local::now();
-    let updated_time = diesel::update(task::table.filter(task::id.eq(task_id)))
-        .set(task::last_update.eq(now))
-        .returning(task::last_update)
-        .get_result(connection)
-        .await?;
-    Ok(updated_time)
 }
 
 pub async fn increment_task_attempt_count<Conn>(

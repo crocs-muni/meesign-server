@@ -18,7 +18,7 @@ use crate::tasks::group::GroupTask;
 use crate::tasks::sign::SignTask;
 use crate::tasks::sign_pdf::SignPDFTask;
 use crate::tasks::{Task, TaskResult, TaskStatus};
-use crate::utils;
+use crate::{get_timestamp, utils};
 use tokio::sync::mpsc::Sender;
 use tonic::codegen::Arc;
 use tonic::Status;
@@ -28,6 +28,7 @@ pub struct State {
     subscribers: DashMap<Vec<u8>, Sender<Result<crate::proto::Task, Status>>>,
     repo: Arc<Repository>,
     communicators: DashMap<Uuid, Arc<RwLock<Communicator>>>,
+    task_last_updates: DashMap<Uuid, u64>,
 }
 
 impl State {
@@ -37,6 +38,7 @@ impl State {
             subscribers: DashMap::new(),
             repo,
             communicators: DashMap::default(),
+            task_last_updates: DashMap::new(),
         }
     }
 
@@ -320,6 +322,7 @@ impl State {
         attempt: u32,
     ) -> Result<bool, Error> {
         let mut task = self.get_task(task_id).await?;
+        self.set_task_last_update(task_id);
         if attempt != task.get_attempts() {
             warn!(
                 "Stale update discarded task_id={} device_id={} attempt={}",
@@ -362,6 +365,7 @@ impl State {
         decision: bool,
     ) -> Result<bool, Error> {
         let mut task = self.get_task(task_id).await?;
+        self.set_task_last_update(task_id);
         let change = task.decide(device, decision, self.repo.clone()).await;
         self.repo
             .set_task_decision(task_id, device, decision)
@@ -393,6 +397,7 @@ impl State {
 
     pub async fn restart_task(&mut self, task_id: &Uuid) -> Result<bool, Error> {
         let mut task = self.get_task(task_id).await?;
+        self.set_task_last_update(task_id);
 
         if task.restart(self.repo.clone()).await? {
             self.send_updates(task_id).await?;
@@ -522,5 +527,17 @@ impl State {
         .into_iter()
         .collect();
         tasks
+    }
+
+    pub fn set_task_last_update(&self, task_id: &Uuid) {
+        self.task_last_updates
+            .insert(task_id.clone(), get_timestamp());
+    }
+
+    pub fn get_task_last_update(&self, task_id: &Uuid) -> u64 {
+        *self
+            .task_last_updates
+            .entry(task_id.clone())
+            .or_insert(get_timestamp())
     }
 }

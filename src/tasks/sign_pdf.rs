@@ -1,6 +1,5 @@
 use crate::communicator::Communicator;
 use crate::error::Error;
-use crate::get_timestamp;
 use crate::group::Group;
 use crate::persistence::{Participant, Repository};
 use crate::proto::TaskType;
@@ -176,10 +175,7 @@ impl Task for SignPDFTask {
         data: &Vec<Vec<u8>>,
         repository: Arc<Repository>,
     ) -> Result<bool, Error> {
-        let result = self
-            .sign_task
-            .update_internal(device_id, data, repository.clone())
-            .await;
+        let result = self.sign_task.update_internal(device_id, data).await;
         if let Ok(true) = result {
             self.next_round(repository).await?;
         };
@@ -187,7 +183,6 @@ impl Task for SignPDFTask {
     }
 
     async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, Error> {
-        self.sign_task.last_update = get_timestamp();
         if self.result.is_some() {
             return Ok(false);
         }
@@ -202,10 +197,6 @@ impl Task for SignPDFTask {
         } else {
             Ok(false)
         }
-    }
-
-    fn last_update(&self) -> u64 {
-        self.sign_task.last_update()
     }
 
     async fn is_approved(&self) -> bool {

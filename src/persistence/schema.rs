@@ -72,7 +72,6 @@ diesel::table! {
         attempt_count -> Int4,
         error_message -> Nullable<Varchar>,
         threshold -> Int4,
-        last_update -> Timestamptz,
         task_data -> Nullable<Bytea>,
         preprocessed -> Nullable<Bytea>,
         request -> Nullable<Bytea>,

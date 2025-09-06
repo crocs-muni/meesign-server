@@ -54,7 +54,6 @@ CREATE TABLE task (
     "attempt_count" integer NOT NULL CHECK ("attempt_count" >= 0),
     "error_message" varchar,
     "threshold" integer NOT NULL CHECK ("threshold" > 0),
-    "last_update" timestamptz NOT NULL DEFAULT NOW(),
     "task_data" bytea,
     "preprocessed" bytea,
     "request" bytea,

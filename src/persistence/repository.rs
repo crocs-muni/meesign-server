@@ -13,7 +13,7 @@ use self::{
     task::{
         get_device_tasks, get_task_acknowledgements, get_task_decisions, get_tasks,
         increment_round, increment_task_attempt_count, set_round, set_task_acknowledgement,
-        set_task_decision, set_task_group_certificates_sent, set_task_last_update, set_task_result,
+        set_task_decision, set_task_group_certificates_sent, set_task_result,
     },
 };
 use self::{
@@ -355,14 +355,6 @@ impl Repository {
     pub async fn set_round(&self, task_id: &Uuid, round: u16) -> Result<u16, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         set_round(connection, task_id, round).await
-    }
-
-    pub async fn set_task_last_update(
-        &self,
-        task_id: &Uuid,
-    ) -> Result<DateTime<Local>, PersistenceError> {
-        let connection = &mut self.get_async_connection().await?;
-        set_task_last_update(connection, task_id).await
     }
 
     pub async fn increment_task_attempt_count(

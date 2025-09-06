@@ -8,7 +8,7 @@ use crate::proto::{DecryptRequest, TaskType};
 use crate::protocols::elgamal::ElgamalDecrypt;
 use crate::protocols::{create_threshold_protocol, Protocol};
 use crate::tasks::{Task, TaskResult, TaskStatus};
-use crate::{get_timestamp, utils};
+use crate::utils;
 use async_trait::async_trait;
 use log::info;
 use meesign_crypto::proto::{ClientMessage, Message as _};
@@ -24,7 +24,6 @@ pub struct DecryptTask {
     pub(super) data: Vec<u8>,
     pub(super) protocol: Box<dyn Protocol + Send + Sync>,
     request: Vec<u8>,
-    pub(super) last_update: u64,
     pub(super) attempts: u32,
 }
 
@@ -73,7 +72,6 @@ impl DecryptTask {
             data,
             protocol: Box::new(ElgamalDecrypt::new(repository, id)),
             request,
-            last_update: get_timestamp(),
             attempts: 0,
         })
     }
@@ -128,7 +126,6 @@ impl DecryptTask {
         &mut self,
         device_id: &[u8],
         data: &Vec<Vec<u8>>,
-        repository: Arc<Repository>,
     ) -> Result<bool, Error> {
         if self.communicator.read().await.accept_count() < self.group.threshold() {
             return Err(Error::GeneralProtocolError(
@@ -152,7 +149,6 @@ impl DecryptTask {
             .write()
             .await
             .receive_messages(device_id, messages);
-        self.set_last_update(repository).await?;
 
         if self.communicator.read().await.round_received()
             && self.protocol.round() <= self.protocol.last_round()
@@ -170,7 +166,6 @@ impl DecryptTask {
         repository: Arc<Repository>,
     ) -> Option<bool> {
         self.communicator.write().await.decide(device_id, decision);
-        self.set_last_update(repository.clone()).await.unwrap();
 
         if self.result.is_none() && self.protocol.round() == 0 {
             if self.communicator.read().await.reject_count() >= self.group.reject_threshold() {
@@ -193,12 +188,6 @@ impl DecryptTask {
         repository.set_task_result(self.get_id(), &result).await?;
         self.result = Some(result);
         Ok(())
-    }
-
-    async fn set_last_update(&mut self, repository: Arc<Repository>) -> Result<u64, Error> {
-        self.last_update = get_timestamp();
-        repository.set_task_last_update(&self.id).await?;
-        Ok(self.last_update)
     }
 
     async fn increment_attempt_count(&mut self, repository: Arc<Repository>) -> Result<u32, Error> {
@@ -249,7 +238,6 @@ impl Task for DecryptTask {
             data,
             protocol,
             request,
-            last_update: task_model.last_update.timestamp() as u64,
             attempts: task_model.attempt_count as u32,
         };
         Ok(task)
@@ -305,9 +293,7 @@ impl Task for DecryptTask {
         data: &Vec<Vec<u8>>,
         repository: Arc<Repository>,
     ) -> Result<bool, Error> {
-        let result = self
-            .update_internal(device_id, data, repository.clone())
-            .await;
+        let result = self.update_internal(device_id, data).await;
         if let Ok(true) = result {
             self.next_round(repository).await.unwrap();
         };
@@ -315,7 +301,6 @@ impl Task for DecryptTask {
     }
 
     async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, Error> {
-        self.set_last_update(repository.clone()).await?;
         if self.result.is_some() {
             return Ok(false);
         }
@@ -327,10 +312,6 @@ impl Task for DecryptTask {
         } else {
             Ok(false)
         }
-    }
-
-    fn last_update(&self) -> u64 {
-        self.last_update
     }
 
     async fn is_approved(&self) -> bool {

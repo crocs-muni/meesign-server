@@ -8,7 +8,7 @@ use crate::persistence::Task as TaskModel;
 use crate::proto::{KeyType, ProtocolType, TaskType};
 use crate::protocols::{create_keygen_protocol, Protocol};
 use crate::tasks::{Task, TaskResult, TaskStatus};
-use crate::{get_timestamp, utils};
+use crate::utils;
 use async_trait::async_trait;
 use log::{info, warn};
 use meesign_crypto::proto::{ClientMessage, Message as _, ServerMessage};
@@ -30,7 +30,6 @@ pub struct GroupTask {
     result: Option<Result<Group, String>>,
     protocol: Box<dyn Protocol + Send + Sync>,
     request: Vec<u8>,
-    last_update: u64,
     attempts: u32,
     note: Option<String>,
     certificates_sent: bool, // TODO: remove the field completely
@@ -114,7 +113,6 @@ impl GroupTask {
             result: None,
             protocol,
             request,
-            last_update: get_timestamp(),
             attempts: 0,
             note,
             certificates_sent: false,
@@ -130,12 +128,6 @@ impl GroupTask {
         let result = result.map(|group| group.identifier().to_vec());
         repository.set_task_result(&self.id, &result).await?;
         Ok(())
-    }
-
-    async fn set_last_update(&mut self, repository: Arc<Repository>) -> Result<u64, Error> {
-        self.last_update = get_timestamp();
-        repository.set_task_last_update(&self.id).await?;
-        Ok(self.last_update)
     }
 
     async fn increment_attempt_count(&mut self, repository: Arc<Repository>) -> Result<u32, Error> {
@@ -340,7 +332,6 @@ impl Task for GroupTask {
             result,
             protocol,
             request,
-            last_update: model.last_update.timestamp() as u64,
             attempts: model.attempt_count as u32,
             note: model.note,
             certificates_sent: model.group_certificates_sent.unwrap(), // TODO: remove the field completely
@@ -406,7 +397,6 @@ impl Task for GroupTask {
             .write()
             .await
             .receive_messages(device_id, messages);
-        self.set_last_update(repository.clone()).await?;
 
         if self.communicator.read().await.round_received()
             && self.protocol.round() <= self.protocol.last_round()
@@ -419,7 +409,6 @@ impl Task for GroupTask {
     }
 
     async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, Error> {
-        self.set_last_update(repository.clone()).await.unwrap();
         if self.result.is_some() {
             return Ok(false);
         }
@@ -431,10 +420,6 @@ impl Task for GroupTask {
         } else {
             Ok(false)
         }
-    }
-
-    fn last_update(&self) -> u64 {
-        self.last_update
     }
 
     async fn is_approved(&self) -> bool {
@@ -464,7 +449,6 @@ impl Task for GroupTask {
         repository: Arc<Repository>,
     ) -> Option<bool> {
         self.communicator.write().await.decide(device_id, decision);
-        self.set_last_update(repository.clone()).await.unwrap();
         if self.result.is_none() && self.protocol.round() == 0 {
             if self.communicator.read().await.reject_count() > 0 {
                 self.set_result(Err("Task declined".to_string()), repository)

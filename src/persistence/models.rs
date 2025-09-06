@@ -128,7 +128,6 @@ pub struct Task {
     pub attempt_count: i32,
     pub error_message: Option<String>,
     pub threshold: i32,
-    pub last_update: DateTime<Local>,
     pub task_data: Option<Vec<u8>>,
     pub preprocessed: Option<Vec<u8>>,
     pub request: Option<Vec<u8>>,

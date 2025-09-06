@@ -26,7 +26,7 @@ async fn check_tasks(state: &mut MutexGuard<'_, State>) -> Result<(), Error> {
         let task_id = task.get_id();
         if task.get_status() != TaskStatus::Finished
             && task.is_approved().await
-            && timestamp - task.last_update() > 30
+            && timestamp.saturating_sub(state.get_task_last_update(task_id)) > 30
         {
             debug!("Stale task detected task_id={:?}", utils::hextrunc(task_id));
             restarts.push(*task_id);
