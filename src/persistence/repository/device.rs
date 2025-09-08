@@ -1,4 +1,3 @@
-use chrono::{DateTime, Local};
 use diesel::QueryDsl;
 use diesel::{pg::Pg, ExpressionMethods, SelectableHelper};
 use diesel_async::AsyncConnection;
@@ -112,23 +111,6 @@ where
     Ok(tasks_devices)
 }
 
-pub async fn activate_device<Conn>(
-    connection: &mut Conn,
-    target_identifier: &[u8],
-) -> Result<DateTime<Local>, PersistenceError>
-where
-    Conn: AsyncConnection<Backend = Pg>,
-{
-    let last_active = diesel::update(device::table)
-        .filter(device::id.eq(target_identifier))
-        .set(device::last_active.eq(Local::now()))
-        .returning(device::last_active)
-        .get_result(connection)
-        .await?;
-
-    Ok(last_active)
-}
-
 pub async fn add_device<Conn>(
     connection: &mut Conn,
     identifier: &[u8],
@@ -174,16 +156,12 @@ where
 
 #[cfg(test)]
 mod test {
-
-    use std::{ops::Add, time::Duration};
-
     use diesel_async::AsyncPgConnection;
-    use tokio::time::sleep;
 
     use crate::persistence::{
         enums::DeviceKind,
         error::PersistenceError,
-        repository::device::{activate_device, add_device, get_devices},
+        repository::device::{add_device, get_devices},
         tests::persistency_unit_test_context::PersistencyUnitTestContext,
     };
 
@@ -276,43 +254,6 @@ mod test {
         )
         .await
         .is_err());
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_activate_device() -> Result<(), PersistenceError> {
-        let ctx = PersistencyUnitTestContext::new();
-        let mut connection = ctx.get_test_connection().await?;
-        let timeout = Duration::from_millis(10);
-
-        let device_identifier = vec![3; 32];
-        add_device(
-            &mut connection,
-            &device_identifier,
-            "user1",
-            &DeviceKind::User,
-            &vec![1; 400],
-        )
-        .await?;
-        let fst_device_activation = activate_device(&mut connection, &device_identifier).await?;
-        sleep(timeout).await;
-        let snd_device_activation = activate_device(&mut connection, &device_identifier).await?;
-        assert!(fst_device_activation.add(timeout) <= snd_device_activation);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn given_nonexistent_device_id_activate_device_returns_error(
-    ) -> Result<(), PersistenceError> {
-        let ctx = PersistencyUnitTestContext::new();
-        let mut connection = ctx.get_test_connection().await?;
-
-        let device_identifier = vec![3; 32];
-        assert!(activate_device(&mut connection, &device_identifier)
-            .await
-            .is_err());
 
         Ok(())
     }

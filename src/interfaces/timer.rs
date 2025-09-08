@@ -3,8 +3,7 @@ use crate::state::State;
 use crate::tasks::TaskStatus;
 use crate::{get_timestamp, utils};
 
-use hex::ToHex;
-use log::{debug, error};
+use log::debug;
 use tokio::sync::MutexGuard;
 use tokio::{sync::Mutex, time};
 use tonic::codegen::Arc;
@@ -49,13 +48,7 @@ async fn check_subscribers(state: &mut MutexGuard<'_, State>) {
             );
             remove.push(device_id.clone());
         } else {
-            if let Err(err) = state.activate_device(&device_id).await {
-                error!(
-                    "Couldn't activate device {}: {}",
-                    device_id.encode_hex::<String>(),
-                    err
-                )
-            }
+            state.activate_device(&device_id);
         }
     }
     for device_id in remove {

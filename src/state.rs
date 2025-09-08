@@ -1,4 +1,3 @@
-use chrono::{DateTime, Local};
 use dashmap::DashMap;
 use log::{debug, error, warn};
 use std::collections::HashMap;
@@ -28,6 +27,7 @@ pub struct State {
     repo: Arc<Repository>,
     communicators: DashMap<Uuid, Arc<RwLock<Communicator>>>,
     task_last_updates: DashMap<Uuid, u64>,
+    device_last_activations: DashMap<Vec<u8>, u64>,
 }
 
 impl State {
@@ -38,6 +38,7 @@ impl State {
             repo,
             communicators: DashMap::default(),
             task_last_updates: DashMap::new(),
+            device_last_activations: DashMap::new(),
         }
     }
 
@@ -276,16 +277,32 @@ impl State {
         Ok(filtered_tasks)
     }
 
-    pub async fn activate_device(&self, device_id: &[u8]) -> Result<DateTime<Local>, Error> {
-        Ok(self.get_repo().activate_device(device_id).await?)
+    pub fn activate_device(&self, device_id: &[u8]) {
+        self.device_last_activations
+            .insert(device_id.to_vec(), get_timestamp());
     }
 
-    pub async fn device_activated(&self, device_id: &[u8]) -> Result<bool, Error> {
-        Ok(self.get_repo().device_activated(device_id).await?)
+    pub async fn device_exists(&self, device_id: &[u8]) -> Result<bool, Error> {
+        // TODO: Optimize query / cache devices in State
+        let devices = self.repo.get_devices_with_ids(&[device_id]).await?;
+        Ok(devices.len() == 1 && devices[0].id == device_id)
     }
 
-    pub async fn get_devices(&self) -> Result<Vec<Device>, Error> {
-        Ok(self.get_repo().get_devices().await?)
+    pub async fn get_devices(&self) -> Result<Vec<(Device, u64)>, Error> {
+        let devices = self
+            .get_repo()
+            .get_devices()
+            .await?
+            .into_iter()
+            .map(|dev| {
+                let last_active = *self
+                    .device_last_activations
+                    .entry(dev.id.clone())
+                    .or_insert(get_timestamp());
+                (dev, last_active)
+            })
+            .collect();
+        Ok(devices)
     }
 
     pub async fn get_device_groups(&self, device: &[u8]) -> Result<Vec<Group>, Error> {

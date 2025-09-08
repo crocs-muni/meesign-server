@@ -42,7 +42,7 @@ impl MeeSignService {
     ) -> Result<(), Status> {
         if let Some(certs) = certs {
             let device_id = certs.get(0).map(cert_to_id).unwrap_or(vec![]);
-            if !self.state.lock().await.device_activated(&device_id).await? {
+            if !self.state.lock().await.device_exists(&device_id).await? {
                 return Err(Status::unauthenticated("Unknown device certificate"));
             }
         } else if required {
@@ -170,7 +170,7 @@ impl MeeSign for MeeSignService {
 
         let state = self.state.lock().await;
         if device_id.is_some() {
-            state.activate_device(device_id.unwrap()).await?;
+            state.activate_device(device_id.unwrap());
         }
         let task = state.get_task(&task_id).await?;
         let request = Some(task.get_request());
@@ -211,7 +211,7 @@ impl MeeSign for MeeSignService {
         );
 
         let mut state = self.state.lock().await;
-        state.activate_device(&device_id).await?;
+        state.activate_device(&device_id);
         let result = state
             .update_task(&task_id, &device_id, &data, attempt)
             .await;
@@ -247,7 +247,7 @@ impl MeeSign for MeeSignService {
 
         let state = self.state.lock().await;
         let tasks = if let Some(device_id) = device_id {
-            state.activate_device(&device_id).await?;
+            state.activate_device(&device_id);
             future::join_all(
                 state
                     .get_active_device_tasks(&device_id)
@@ -287,7 +287,7 @@ impl MeeSign for MeeSignService {
         let state = self.state.lock().await;
         // TODO: refactor, consider storing device IDS in the group model directly
         let groups = if let Some(device_id) = device_id {
-            state.activate_device(&device_id).await?;
+            state.activate_device(&device_id);
             state
                 .get_device_groups(&device_id)
                 .await?
@@ -377,7 +377,13 @@ impl MeeSign for MeeSignService {
                 .get_devices()
                 .await?
                 .into_iter()
-                .map(|device| device.into())
+                .map(|(device, last_active)| msg::Device {
+                    identifier: device.id,
+                    name: device.name,
+                    kind: Into::<msg::DeviceKind>::into(device.kind).into(),
+                    certificate: device.certificate,
+                    last_active,
+                })
                 .collect(),
         };
         Ok(Response::new(resp))
@@ -401,8 +407,7 @@ impl MeeSign for MeeSignService {
             self.state
                 .lock()
                 .await
-                .activate_device(device_id.as_ref().unwrap())
-                .await?;
+                .activate_device(device_id.as_ref().unwrap());
         }
 
         Ok(Response::new(msg::Resp {
@@ -435,13 +440,7 @@ impl MeeSign for MeeSignService {
         let state = self.state.clone();
         tokio::task::spawn(async move {
             let mut state = state.lock().await;
-            if let Err(err) = state.activate_device(&device_id).await {
-                error!(
-                    "Couldn't activate device with id {}: {}",
-                    utils::hextrunc(&device_id),
-                    err
-                );
-            }
+            state.activate_device(&device_id);
             if let Err(err) = state.decide_task(&task_id, &device_id, accept).await {
                 error!(
                     "Couldn't decide task {} for device {}: {}",
@@ -477,7 +476,7 @@ impl MeeSign for MeeSignService {
         );
 
         let mut state = self.state.lock().await;
-        state.activate_device(&device_id).await?;
+        state.activate_device(&device_id);
 
         let task_id = Uuid::from_slice(&task_id).unwrap();
         if let Err(err) = state.acknowledge_task(&task_id, &device_id).await {

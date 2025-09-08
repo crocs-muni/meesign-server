@@ -1,4 +1,3 @@
-use chrono::{DateTime, Local};
 use uuid::Uuid;
 
 use super::{
@@ -8,7 +7,7 @@ use super::{
 };
 
 use self::{
-    device::{activate_device, add_device, get_devices, get_devices_with_ids},
+    device::{add_device, get_devices, get_devices_with_ids},
     group::get_group,
     task::{
         get_device_tasks, get_task_acknowledgements, get_task_decisions, get_tasks,
@@ -134,25 +133,6 @@ impl Repository {
     ) -> Result<Vec<(Uuid, Participant)>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         get_tasks_participants(connection, task_ids).await
-    }
-
-    pub async fn activate_device(
-        &self,
-        target_identifier: &[u8],
-    ) -> Result<DateTime<Local>, PersistenceError> {
-        let connection = &mut self.get_async_connection().await?;
-        activate_device(connection, target_identifier).await
-    }
-
-    pub async fn device_activated(
-        &self,
-        target_identifier: &[u8],
-    ) -> Result<bool, PersistenceError> {
-        match self.activate_device(target_identifier).await {
-            Ok(_) => Ok(true),
-            Err(PersistenceError::ExecutionError(diesel::result::Error::NotFound)) => Ok(false),
-            Err(e) => Err(e),
-        }
     }
 
     /* Groups */

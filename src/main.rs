@@ -72,6 +72,15 @@ mod proto {
         }
     }
 
+    impl Into<DeviceKind> for crate::persistence::DeviceKind {
+        fn into(self) -> DeviceKind {
+            match self {
+                Self::User => DeviceKind::User,
+                Self::Bot => DeviceKind::Bot,
+            }
+        }
+    }
+
     impl Group {
         pub fn from_model(model: GroupModel) -> Self {
             let protocol: crate::proto::ProtocolType = model.protocol.into();

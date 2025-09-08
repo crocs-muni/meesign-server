@@ -1,4 +1,3 @@
-use chrono::{DateTime, Local};
 use diesel::{query_builder::AsChangeset, Insertable, Queryable, Selectable};
 use serde::Serialize;
 use uuid::Uuid;
@@ -33,7 +32,6 @@ pub struct Device {
     pub name: String,
     pub kind: DeviceKind,
     pub certificate: Vec<u8>,
-    pub last_active: DateTime<Local>,
 }
 
 impl Device {
@@ -44,27 +42,10 @@ impl Device {
             name,
             kind,
             certificate,
-            last_active: Local::now(),
         }
     }
     pub fn identifier(&self) -> &Vec<u8> {
         &self.id
-    }
-
-    pub fn last_active(&self) -> &DateTime<Local> {
-        &self.last_active
-    }
-}
-
-impl From<Device> for crate::proto::Device {
-    fn from(device: Device) -> Self {
-        crate::proto::Device {
-            identifier: device.id,
-            name: device.name,
-            kind: crate::proto::DeviceKind::User.into(), // TODO: Use device.kind
-            certificate: device.certificate,
-            last_active: device.last_active.timestamp() as u64,
-        }
     }
 }
 
