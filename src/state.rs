@@ -1,6 +1,5 @@
 use chrono::{DateTime, Local};
 use dashmap::DashMap;
-use futures::future;
 use log::{debug, error, warn};
 use std::collections::HashMap;
 use tokio::sync::RwLock;
@@ -508,25 +507,19 @@ impl State {
                 .push(device);
         }
 
-        let tasks = future::join_all(task_models.into_iter().map(|task| {
+        // NOTE: When hydrating many tasks, `future::join_all` would cause
+        //       a deadlock with `repository::get_async_connection`.
+        let mut tasks = Vec::new();
+        for task in task_models {
             let participants = task_id_participants.remove(&task.id).unwrap();
-            async {
-                let communicator = self.get_communicator(&task.id).await?;
+            let communicator = self.get_communicator(&task.id).await?;
 
-                let task = crate::tasks::from_model(
-                    task,
-                    participants,
-                    communicator,
-                    self.get_repo().clone(),
-                )
-                .await?;
-                Ok(task)
-            }
-        }))
-        .await
-        .into_iter()
-        .collect();
-        tasks
+            let task =
+                crate::tasks::from_model(task, participants, communicator, self.get_repo().clone())
+                    .await?;
+            tasks.push(task)
+        }
+        Ok(tasks)
     }
 
     pub fn set_task_last_update(&self, task_id: &Uuid) {
