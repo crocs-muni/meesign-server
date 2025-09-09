@@ -7,7 +7,7 @@ use crate::persistence::Repository;
 use crate::persistence::Task as TaskModel;
 use crate::proto::{KeyType, ProtocolType, TaskType};
 use crate::protocols::{create_keygen_protocol, Protocol};
-use crate::tasks::{Task, TaskResult, TaskStatus};
+use crate::tasks::{DecisionUpdate, RoundUpdate, Task, TaskResult, TaskStatus};
 use crate::utils;
 use async_trait::async_trait;
 use log::{info, warn};
@@ -135,30 +135,29 @@ impl GroupTask {
         Ok(repository.increment_task_attempt_count(&self.id).await?)
     }
 
-    async fn start_task(&mut self) -> Result<(), Error> {
+    async fn start_task(&mut self) -> Result<RoundUpdate, Error> {
         self.protocol
             .initialize(&mut *self.communicator.write().await, &[])
             .await?;
-        Ok(())
+        Ok(RoundUpdate::NextRound(self.protocol.round()))
     }
 
-    async fn advance_task(&mut self) {
+    async fn advance_task(&mut self) -> Result<RoundUpdate, Error> {
         self.protocol
             .advance(&mut *self.communicator.write().await)
-            .await
-            .unwrap();
+            .await?;
+        Ok(RoundUpdate::NextRound(self.protocol.round()))
     }
 
-    async fn finalize_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
+    async fn finalize_task(&mut self, repository: Arc<Repository>) -> Result<RoundUpdate, Error> {
         let identifier = self
             .protocol
             .finalize(&mut *self.communicator.write().await)
             .await?;
         let Some(identifier) = identifier else {
-            let error_message = "Task failed (group key not output)".to_string();
-            self.set_result(Err(error_message.clone()), repository)
-                .await?;
-            return Err(Error::GeneralProtocolError(error_message));
+            let reason = "Task failed (group key not output)".to_string();
+            self.set_result(Err(reason.clone()), repository).await?;
+            return Ok(RoundUpdate::Failed(reason));
         };
         // TODO
         let certificate = if self.protocol.get_type() == ProtocolType::Gg18 {
@@ -176,41 +175,46 @@ impl GroupTask {
                 .collect::<Vec<_>>()
         );
 
-        self.set_result(
-            Ok(Group::new(
-                identifier.clone(),
-                self.name.clone(),
-                self.threshold,
-                self.participants.clone(),
-                self.protocol.get_type(),
-                self.key_type,
-                certificate,
-                self.note.clone(),
-            )),
-            repository.clone(),
-        )
-        .await?;
+        let group = Group::new(
+            identifier.clone(),
+            self.name.clone(),
+            self.threshold,
+            self.participants.clone(),
+            self.protocol.get_type(),
+            self.key_type,
+            certificate,
+            self.note.clone(),
+        );
+
+        self.set_result(Ok(group.clone()), repository.clone())
+            .await?;
         repository
             .set_task_result(&self.id, &Ok(identifier))
             .await?;
 
         self.communicator.write().await.clear_input();
-        Ok(())
+        Ok(RoundUpdate::Finished(
+            self.protocol.round(),
+            TaskResult::GroupEstablished(group),
+        ))
     }
 
-    async fn next_round(&mut self, repository: Arc<Repository>) {
+    async fn next_round(&mut self, repository: Arc<Repository>) -> Result<RoundUpdate, Error> {
         if !self.certificates_sent {
-            self.send_certificates(repository).await.unwrap();
+            self.send_certificates(repository).await
         } else if self.protocol.round() == 0 {
-            self.start_task().await.unwrap();
+            self.start_task().await
         } else if self.protocol.round() < self.protocol.last_round() {
             self.advance_task().await
         } else {
-            self.finalize_task(repository).await.unwrap() // TODO
+            self.finalize_task(repository).await
         }
     }
 
-    async fn send_certificates(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
+    async fn send_certificates(
+        &mut self,
+        repository: Arc<Repository>,
+    ) -> Result<RoundUpdate, Error> {
         self.communicator.write().await.set_active_devices(None);
 
         let certs: HashMap<u32, Vec<u8>> = {
@@ -238,7 +242,7 @@ impl GroupTask {
         repository
             .set_task_group_certificates_sent(&self.id, Some(true))
             .await?;
-        Ok(())
+        Ok(RoundUpdate::GroupCertificatesSent)
     }
 }
 
@@ -371,7 +375,7 @@ impl Task for GroupTask {
         device_id: &[u8],
         data: &Vec<Vec<u8>>,
         repository: Arc<Repository>,
-    ) -> Result<bool, Error> {
+    ) -> Result<RoundUpdate, Error> {
         let total_shares: u32 = self.participants.iter().map(|p| p.shares).sum();
         if self.communicator.read().await.accept_count() != total_shares {
             return Err(Error::GeneralProtocolError(
@@ -401,11 +405,10 @@ impl Task for GroupTask {
         if self.communicator.read().await.round_received()
             && self.protocol.round() <= self.protocol.last_round()
         {
-            self.next_round(repository.clone()).await;
-            return Ok(true);
+            return self.next_round(repository.clone()).await;
         }
 
-        Ok(false)
+        Ok(RoundUpdate::Listen)
     }
 
     async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, Error> {
@@ -447,20 +450,23 @@ impl Task for GroupTask {
         device_id: &[u8],
         decision: bool,
         repository: Arc<Repository>,
-    ) -> Option<bool> {
+    ) -> Result<DecisionUpdate, Error> {
         self.communicator.write().await.decide(device_id, decision);
-        if self.result.is_none() && self.protocol.round() == 0 {
+        let decision_update = if self.result.is_none() && self.protocol.round() == 0 {
             if self.communicator.read().await.reject_count() > 0 {
                 self.set_result(Err("Task declined".to_string()), repository)
-                    .await
-                    .unwrap();
-                return Some(false);
+                    .await?;
+                DecisionUpdate::Declined
             } else if self.is_approved().await {
-                self.next_round(repository).await;
-                return Some(true);
+                let round_update = self.next_round(repository).await?;
+                DecisionUpdate::Accepted(round_update)
+            } else {
+                DecisionUpdate::Undecided
             }
-        }
-        None
+        } else {
+            DecisionUpdate::Undecided
+        };
+        Ok(decision_update)
     }
 
     async fn acknowledge(&mut self, device_id: &[u8]) {

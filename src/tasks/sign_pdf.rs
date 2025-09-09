@@ -4,7 +4,7 @@ use crate::group::Group;
 use crate::persistence::{Participant, Repository};
 use crate::proto::TaskType;
 use crate::tasks::sign::SignTask;
-use crate::tasks::{Task, TaskResult, TaskStatus};
+use crate::tasks::{DecisionUpdate, RoundUpdate, Task, TaskResult, TaskStatus};
 use async_trait::async_trait;
 use lazy_static::lazy_static;
 use log::{error, info, warn};
@@ -46,20 +46,20 @@ impl SignPDFTask {
         })
     }
 
-    async fn start_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
+    async fn start_task(&mut self, repository: Arc<Repository>) -> Result<RoundUpdate, Error> {
         let file = NamedTempFile::new();
         if file.is_err() {
             error!("Could not create temporary file");
-            self.set_result(Err("Task failed (server error)".to_string()), repository)
-                .await?;
-            return Ok(()); // TODO: double check that behavior won't change if we return as err
+            let reason = "Task failed (server error)".to_string();
+            self.set_result(Err(reason.clone()), repository).await?;
+            return Ok(RoundUpdate::Failed(reason));
         }
         let mut file = file.unwrap();
         if file.write_all(&self.sign_task.data).is_err() {
             error!("Could not write in temporary file");
-            self.set_result(Err("Task failed (server error)".to_string()), repository)
-                .await?;
-            return Ok(()); // TODO: double check that behavior won't change if we return as err
+            let reason = "Task failed (server error)".to_string();
+            self.set_result(Err(reason.clone()), repository).await?;
+            return Ok(RoundUpdate::Failed(reason));
         }
 
         let pdfhelper = Command::new("java")
@@ -73,9 +73,9 @@ impl SignPDFTask {
 
         if pdfhelper.is_err() {
             error!("Could not start PDFHelper");
-            self.set_result(Err("Task failed (server error)".to_string()), repository)
-                .await?;
-            return Ok(()); // TODO: double check that behavior won't change if we return as err
+            let reason = "Task failed (server error)".to_string();
+            self.set_result(Err(reason.clone()), repository).await?;
+            return Ok(RoundUpdate::Failed(reason));
         }
         let mut pdfhelper = pdfhelper.unwrap();
 
@@ -84,9 +84,9 @@ impl SignPDFTask {
             self.sign_task.get_group().certificate().unwrap(),
         );
         if hash.is_empty() {
-            self.set_result(Err("Task failed (invalid PDF)".to_string()), repository)
-                .await?;
-            return Ok(()); // TODO: double check that behavior won't change if we return as err
+            let reason = "Task failed (invalid PDF)".to_string();
+            self.set_result(Err(reason.clone()), repository).await?;
+            return Ok(RoundUpdate::Failed(reason));
         }
         PDF_HELPERS
             .lock()
@@ -96,33 +96,30 @@ impl SignPDFTask {
         self.sign_task.start_task().await
     }
 
-    async fn advance_task(&mut self) -> Result<(), Error> {
+    async fn advance_task(&mut self) -> Result<RoundUpdate, Error> {
         self.sign_task.advance_task().await
     }
 
-    async fn finalize_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
-        self.sign_task.finalize_task(repository.clone()).await?;
-        if let Some(TaskResult::Signed(signature)) = self.sign_task.get_result() {
-            let mut pdfhelper = PDF_HELPERS.lock().unwrap().remove(self.get_id()).unwrap();
-            let signed = include_signature(&mut pdfhelper, &signature);
+    async fn finalize_task(&mut self, repository: Arc<Repository>) -> Result<RoundUpdate, Error> {
+        let round_update = match self.sign_task.finalize_task(repository.clone()).await? {
+            RoundUpdate::Finished(round, TaskResult::Signed(signature)) => {
+                let mut pdfhelper = PDF_HELPERS.lock().unwrap().remove(self.get_id()).unwrap();
+                let signed = include_signature(&mut pdfhelper, &signature);
 
-            info!(
-                "PDF signed by group_id={}",
-                hex::encode(self.sign_task.get_group().identifier())
-            );
+                info!(
+                    "PDF signed by group_id={}",
+                    hex::encode(self.sign_task.get_group().identifier())
+                );
 
-            self.set_result(Ok(signed), repository).await?;
-        } else {
-            self.set_result(
-                Err("Task failed (signature not output)".to_string()),
-                repository,
-            )
-            .await?;
-        }
-        Ok(())
+                self.set_result(Ok(signed.clone()), repository).await?;
+                RoundUpdate::Finished(round, TaskResult::SignedPdf(signed))
+            }
+            other => other,
+        };
+        Ok(round_update)
     }
 
-    async fn next_round(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
+    async fn next_round(&mut self, repository: Arc<Repository>) -> Result<RoundUpdate, Error> {
         if self.sign_task.protocol.round() == 0 {
             self.start_task(repository).await
         } else if self.sign_task.protocol.round() < self.sign_task.protocol.last_round() {
@@ -174,12 +171,13 @@ impl Task for SignPDFTask {
         device_id: &[u8],
         data: &Vec<Vec<u8>>,
         repository: Arc<Repository>,
-    ) -> Result<bool, Error> {
-        let result = self.sign_task.update_internal(device_id, data).await;
-        if let Ok(true) = result {
-            self.next_round(repository).await?;
+    ) -> Result<RoundUpdate, Error> {
+        let round_update = if self.sign_task.update_internal(device_id, data).await? {
+            self.next_round(repository).await?
+        } else {
+            RoundUpdate::Listen
         };
-        result
+        Ok(round_update)
     }
 
     async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, Error> {
@@ -216,15 +214,23 @@ impl Task for SignPDFTask {
         device_id: &[u8],
         decision: bool,
         repository: Arc<Repository>,
-    ) -> Option<bool> {
+    ) -> Result<DecisionUpdate, Error> {
         let result = self
             .sign_task
             .decide_internal(device_id, decision, repository.clone())
             .await;
-        if let Some(true) = result {
-            self.next_round(repository).await.unwrap();
+        let decision_update = match result {
+            Some(true) => {
+                let round_update = self.next_round(repository).await?;
+                DecisionUpdate::Accepted(round_update)
+            }
+            Some(false) => {
+                self.set_result(Err("Task declined".into())).await?;
+                DecisionUpdate::Declined
+            },
+            None => DecisionUpdate::Undecided,
         };
-        result
+        Ok(decision_update)
     }
 
     async fn acknowledge(&mut self, device_id: &[u8]) {

@@ -17,6 +17,20 @@ use crate::persistence::Repository;
 use crate::persistence::Task as TaskModel;
 use crate::persistence::TaskType;
 
+pub enum RoundUpdate {
+    Listen,
+    GroupCertificatesSent,
+    NextRound(u16),            // round number
+    Finished(u16, TaskResult), // round number, result
+    Failed(String),            // failure reason
+}
+
+pub enum DecisionUpdate {
+    Undecided,
+    Accepted(RoundUpdate),
+    Declined,
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub enum TaskStatus {
     Created,
@@ -61,7 +75,7 @@ pub trait Task: Send + Sync {
         device_id: &[u8],
         data: &Vec<Vec<u8>>,
         repository: Arc<Repository>,
-    ) -> Result<bool, Error>;
+    ) -> Result<RoundUpdate, Error>;
 
     /// Attempt to restart protocol in task
     ///
@@ -86,7 +100,7 @@ pub trait Task: Send + Sync {
         device_id: &[u8],
         decision: bool,
         repository: Arc<Repository>,
-    ) -> Option<bool>;
+    ) -> Result<DecisionUpdate, Error>;
 
     async fn acknowledge(&mut self, device_id: &[u8]);
     async fn device_acknowledged(&self, device_id: &[u8]) -> bool;

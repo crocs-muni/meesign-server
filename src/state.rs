@@ -15,7 +15,7 @@ use crate::tasks::decrypt::DecryptTask;
 use crate::tasks::group::GroupTask;
 use crate::tasks::sign::SignTask;
 use crate::tasks::sign_pdf::SignPDFTask;
-use crate::tasks::{Task, TaskResult, TaskStatus};
+use crate::tasks::{DecisionUpdate, RoundUpdate, Task, TaskResult, TaskStatus};
 use crate::{get_timestamp, utils};
 use tokio::sync::mpsc::Sender;
 use tonic::codegen::Arc;
@@ -336,7 +336,7 @@ impl State {
         device: &[u8],
         data: &Vec<Vec<u8>>,
         attempt: u32,
-    ) -> Result<bool, Error> {
+    ) -> Result<(), Error> {
         let mut task = self.get_task(task_id).await?;
         self.set_task_last_update(task_id);
         if attempt != task.get_attempts() {
@@ -349,29 +349,35 @@ impl State {
             return Err(Error::GeneralProtocolError("Stale update".to_string()));
         }
 
-        let previous_status = task.get_status();
-        let update_result = task.update(device, data, self.repo.clone()).await;
-        if previous_status != TaskStatus::Finished && task.get_status() == TaskStatus::Finished {
-            // TODO join if statements once #![feature(let_chains)] gets stabilized
-            if let TaskResult::GroupEstablished(group) = task.get_result().unwrap() {
-                self.get_repo()
-                    .add_group(
-                        group.identifier(),
-                        task_id,
-                        group.name(),
-                        group.threshold(),
-                        group.protocol().into(),
-                        group.key_type().into(),
-                        group.certificate().map(|v| v.as_ref()),
-                        group.note(),
-                    )
-                    .await?;
+        match task.update(device, data, self.repo.clone()).await? {
+            RoundUpdate::Listen => {}
+            RoundUpdate::GroupCertificatesSent => unreachable!(),
+            RoundUpdate::NextRound(_round) => {
+                self.send_updates(task_id).await?;
+            }
+            RoundUpdate::Failed(_reason) => {
+                self.send_updates(task_id).await?;
+            }
+            RoundUpdate::Finished(_round, result) => {
+                if let TaskResult::GroupEstablished(group) = result {
+                    self.repo
+                        .add_group(
+                            group.identifier(),
+                            task_id,
+                            group.name(),
+                            group.threshold(),
+                            group.protocol().into(),
+                            group.key_type().into(),
+                            group.certificate().map(|v| v.as_ref()),
+                            group.note(),
+                        )
+                        .await?;
+                }
+                // NOTE: Updates must be sent after the group is persisted
+                self.send_updates(task_id).await?;
             }
         }
-        if let Ok(true) = update_result {
-            self.send_updates(task_id).await?;
-        }
-        update_result
+        Ok(())
     }
 
     pub async fn decide_task(
@@ -379,29 +385,38 @@ impl State {
         task_id: &Uuid,
         device: &[u8],
         decision: bool,
-    ) -> Result<bool, Error> {
+    ) -> Result<(), Error> {
         let mut task = self.get_task(task_id).await?;
         self.set_task_last_update(task_id);
-        let change = task.decide(device, decision, self.repo.clone()).await;
+        let decision_update = task.decide(device, decision, self.repo.clone()).await?;
         self.repo
             .set_task_decision(task_id, device, decision)
             .await?;
-        if let Some(approved) = change {
-            self.send_updates(task_id).await?;
-            if approved {
+        match decision_update {
+            DecisionUpdate::Undecided => {}
+            DecisionUpdate::Accepted(round_update) => {
                 log::info!(
                     "Task approved task_id={}",
                     utils::hextrunc(task_id.as_bytes())
                 );
-            } else {
+                match round_update {
+                    RoundUpdate::Listen => unreachable!(),
+                    RoundUpdate::Finished(_, _) => unreachable!(),
+                    RoundUpdate::GroupCertificatesSent => {}
+                    RoundUpdate::NextRound(_round) => {}
+                    RoundUpdate::Failed(_reason) => {}
+                }
+                self.send_updates(task_id).await?;
+            }
+            DecisionUpdate::Declined => {
                 log::info!(
                     "Task declined task_id={}",
                     utils::hextrunc(task_id.as_bytes())
                 );
+                self.send_updates(task_id).await?;
             }
-            return Ok(true);
         }
-        Ok(false)
+        Ok(())
     }
 
     pub async fn acknowledge_task(&mut self, task_id: &Uuid, device: &[u8]) -> Result<(), Error> {

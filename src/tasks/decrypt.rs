@@ -7,7 +7,7 @@ use crate::persistence::{Participant, PersistenceError, Repository, Task as Task
 use crate::proto::{DecryptRequest, TaskType};
 use crate::protocols::elgamal::ElgamalDecrypt;
 use crate::protocols::{create_threshold_protocol, Protocol};
-use crate::tasks::{Task, TaskResult, TaskStatus};
+use crate::tasks::{DecisionUpdate, RoundUpdate, Task, TaskResult, TaskStatus};
 use crate::utils;
 use async_trait::async_trait;
 use log::info;
@@ -76,28 +76,33 @@ impl DecryptTask {
         })
     }
 
-    pub(super) async fn start_task(&mut self) -> Result<(), Error> {
+    pub(super) async fn start_task(&mut self) -> Result<RoundUpdate, Error> {
         assert!(self.communicator.read().await.accept_count() >= self.group.threshold());
         self.protocol
             .initialize(&mut *self.communicator.write().await, &self.data)
-            .await
+            .await?;
+        Ok(RoundUpdate::NextRound(self.protocol.round()))
     }
 
-    pub(super) async fn advance_task(&mut self) -> Result<(), Error> {
+    pub(super) async fn advance_task(&mut self) -> Result<RoundUpdate, Error> {
         self.protocol
             .advance(&mut *self.communicator.write().await)
-            .await
+            .await?;
+        Ok(RoundUpdate::NextRound(self.protocol.round()))
     }
 
-    pub(super) async fn finalize_task(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
+    pub(super) async fn finalize_task(
+        &mut self,
+        repository: Arc<Repository>,
+    ) -> Result<RoundUpdate, Error> {
         let decrypted = self
             .protocol
             .finalize(&mut *self.communicator.write().await)
             .await?;
         if decrypted.is_none() {
-            self.set_result(Err("Task failed (data not output)".to_string()), repository)
-                .await?;
-            return Ok(()); // TODO: can we return an error here without affecting client devices?
+            let reason = "Task failed (data not output)".to_string();
+            self.set_result(Err(reason.clone()), repository).await?;
+            return Ok(RoundUpdate::Failed(reason));
         }
         let decrypted = decrypted.unwrap();
 
@@ -106,13 +111,19 @@ impl DecryptTask {
             utils::hextrunc(self.group.identifier())
         );
 
-        self.set_result(Ok(decrypted), repository).await?;
+        self.set_result(Ok(decrypted.clone()), repository).await?;
 
         self.communicator.write().await.clear_input();
-        Ok(())
+        Ok(RoundUpdate::Finished(
+            self.protocol.round(),
+            TaskResult::Decrypted(decrypted),
+        ))
     }
 
-    pub(super) async fn next_round(&mut self, repository: Arc<Repository>) -> Result<(), Error> {
+    pub(super) async fn next_round(
+        &mut self,
+        repository: Arc<Repository>,
+    ) -> Result<RoundUpdate, Error> {
         if self.protocol.round() == 0 {
             self.start_task().await
         } else if self.protocol.round() < self.protocol.last_round() {
@@ -292,12 +303,13 @@ impl Task for DecryptTask {
         device_id: &[u8],
         data: &Vec<Vec<u8>>,
         repository: Arc<Repository>,
-    ) -> Result<bool, Error> {
-        let result = self.update_internal(device_id, data).await;
-        if let Ok(true) = result {
-            self.next_round(repository).await.unwrap();
+    ) -> Result<RoundUpdate, Error> {
+        let round_update = if self.update_internal(device_id, data).await? {
+            self.next_round(repository).await?
+        } else {
+            RoundUpdate::Listen
         };
-        result
+        Ok(round_update)
     }
 
     async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, Error> {
@@ -337,14 +349,19 @@ impl Task for DecryptTask {
         device_id: &[u8],
         decision: bool,
         repository: Arc<Repository>,
-    ) -> Option<bool> {
+    ) -> Result<DecisionUpdate, Error> {
         let result = self
             .decide_internal(device_id, decision, repository.clone())
             .await;
-        if let Some(true) = result {
-            self.next_round(repository).await.unwrap();
+        let decision_update = match result {
+            Some(true) => {
+                let round_update = self.next_round(repository).await?;
+                DecisionUpdate::Accepted(round_update)
+            }
+            Some(false) => DecisionUpdate::Declined,
+            None => DecisionUpdate::Undecided,
         };
-        result
+        Ok(decision_update)
     }
 
     async fn acknowledge(&mut self, device_id: &[u8]) {
