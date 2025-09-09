@@ -15,7 +15,7 @@ use crate::tasks::decrypt::DecryptTask;
 use crate::tasks::group::GroupTask;
 use crate::tasks::sign::SignTask;
 use crate::tasks::sign_pdf::SignPDFTask;
-use crate::tasks::{DecisionUpdate, RoundUpdate, Task, TaskResult, TaskStatus};
+use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult, TaskStatus};
 use crate::{get_timestamp, utils};
 use tokio::sync::mpsc::Sender;
 use tonic::codegen::Arc;
@@ -435,11 +435,29 @@ impl State {
         let mut task = self.get_task(task_id).await?;
         self.set_task_last_update(task_id);
 
-        if task.restart(self.repo.clone()).await? {
-            self.send_updates(task_id).await?;
-            Ok(true)
-        } else {
-            Ok(false) // TODO: can we change this to Err? How will clients handle the change?
+        match task.restart().await? {
+            RestartUpdate::AlreadyFinished => Ok(false),
+            RestartUpdate::Voting => Ok(false),
+            RestartUpdate::Started(round_update) => {
+                self.repo.increment_task_attempt_count(task_id).await?;
+                match round_update {
+                    RoundUpdate::Listen => unreachable!(),
+                    RoundUpdate::Finished(_, _) => unreachable!(),
+                    RoundUpdate::GroupCertificatesSent => {
+                        self.repo
+                            .set_task_group_certificates_sent(task_id, Some(true))
+                            .await?;
+                    }
+                    RoundUpdate::NextRound(round) => {
+                        self.repo.set_task_round(task_id, round).await?;
+                    }
+                    RoundUpdate::Failed(reason) => {
+                        self.repo.set_task_result(task_id, &Err(reason)).await?;
+                    }
+                }
+                self.send_updates(task_id).await?;
+                Ok(true)
+            }
         }
     }
 

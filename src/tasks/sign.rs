@@ -9,7 +9,7 @@ use crate::protocols::frost::FROSTSign;
 use crate::protocols::gg18::GG18Sign;
 use crate::protocols::musig2::MuSig2Sign;
 use crate::protocols::{create_threshold_protocol, Protocol};
-use crate::tasks::{DecisionUpdate, RoundUpdate, Task, TaskResult, TaskStatus};
+use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult, TaskStatus};
 use crate::utils;
 use async_trait::async_trait;
 use log::{info, warn};
@@ -199,9 +199,8 @@ impl SignTask {
         self.result = Some(result);
     }
 
-    async fn increment_attempt_count(&mut self, repository: Arc<Repository>) -> Result<u32, Error> {
+    pub fn increment_attempt_count(&mut self) {
         self.attempts += 1;
-        Ok(repository.increment_task_attempt_count(&self.id).await?)
     }
 }
 
@@ -264,17 +263,17 @@ impl Task for SignTask {
         Ok(round_update)
     }
 
-    async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, Error> {
+    async fn restart(&mut self) -> Result<RestartUpdate, Error> {
         if self.result.is_some() {
-            return Ok(false);
+            return Ok(RestartUpdate::AlreadyFinished);
         }
 
         if self.is_approved().await {
-            self.increment_attempt_count(repository.clone()).await?;
-            self.start_task().await?;
-            Ok(true)
+            self.increment_attempt_count();
+            let round_update = self.start_task().await?;
+            Ok(RestartUpdate::Started(round_update))
         } else {
-            Ok(false)
+            Ok(RestartUpdate::Voting)
         }
     }
 

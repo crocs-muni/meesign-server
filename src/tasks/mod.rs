@@ -17,6 +17,7 @@ use crate::persistence::Repository;
 use crate::persistence::Task as TaskModel;
 use crate::persistence::TaskType;
 
+#[must_use = "updates must be persisted"]
 pub enum RoundUpdate {
     Listen,
     GroupCertificatesSent,
@@ -25,10 +26,18 @@ pub enum RoundUpdate {
     Failed(String),            // failure reason
 }
 
+#[must_use = "updates must be persisted"]
 pub enum DecisionUpdate {
     Undecided,
     Accepted(RoundUpdate),
     Declined,
+}
+
+#[must_use = "updates must be persisted"]
+pub enum RestartUpdate {
+    AlreadyFinished,
+    Voting,
+    Started(RoundUpdate),
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -77,7 +86,7 @@ pub trait Task: Send + Sync {
     ///
     /// # Returns
     /// Ok(true) if task restarted successfully; Ok(false) otherwise.
-    async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, Error>;
+    async fn restart(&mut self) -> Result<RestartUpdate, Error>;
 
     /// True if the task has been approved
     async fn is_approved(&self) -> bool;

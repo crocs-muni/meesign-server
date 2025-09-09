@@ -4,7 +4,7 @@ use crate::group::Group;
 use crate::persistence::{Participant, Repository};
 use crate::proto::TaskType;
 use crate::tasks::sign::SignTask;
-use crate::tasks::{DecisionUpdate, RoundUpdate, Task, TaskResult, TaskStatus};
+use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult, TaskStatus};
 use async_trait::async_trait;
 use lazy_static::lazy_static;
 use log::{error, info, warn};
@@ -168,20 +168,20 @@ impl Task for SignPDFTask {
         Ok(round_update)
     }
 
-    async fn restart(&mut self, _repository: Arc<Repository>) -> Result<bool, Error> {
+    async fn restart(&mut self) -> Result<RestartUpdate, Error> {
         if self.result.is_some() {
-            return Ok(false);
+            return Ok(RestartUpdate::AlreadyFinished);
         }
 
         if self.is_approved().await {
             if let Some(mut pdfhelper) = PDF_HELPERS.lock().unwrap().remove(self.get_id()) {
                 pdfhelper.kill().unwrap();
             }
-            self.sign_task.attempts += 1;
-            self.start_task().await?;
-            Ok(true)
+            self.sign_task.increment_attempt_count();
+            let round_update = self.start_task().await?;
+            Ok(RestartUpdate::Started(round_update))
         } else {
-            Ok(false)
+            Ok(RestartUpdate::Voting)
         }
     }
 

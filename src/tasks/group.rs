@@ -7,7 +7,7 @@ use crate::persistence::Repository;
 use crate::persistence::Task as TaskModel;
 use crate::proto::{KeyType, ProtocolType, TaskType};
 use crate::protocols::{create_keygen_protocol, Protocol};
-use crate::tasks::{DecisionUpdate, RoundUpdate, Task, TaskResult, TaskStatus};
+use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult, TaskStatus};
 use crate::utils;
 use async_trait::async_trait;
 use log::{info, warn};
@@ -114,9 +114,8 @@ impl GroupTask {
         self.result = Some(result);
     }
 
-    async fn increment_attempt_count(&mut self, repository: Arc<Repository>) -> Result<u32, Error> {
+    fn increment_attempt_count(&mut self) {
         self.attempts += 1;
-        Ok(repository.increment_task_attempt_count(&self.id).await?)
     }
 
     async fn start_task(&mut self) -> Result<RoundUpdate, Error> {
@@ -378,17 +377,18 @@ impl Task for GroupTask {
         Ok(RoundUpdate::Listen)
     }
 
-    async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, Error> {
+    async fn restart(&mut self) -> Result<RestartUpdate, Error> {
         if self.result.is_some() {
-            return Ok(false);
+            return Ok(RestartUpdate::AlreadyFinished);
         }
 
         if self.is_approved().await {
-            self.increment_attempt_count(repository.clone()).await?;
-            self.start_task().await.unwrap();
-            Ok(true)
+            self.increment_attempt_count();
+            // TODO: Should this instead be the certificate exchange round?
+            let round_update = self.start_task().await?;
+            Ok(RestartUpdate::Started(round_update))
         } else {
-            Ok(false)
+            Ok(RestartUpdate::Voting)
         }
     }
 

@@ -7,7 +7,7 @@ use crate::persistence::{Participant, PersistenceError, Repository, Task as Task
 use crate::proto::{DecryptRequest, TaskType};
 use crate::protocols::elgamal::ElgamalDecrypt;
 use crate::protocols::{create_threshold_protocol, Protocol};
-use crate::tasks::{DecisionUpdate, RoundUpdate, Task, TaskResult, TaskStatus};
+use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult, TaskStatus};
 use crate::utils;
 use async_trait::async_trait;
 use log::info;
@@ -181,9 +181,8 @@ impl DecryptTask {
         self.result = Some(result);
     }
 
-    async fn increment_attempt_count(&mut self, repository: Arc<Repository>) -> Result<u32, Error> {
+    fn increment_attempt_count(&mut self) {
         self.attempts += 1;
-        Ok(repository.increment_task_attempt_count(&self.id).await?)
     }
 }
 
@@ -289,17 +288,17 @@ impl Task for DecryptTask {
         Ok(round_update)
     }
 
-    async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, Error> {
+    async fn restart(&mut self) -> Result<RestartUpdate, Error> {
         if self.result.is_some() {
-            return Ok(false);
+            return Ok(RestartUpdate::AlreadyFinished);
         }
 
         if self.is_approved().await {
-            self.increment_attempt_count(repository.clone()).await?;
-            self.start_task().await?;
-            Ok(true)
+            self.increment_attempt_count();
+            let round_update = self.start_task().await?;
+            Ok(RestartUpdate::Started(round_update))
         } else {
-            Ok(false)
+            Ok(RestartUpdate::Voting)
         }
     }
 
