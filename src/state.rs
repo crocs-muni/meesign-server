@@ -349,16 +349,20 @@ impl State {
             return Err(Error::GeneralProtocolError("Stale update".to_string()));
         }
 
-        match task.update(device, data, self.repo.clone()).await? {
+        match task.update(device, data).await? {
             RoundUpdate::Listen => {}
             RoundUpdate::GroupCertificatesSent => unreachable!(),
             RoundUpdate::NextRound(_round) => {
                 self.send_updates(task_id).await?;
             }
-            RoundUpdate::Failed(_reason) => {
+            RoundUpdate::Failed(reason) => {
+                self.repo.set_task_result(task_id, &Err(reason)).await?;
                 self.send_updates(task_id).await?;
             }
             RoundUpdate::Finished(_round, result) => {
+                self.repo
+                    .set_task_result(task_id, &Ok(result.as_bytes().to_vec()))
+                    .await?;
                 if let TaskResult::GroupEstablished(group) = result {
                     self.repo
                         .add_group(
@@ -388,7 +392,7 @@ impl State {
     ) -> Result<(), Error> {
         let mut task = self.get_task(task_id).await?;
         self.set_task_last_update(task_id);
-        let decision_update = task.decide(device, decision, self.repo.clone()).await?;
+        let decision_update = task.decide(device, decision).await?;
         self.repo
             .set_task_decision(task_id, device, decision)
             .await?;
@@ -402,9 +406,15 @@ impl State {
                 match round_update {
                     RoundUpdate::Listen => unreachable!(),
                     RoundUpdate::Finished(_, _) => unreachable!(),
-                    RoundUpdate::GroupCertificatesSent => {}
+                    RoundUpdate::GroupCertificatesSent => {
+                        self.repo
+                            .set_task_group_certificates_sent(task_id, Some(true))
+                            .await?;
+                    }
                     RoundUpdate::NextRound(_round) => {}
-                    RoundUpdate::Failed(_reason) => {}
+                    RoundUpdate::Failed(reason) => {
+                        self.repo.set_task_result(task_id, &Err(reason)).await?;
+                    }
                 }
                 self.send_updates(task_id).await?;
             }
@@ -413,6 +423,9 @@ impl State {
                     "Task declined task_id={}",
                     utils::hextrunc(task_id.as_bytes())
                 );
+                self.repo
+                    .set_task_result(task_id, &Err("Task declined".into()))
+                    .await?;
                 self.send_updates(task_id).await?;
             }
         }

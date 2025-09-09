@@ -46,19 +46,19 @@ impl SignPDFTask {
         })
     }
 
-    async fn start_task(&mut self, repository: Arc<Repository>) -> Result<RoundUpdate, Error> {
+    async fn start_task(&mut self) -> Result<RoundUpdate, Error> {
         let file = NamedTempFile::new();
         if file.is_err() {
             error!("Could not create temporary file");
             let reason = "Task failed (server error)".to_string();
-            self.set_result(Err(reason.clone()), repository).await?;
+            self.set_result(Err(reason.clone()));
             return Ok(RoundUpdate::Failed(reason));
         }
         let mut file = file.unwrap();
         if file.write_all(&self.sign_task.data).is_err() {
             error!("Could not write in temporary file");
             let reason = "Task failed (server error)".to_string();
-            self.set_result(Err(reason.clone()), repository).await?;
+            self.set_result(Err(reason.clone()));
             return Ok(RoundUpdate::Failed(reason));
         }
 
@@ -74,7 +74,7 @@ impl SignPDFTask {
         if pdfhelper.is_err() {
             error!("Could not start PDFHelper");
             let reason = "Task failed (server error)".to_string();
-            self.set_result(Err(reason.clone()), repository).await?;
+            self.set_result(Err(reason.clone()));
             return Ok(RoundUpdate::Failed(reason));
         }
         let mut pdfhelper = pdfhelper.unwrap();
@@ -85,7 +85,7 @@ impl SignPDFTask {
         );
         if hash.is_empty() {
             let reason = "Task failed (invalid PDF)".to_string();
-            self.set_result(Err(reason.clone()), repository).await?;
+            self.set_result(Err(reason.clone()));
             return Ok(RoundUpdate::Failed(reason));
         }
         PDF_HELPERS
@@ -100,8 +100,8 @@ impl SignPDFTask {
         self.sign_task.advance_task().await
     }
 
-    async fn finalize_task(&mut self, repository: Arc<Repository>) -> Result<RoundUpdate, Error> {
-        let round_update = match self.sign_task.finalize_task(repository.clone()).await? {
+    async fn finalize_task(&mut self) -> Result<RoundUpdate, Error> {
+        let round_update = match self.sign_task.finalize_task().await? {
             RoundUpdate::Finished(round, TaskResult::Signed(signature)) => {
                 let mut pdfhelper = PDF_HELPERS.lock().unwrap().remove(self.get_id()).unwrap();
                 let signed = include_signature(&mut pdfhelper, &signature);
@@ -111,7 +111,7 @@ impl SignPDFTask {
                     hex::encode(self.sign_task.get_group().identifier())
                 );
 
-                self.set_result(Ok(signed.clone()), repository).await?;
+                self.set_result(Ok(signed.clone()));
                 RoundUpdate::Finished(round, TaskResult::SignedPdf(signed))
             }
             other => other,
@@ -119,24 +119,18 @@ impl SignPDFTask {
         Ok(round_update)
     }
 
-    async fn next_round(&mut self, repository: Arc<Repository>) -> Result<RoundUpdate, Error> {
+    async fn next_round(&mut self) -> Result<RoundUpdate, Error> {
         if self.sign_task.protocol.round() == 0 {
-            self.start_task(repository).await
+            self.start_task().await
         } else if self.sign_task.protocol.round() < self.sign_task.protocol.last_round() {
             self.advance_task().await
         } else {
-            self.finalize_task(repository).await
+            self.finalize_task().await
         }
     }
 
-    async fn set_result(
-        &mut self,
-        result: Result<Vec<u8>, String>,
-        repository: Arc<Repository>,
-    ) -> Result<(), Error> {
-        repository.set_task_result(self.get_id(), &result).await?;
+    fn set_result(&mut self, result: Result<Vec<u8>, String>) {
         self.result = Some(result);
-        Ok(())
     }
 }
 
@@ -170,17 +164,16 @@ impl Task for SignPDFTask {
         &mut self,
         device_id: &[u8],
         data: &Vec<Vec<u8>>,
-        repository: Arc<Repository>,
     ) -> Result<RoundUpdate, Error> {
         let round_update = if self.sign_task.update_internal(device_id, data).await? {
-            self.next_round(repository).await?
+            self.next_round().await?
         } else {
             RoundUpdate::Listen
         };
         Ok(round_update)
     }
 
-    async fn restart(&mut self, repository: Arc<Repository>) -> Result<bool, Error> {
+    async fn restart(&mut self, _repository: Arc<Repository>) -> Result<bool, Error> {
         if self.result.is_some() {
             return Ok(false);
         }
@@ -190,7 +183,7 @@ impl Task for SignPDFTask {
                 pdfhelper.kill().unwrap();
             }
             self.sign_task.attempts += 1;
-            self.start_task(repository).await?;
+            self.start_task().await?;
             Ok(true)
         } else {
             Ok(false)
@@ -209,25 +202,17 @@ impl Task for SignPDFTask {
         self.sign_task.waiting_for(device).await
     }
 
-    async fn decide(
-        &mut self,
-        device_id: &[u8],
-        decision: bool,
-        repository: Arc<Repository>,
-    ) -> Result<DecisionUpdate, Error> {
-        let result = self
-            .sign_task
-            .decide_internal(device_id, decision, repository.clone())
-            .await;
+    async fn decide(&mut self, device_id: &[u8], decision: bool) -> Result<DecisionUpdate, Error> {
+        let result = self.sign_task.decide_internal(device_id, decision).await;
         let decision_update = match result {
             Some(true) => {
-                let round_update = self.next_round(repository).await?;
+                let round_update = self.next_round().await?;
                 DecisionUpdate::Accepted(round_update)
             }
             Some(false) => {
-                self.set_result(Err("Task declined".into())).await?;
+                self.set_result(Err("Task declined".into()));
                 DecisionUpdate::Declined
-            },
+            }
             None => DecisionUpdate::Undecided,
         };
         Ok(decision_update)

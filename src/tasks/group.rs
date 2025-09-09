@@ -119,15 +119,8 @@ impl GroupTask {
         })
     }
 
-    async fn set_result(
-        &mut self,
-        result: Result<Group, String>,
-        repository: Arc<Repository>,
-    ) -> Result<(), Error> {
-        self.result = Some(result.clone());
-        let result = result.map(|group| group.identifier().to_vec());
-        repository.set_task_result(&self.id, &result).await?;
-        Ok(())
+    fn set_result(&mut self, result: Result<Group, String>) {
+        self.result = Some(result);
     }
 
     async fn increment_attempt_count(&mut self, repository: Arc<Repository>) -> Result<u32, Error> {
@@ -149,14 +142,14 @@ impl GroupTask {
         Ok(RoundUpdate::NextRound(self.protocol.round()))
     }
 
-    async fn finalize_task(&mut self, repository: Arc<Repository>) -> Result<RoundUpdate, Error> {
+    async fn finalize_task(&mut self) -> Result<RoundUpdate, Error> {
         let identifier = self
             .protocol
             .finalize(&mut *self.communicator.write().await)
             .await?;
         let Some(identifier) = identifier else {
             let reason = "Task failed (group key not output)".to_string();
-            self.set_result(Err(reason.clone()), repository).await?;
+            self.set_result(Err(reason.clone()));
             return Ok(RoundUpdate::Failed(reason));
         };
         // TODO
@@ -186,11 +179,7 @@ impl GroupTask {
             self.note.clone(),
         );
 
-        self.set_result(Ok(group.clone()), repository.clone())
-            .await?;
-        repository
-            .set_task_result(&self.id, &Ok(identifier))
-            .await?;
+        self.set_result(Ok(group.clone()));
 
         self.communicator.write().await.clear_input();
         Ok(RoundUpdate::Finished(
@@ -199,22 +188,19 @@ impl GroupTask {
         ))
     }
 
-    async fn next_round(&mut self, repository: Arc<Repository>) -> Result<RoundUpdate, Error> {
+    async fn next_round(&mut self) -> Result<RoundUpdate, Error> {
         if !self.certificates_sent {
-            self.send_certificates(repository).await
+            self.send_certificates().await
         } else if self.protocol.round() == 0 {
             self.start_task().await
         } else if self.protocol.round() < self.protocol.last_round() {
             self.advance_task().await
         } else {
-            self.finalize_task(repository).await
+            self.finalize_task().await
         }
     }
 
-    async fn send_certificates(
-        &mut self,
-        repository: Arc<Repository>,
-    ) -> Result<RoundUpdate, Error> {
+    async fn send_certificates(&mut self) -> Result<RoundUpdate, Error> {
         self.communicator.write().await.set_active_devices(None);
 
         let certs: HashMap<u32, Vec<u8>> = {
@@ -239,9 +225,6 @@ impl GroupTask {
 
         self.communicator.write().await.send_all(|_| certs.clone());
         self.certificates_sent = true;
-        repository
-            .set_task_group_certificates_sent(&self.id, Some(true))
-            .await?;
         Ok(RoundUpdate::GroupCertificatesSent)
     }
 }
@@ -374,7 +357,6 @@ impl Task for GroupTask {
         &mut self,
         device_id: &[u8],
         data: &Vec<Vec<u8>>,
-        repository: Arc<Repository>,
     ) -> Result<RoundUpdate, Error> {
         let total_shares: u32 = self.participants.iter().map(|p| p.shares).sum();
         if self.communicator.read().await.accept_count() != total_shares {
@@ -405,7 +387,7 @@ impl Task for GroupTask {
         if self.communicator.read().await.round_received()
             && self.protocol.round() <= self.protocol.last_round()
         {
-            return self.next_round(repository.clone()).await;
+            return self.next_round().await;
         }
 
         Ok(RoundUpdate::Listen)
@@ -445,20 +427,14 @@ impl Task for GroupTask {
         communicator.waiting_for(device)
     }
 
-    async fn decide(
-        &mut self,
-        device_id: &[u8],
-        decision: bool,
-        repository: Arc<Repository>,
-    ) -> Result<DecisionUpdate, Error> {
+    async fn decide(&mut self, device_id: &[u8], decision: bool) -> Result<DecisionUpdate, Error> {
         self.communicator.write().await.decide(device_id, decision);
         let decision_update = if self.result.is_none() && self.protocol.round() == 0 {
             if self.communicator.read().await.reject_count() > 0 {
-                self.set_result(Err("Task declined".to_string()), repository)
-                    .await?;
+                self.set_result(Err("Task declined".to_string()));
                 DecisionUpdate::Declined
             } else if self.is_approved().await {
-                let round_update = self.next_round(repository).await?;
+                let round_update = self.next_round().await?;
                 DecisionUpdate::Accepted(round_update)
             } else {
                 DecisionUpdate::Undecided

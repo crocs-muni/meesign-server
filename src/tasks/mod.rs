@@ -70,12 +70,8 @@ pub trait Task: Send + Sync {
     ///
     /// # Returns
     /// `Ok(true)` if this update caused the next round to start; `Ok(false)` otherwise.
-    async fn update(
-        &mut self,
-        device_id: &[u8],
-        data: &Vec<Vec<u8>>,
-        repository: Arc<Repository>,
-    ) -> Result<RoundUpdate, Error>;
+    async fn update(&mut self, device_id: &[u8], data: &Vec<Vec<u8>>)
+        -> Result<RoundUpdate, Error>;
 
     /// Attempt to restart protocol in task
     ///
@@ -95,12 +91,7 @@ pub trait Task: Send + Sync {
     /// `Some(true)` if this decision caused the protocol to start;
     /// `Some(false)` if this decision caused the protocol to fail;
     /// `None` otherwise.
-    async fn decide(
-        &mut self,
-        device_id: &[u8],
-        decision: bool,
-        repository: Arc<Repository>,
-    ) -> Result<DecisionUpdate, Error>;
+    async fn decide(&mut self, device_id: &[u8], decision: bool) -> Result<DecisionUpdate, Error>;
 
     async fn acknowledge(&mut self, device_id: &[u8]);
     async fn device_acknowledged(&self, device_id: &[u8]) -> bool;

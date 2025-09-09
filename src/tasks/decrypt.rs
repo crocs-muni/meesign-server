@@ -91,17 +91,14 @@ impl DecryptTask {
         Ok(RoundUpdate::NextRound(self.protocol.round()))
     }
 
-    pub(super) async fn finalize_task(
-        &mut self,
-        repository: Arc<Repository>,
-    ) -> Result<RoundUpdate, Error> {
+    pub(super) async fn finalize_task(&mut self) -> Result<RoundUpdate, Error> {
         let decrypted = self
             .protocol
             .finalize(&mut *self.communicator.write().await)
             .await?;
         if decrypted.is_none() {
             let reason = "Task failed (data not output)".to_string();
-            self.set_result(Err(reason.clone()), repository).await?;
+            self.set_result(Err(reason.clone()));
             return Ok(RoundUpdate::Failed(reason));
         }
         let decrypted = decrypted.unwrap();
@@ -111,7 +108,7 @@ impl DecryptTask {
             utils::hextrunc(self.group.identifier())
         );
 
-        self.set_result(Ok(decrypted.clone()), repository).await?;
+        self.set_result(Ok(decrypted.clone()));
 
         self.communicator.write().await.clear_input();
         Ok(RoundUpdate::Finished(
@@ -120,16 +117,13 @@ impl DecryptTask {
         ))
     }
 
-    pub(super) async fn next_round(
-        &mut self,
-        repository: Arc<Repository>,
-    ) -> Result<RoundUpdate, Error> {
+    pub(super) async fn next_round(&mut self) -> Result<RoundUpdate, Error> {
         if self.protocol.round() == 0 {
             self.start_task().await
         } else if self.protocol.round() < self.protocol.last_round() {
             self.advance_task().await
         } else {
-            self.finalize_task(repository).await
+            self.finalize_task().await
         }
     }
 
@@ -174,15 +168,12 @@ impl DecryptTask {
         &mut self,
         device_id: &[u8],
         decision: bool,
-        repository: Arc<Repository>,
     ) -> Option<bool> {
         self.communicator.write().await.decide(device_id, decision);
 
         if self.result.is_none() && self.protocol.round() == 0 {
             if self.communicator.read().await.reject_count() >= self.group.reject_threshold() {
-                self.set_result(Err("Task declined".to_string()), repository)
-                    .await
-                    .unwrap();
+                self.set_result(Err("Task declined".to_string()));
                 return Some(false);
             } else if self.communicator.read().await.accept_count() >= self.group.threshold() {
                 return Some(true);
@@ -191,14 +182,8 @@ impl DecryptTask {
         None
     }
 
-    async fn set_result(
-        &mut self,
-        result: Result<Vec<u8>, String>,
-        repository: Arc<Repository>,
-    ) -> Result<(), Error> {
-        repository.set_task_result(self.get_id(), &result).await?;
+    fn set_result(&mut self, result: Result<Vec<u8>, String>) {
         self.result = Some(result);
-        Ok(())
     }
 
     async fn increment_attempt_count(&mut self, repository: Arc<Repository>) -> Result<u32, Error> {
@@ -302,10 +287,9 @@ impl Task for DecryptTask {
         &mut self,
         device_id: &[u8],
         data: &Vec<Vec<u8>>,
-        repository: Arc<Repository>,
     ) -> Result<RoundUpdate, Error> {
         let round_update = if self.update_internal(device_id, data).await? {
-            self.next_round(repository).await?
+            self.next_round().await?
         } else {
             RoundUpdate::Listen
         };
@@ -344,18 +328,11 @@ impl Task for DecryptTask {
         self.communicator.read().await.waiting_for(device)
     }
 
-    async fn decide(
-        &mut self,
-        device_id: &[u8],
-        decision: bool,
-        repository: Arc<Repository>,
-    ) -> Result<DecisionUpdate, Error> {
-        let result = self
-            .decide_internal(device_id, decision, repository.clone())
-            .await;
+    async fn decide(&mut self, device_id: &[u8], decision: bool) -> Result<DecisionUpdate, Error> {
+        let result = self.decide_internal(device_id, decision).await;
         let decision_update = match result {
             Some(true) => {
-                let round_update = self.next_round(repository).await?;
+                let round_update = self.next_round().await?;
                 DecisionUpdate::Accepted(round_update)
             }
             Some(false) => DecisionUpdate::Declined,
