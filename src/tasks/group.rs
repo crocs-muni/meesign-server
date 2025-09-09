@@ -43,21 +43,12 @@ impl GroupTask {
         protocol_type: ProtocolType,
         key_type: KeyType,
         note: Option<String>,
-        repository: Arc<Repository>,
     ) -> Result<Self, String> {
         let id = Uuid::new_v4();
 
         let total_shares: u32 = participants.iter().map(|p| p.shares).sum();
 
-        let protocol = create_keygen_protocol(
-            protocol_type,
-            key_type,
-            total_shares,
-            threshold,
-            repository,
-            id.clone(),
-            0,
-        )?;
+        let protocol = create_keygen_protocol(protocol_type, key_type, total_shares, threshold, 0)?;
 
         if total_shares < 1 {
             warn!("Invalid number of parties {}", total_shares);
@@ -130,23 +121,19 @@ impl GroupTask {
 
     async fn start_task(&mut self) -> Result<RoundUpdate, Error> {
         self.protocol
-            .initialize(&mut *self.communicator.write().await, &[])
-            .await?;
+            .initialize(&mut *self.communicator.write().await, &[]);
         Ok(RoundUpdate::NextRound(self.protocol.round()))
     }
 
     async fn advance_task(&mut self) -> Result<RoundUpdate, Error> {
-        self.protocol
-            .advance(&mut *self.communicator.write().await)
-            .await?;
+        self.protocol.advance(&mut *self.communicator.write().await);
         Ok(RoundUpdate::NextRound(self.protocol.round()))
     }
 
     async fn finalize_task(&mut self) -> Result<RoundUpdate, Error> {
         let identifier = self
             .protocol
-            .finalize(&mut *self.communicator.write().await)
-            .await?;
+            .finalize(&mut *self.communicator.write().await);
         let Some(identifier) = identifier else {
             let reason = "Task failed (group key not output)".to_string();
             self.set_result(Err(reason.clone()));
@@ -274,8 +261,6 @@ impl Task for GroupTask {
             key_type,
             total_shares,
             model.threshold as u32,
-            repository.clone(),
-            model.id,
             model.protocol_round as u16,
         )?;
 

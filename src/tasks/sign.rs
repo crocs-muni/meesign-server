@@ -31,12 +31,7 @@ pub struct SignTask {
 }
 
 impl SignTask {
-    pub fn try_new(
-        group: Group,
-        name: String,
-        data: Vec<u8>,
-        repository: Arc<Repository>,
-    ) -> Result<Self, String> {
+    pub fn try_new(group: Group, name: String, data: Vec<u8>) -> Result<Self, String> {
         let mut participants: Vec<Participant> = group.participants().to_vec();
         participants.sort_by(|a, b| a.device.identifier().cmp(b.device.identifier()));
         let protocol_type = group.protocol();
@@ -74,9 +69,9 @@ impl SignTask {
             data,
             preprocessed: None,
             protocol: match protocol_type {
-                ProtocolType::Gg18 => Box::new(GG18Sign::new(repository, id)),
-                ProtocolType::Frost => Box::new(FROSTSign::new(repository, id)),
-                ProtocolType::Musig2 => Box::new(MuSig2Sign::new(repository, id)),
+                ProtocolType::Gg18 => Box::new(GG18Sign::new()),
+                ProtocolType::Frost => Box::new(FROSTSign::new()),
+                ProtocolType::Musig2 => Box::new(MuSig2Sign::new()),
                 _ => {
                     warn!("Protocol type {:?} does not support signing", protocol_type);
                     return Err("Unsupported protocol type for signing".into());
@@ -98,27 +93,22 @@ impl SignTask {
 
     pub(super) async fn start_task(&mut self) -> Result<RoundUpdate, Error> {
         assert!(self.communicator.read().await.accept_count() >= self.group.threshold());
-        self.protocol
-            .initialize(
-                &mut *self.communicator.write().await,
-                self.preprocessed.as_ref().unwrap_or(&self.data),
-            )
-            .await?;
+        self.protocol.initialize(
+            &mut *self.communicator.write().await,
+            self.preprocessed.as_ref().unwrap_or(&self.data),
+        );
         Ok(RoundUpdate::NextRound(self.protocol.round()))
     }
 
     pub(super) async fn advance_task(&mut self) -> Result<RoundUpdate, Error> {
-        self.protocol
-            .advance(&mut *self.communicator.write().await)
-            .await?;
+        self.protocol.advance(&mut *self.communicator.write().await);
         Ok(RoundUpdate::NextRound(self.protocol.round()))
     }
 
     pub(super) async fn finalize_task(&mut self) -> Result<RoundUpdate, Error> {
         let signature = self
             .protocol
-            .finalize(&mut *self.communicator.write().await)
-            .await?;
+            .finalize(&mut *self.communicator.write().await);
         if signature.is_none() {
             let reason = "Task failed (signature not output)".to_string();
             self.set_result(Err(reason.clone()));
@@ -365,8 +355,6 @@ impl Task for SignTask {
         let protocol = create_threshold_protocol(
             group.protocol(),
             group.key_type(),
-            repository.clone(),
-            task_model.id,
             task_model.protocol_round as u16,
         )?;
 

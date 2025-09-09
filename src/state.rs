@@ -91,7 +91,6 @@ impl State {
             protocol,
             key_type,
             note,
-            self.repo.clone(),
         )?) as Box<dyn Task + Sync + Send>;
 
         // TODO: group ID?
@@ -119,21 +118,11 @@ impl State {
         let group = crate::group::Group::try_from_model(group, participants)?;
         let task = match group.key_type() {
             KeyType::SignPdf => {
-                let task = SignPDFTask::try_new(
-                    group.clone(),
-                    name.to_string(),
-                    data.to_vec(),
-                    self.repo.clone(),
-                )?;
+                let task = SignPDFTask::try_new(group.clone(), name.to_string(), data.to_vec())?;
                 Box::new(task) as Box<dyn Task + Sync + Send>
             }
             KeyType::SignChallenge => {
-                let task = SignTask::try_new(
-                    group.clone(),
-                    name.to_string(),
-                    data.to_vec(),
-                    self.repo.clone(),
-                )?;
+                let task = SignTask::try_new(group.clone(), name.to_string(), data.to_vec())?;
                 Box::new(task) as Box<dyn Task + Sync + Send>
             }
             KeyType::Decrypt => {
@@ -179,7 +168,6 @@ impl State {
                     name.to_string(),
                     data.to_vec(),
                     data_type.to_string(),
-                    self.repo.clone(),
                 )?;
                 Box::new(task) as Box<dyn Task + Sync + Send>
             }
@@ -352,14 +340,16 @@ impl State {
         match task.update(device, data).await? {
             RoundUpdate::Listen => {}
             RoundUpdate::GroupCertificatesSent => unreachable!(),
-            RoundUpdate::NextRound(_round) => {
+            RoundUpdate::NextRound(round) => {
+                self.repo.set_task_round(task_id, round).await?;
                 self.send_updates(task_id).await?;
             }
             RoundUpdate::Failed(reason) => {
                 self.repo.set_task_result(task_id, &Err(reason)).await?;
                 self.send_updates(task_id).await?;
             }
-            RoundUpdate::Finished(_round, result) => {
+            RoundUpdate::Finished(round, result) => {
+                self.repo.set_task_round(task_id, round).await?;
                 self.repo
                     .set_task_result(task_id, &Ok(result.as_bytes().to_vec()))
                     .await?;
@@ -411,7 +401,9 @@ impl State {
                             .set_task_group_certificates_sent(task_id, Some(true))
                             .await?;
                     }
-                    RoundUpdate::NextRound(_round) => {}
+                    RoundUpdate::NextRound(round) => {
+                        self.repo.set_task_round(task_id, round).await?;
+                    }
                     RoundUpdate::Failed(reason) => {
                         self.repo.set_task_result(task_id, &Err(reason)).await?;
                     }

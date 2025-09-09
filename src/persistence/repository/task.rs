@@ -352,22 +352,7 @@ where
     Ok(())
 }
 
-pub async fn increment_round<Conn>(
-    connection: &mut Conn,
-    task_id: &Uuid,
-) -> Result<u32, PersistenceError>
-where
-    Conn: AsyncConnection<Backend = Pg>,
-{
-    let new_round: i32 = diesel::update(task::table.filter(task::id.eq(task_id)))
-        .set(task::protocol_round.eq(task::protocol_round + 1))
-        .returning(task::protocol_round)
-        .get_result(connection)
-        .await?;
-    Ok(new_round as u32)
-}
-
-pub async fn set_round<Conn>(
+pub async fn set_task_round<Conn>(
     connection: &mut Conn,
     task_id: &Uuid,
     round: u16,

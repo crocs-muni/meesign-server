@@ -33,7 +33,6 @@ impl DecryptTask {
         name: String,
         data: Vec<u8>,
         data_type: String,
-        repository: Arc<Repository>,
     ) -> Result<Self, String> {
         let mut participants: Vec<Participant> = group.participants().to_vec();
         participants.sort_by(|a, b| a.device.identifier().cmp(b.device.identifier()));
@@ -70,7 +69,7 @@ impl DecryptTask {
             communicator,
             result: None,
             data,
-            protocol: Box::new(ElgamalDecrypt::new(repository, id)),
+            protocol: Box::new(ElgamalDecrypt::new()),
             request,
             attempts: 0,
         })
@@ -79,23 +78,19 @@ impl DecryptTask {
     pub(super) async fn start_task(&mut self) -> Result<RoundUpdate, Error> {
         assert!(self.communicator.read().await.accept_count() >= self.group.threshold());
         self.protocol
-            .initialize(&mut *self.communicator.write().await, &self.data)
-            .await?;
+            .initialize(&mut *self.communicator.write().await, &self.data);
         Ok(RoundUpdate::NextRound(self.protocol.round()))
     }
 
     pub(super) async fn advance_task(&mut self) -> Result<RoundUpdate, Error> {
-        self.protocol
-            .advance(&mut *self.communicator.write().await)
-            .await?;
+        self.protocol.advance(&mut *self.communicator.write().await);
         Ok(RoundUpdate::NextRound(self.protocol.round()))
     }
 
     pub(super) async fn finalize_task(&mut self) -> Result<RoundUpdate, Error> {
         let decrypted = self
             .protocol
-            .finalize(&mut *self.communicator.write().await)
-            .await?;
+            .finalize(&mut *self.communicator.write().await);
         if decrypted.is_none() {
             let reason = "Task failed (data not output)".to_string();
             self.set_result(Err(reason.clone()));
@@ -217,8 +212,6 @@ impl Task for DecryptTask {
         let protocol = create_threshold_protocol(
             group.protocol(),
             group.key_type(),
-            repository.clone(),
-            task_model.id,
             task_model.protocol_round as u16,
         )?;
         let data = task_model

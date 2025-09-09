@@ -26,19 +26,14 @@ pub struct SignPDFTask {
 }
 
 impl SignPDFTask {
-    pub fn try_new(
-        group: Group,
-        name: String,
-        data: Vec<u8>,
-        repository: Arc<Repository>,
-    ) -> Result<Self, String> {
+    pub fn try_new(group: Group, name: String, data: Vec<u8>) -> Result<Self, String> {
         if data.len() > 8 * 1024 * 1024 || name.len() > 256 || name.chars().any(|x| x.is_control())
         {
             warn!("Invalid input name={} len={}", name, data.len());
             return Err("Invalid input".to_string());
         }
 
-        let sign_task = SignTask::try_new(group, name, data, repository)?;
+        let sign_task = SignTask::try_new(group, name, data)?;
 
         Ok(SignPDFTask {
             sign_task,
