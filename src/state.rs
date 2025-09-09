@@ -532,7 +532,7 @@ impl State {
                 entry.insert(Arc::new(RwLock::new(Communicator::new(
                     participants,
                     threshold,
-                    model.protocol_type.unwrap().into(),
+                    model.protocol_type.into(),
                     decisions,
                     acknowledgements,
                 ))))

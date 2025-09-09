@@ -238,26 +238,11 @@ impl Task for GroupTask {
         communicator: Arc<RwLock<Communicator>>,
         repository: Arc<Repository>,
     ) -> Result<Self, Error> {
-        if model.key_type.is_none() || model.request.is_none() {
-            return Err(PersistenceError::DataInconsistencyError(
-                "TaskModel is not data-consistent. KeyType of request is not set".into(),
-            )
-            .into());
-        }
-        let key_type = model.key_type.unwrap().into();
-        if model.protocol_type.is_none() {
-            return Err(PersistenceError::DataInconsistencyError(
-                "TaskModel is not data-consistent. ProtocolType of request is not set".into(),
-            )
-            .into());
-        }
-        let protocol_type = model.protocol_type.unwrap().into();
-
         let total_shares = participants.iter().map(|p| p.shares).sum();
 
         let protocol = create_keygen_protocol(
-            protocol_type,
-            key_type,
+            model.protocol_type.into(),
+            model.key_type.clone().into(),
             total_shares,
             model.threshold as u32,
             model.protocol_round as u16,
@@ -292,17 +277,16 @@ impl Task for GroupTask {
         } else {
             "".into() // TODO add field to the task table
         };
-        let request = model.request.unwrap().into();
         Ok(Self {
             name,
             id: model.id,
             threshold: model.threshold as u32,
-            key_type,
+            key_type: model.key_type.into(),
             participants,
             communicator,
             result,
             protocol,
-            request,
+            request: model.request,
             attempts: model.attempt_count as u32,
             note: model.note,
             certificates_sent: model.group_certificates_sent.unwrap(), // TODO: remove the field completely

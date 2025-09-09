@@ -203,11 +203,6 @@ impl Task for DecryptTask {
             .await?
             .unwrap();
         let group = Group::try_from_model(group, participants)?;
-        let request = task_model
-            .request
-            .ok_or(PersistenceError::DataInconsistencyError(
-                "Request not set for a sign task".into(),
-            ))?;
         let protocol = create_threshold_protocol(
             group.protocol(),
             group.key_type(),
@@ -225,7 +220,7 @@ impl Task for DecryptTask {
             result,
             data,
             protocol,
-            request,
+            request: task_model.request,
             attempts: task_model.attempt_count as u32,
         };
         Ok(task)

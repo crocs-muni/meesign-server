@@ -258,8 +258,8 @@ impl Repository {
                         Some(task_data),
                         request,
                         threshold,
-                        Some(key_type),
-                        Some(protocol), // todo: should we fetch these from group?
+                        key_type,
+                        protocol, // todo: should we fetch these from group?
                     )
                     .await
                 }
