@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::group::Group;
-use crate::persistence::{Participant, PersistenceError, Repository};
+use crate::persistence::{Participant, PersistenceError, Task as TaskModel};
 use crate::proto::{ProtocolType, SignRequest, TaskType};
 use crate::protocols::frost::FROSTSign;
 use crate::protocols::gg18::GG18Sign;
@@ -80,6 +80,41 @@ impl SignTask {
             request,
             attempts: 0,
         })
+    }
+
+    pub fn from_model(
+        task_model: TaskModel,
+        communicator: Arc<RwLock<Communicator>>,
+        group: Group,
+    ) -> Result<Self, Error> {
+        let result = match task_model.result {
+            Some(val) => val.try_into_option()?,
+            None => None,
+        };
+        // TODO refactor
+        let protocol = create_threshold_protocol(
+            group.protocol(),
+            group.key_type(),
+            task_model.protocol_round as u16,
+        )?;
+
+        let data = task_model
+            .task_data
+            .ok_or(PersistenceError::DataInconsistencyError(
+                "Task data not set for a sign task".into(),
+            ))?;
+        let task = Self {
+            id: task_model.id,
+            group,
+            communicator,
+            result,
+            data,
+            protocol,
+            preprocessed: task_model.preprocessed,
+            request: task_model.request,
+            attempts: task_model.attempt_count as u32,
+        };
+        Ok(task)
     }
 
     pub fn get_group(&self) -> &Group {
@@ -325,50 +360,6 @@ impl Task for SignTask {
 
     fn get_attempts(&self) -> u32 {
         self.attempts
-    }
-
-    async fn from_model(
-        task_model: crate::persistence::Task,
-        participants: Vec<Participant>,
-        communicator: Arc<RwLock<Communicator>>,
-        repository: Arc<Repository>,
-    ) -> Result<Self, crate::error::Error>
-    where
-        Self: Sized,
-    {
-        let result = match task_model.result {
-            Some(val) => val.try_into_option()?,
-            None => None,
-        };
-        // TODO refactor
-        let group = repository
-            .get_group(&task_model.group_id.unwrap())
-            .await?
-            .unwrap();
-        let group = Group::try_from_model(group, participants)?;
-        let protocol = create_threshold_protocol(
-            group.protocol(),
-            group.key_type(),
-            task_model.protocol_round as u16,
-        )?;
-
-        let data = task_model
-            .task_data
-            .ok_or(PersistenceError::DataInconsistencyError(
-                "Task data not set for a sign task".into(),
-            ))?;
-        let task = Self {
-            id: task_model.id,
-            group,
-            communicator,
-            result,
-            data,
-            protocol,
-            preprocessed: task_model.preprocessed,
-            request: task_model.request,
-            attempts: task_model.attempt_count as u32,
-        };
-        Ok(task)
     }
 
     fn get_id(&self) -> &Uuid {

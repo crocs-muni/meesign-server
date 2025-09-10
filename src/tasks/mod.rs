@@ -13,9 +13,6 @@ use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::group::Group;
 use crate::persistence::Participant;
-use crate::persistence::Repository;
-use crate::persistence::Task as TaskModel;
-use crate::persistence::TaskType;
 
 #[must_use = "updates must be persisted"]
 pub enum RoundUpdate {
@@ -107,43 +104,8 @@ pub trait Task: Send + Sync {
     fn get_request(&self) -> &[u8];
 
     fn get_attempts(&self) -> u32;
-    async fn from_model(
-        model: TaskModel,
-        participants: Vec<Participant>,
-        communicator: Arc<RwLock<Communicator>>,
-        repository: Arc<Repository>,
-    ) -> Result<Self, Error>
-    where
-        Self: Sized;
     fn get_id(&self) -> &Uuid;
     fn get_communicator(&self) -> Arc<RwLock<Communicator>>;
     fn get_threshold(&self) -> u32;
     fn get_data(&self) -> Option<&[u8]>;
-}
-
-/// Instantiates a task from a task model
-pub async fn from_model(
-    task_model: TaskModel,
-    participants: Vec<Participant>,
-    communicator: Arc<RwLock<Communicator>>,
-    repository: Arc<Repository>,
-) -> Result<Box<dyn Task + Send + Sync>, Error> {
-    let task: Box<dyn Task + Send + Sync> = match task_model.task_type {
-        TaskType::Group => Box::new(
-            group::GroupTask::from_model(task_model, participants, communicator, repository)
-                .await?,
-        ),
-        TaskType::SignPdf => Box::new(
-            sign_pdf::SignPDFTask::from_model(task_model, participants, communicator, repository)
-                .await?,
-        ),
-        TaskType::SignChallenge => Box::new(
-            sign::SignTask::from_model(task_model, participants, communicator, repository).await?,
-        ),
-        TaskType::Decrypt => Box::new(
-            decrypt::DecryptTask::from_model(task_model, participants, communicator, repository)
-                .await?,
-        ),
-    };
-    Ok(task)
 }

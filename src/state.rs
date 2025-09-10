@@ -8,7 +8,8 @@ use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::interfaces::grpc::format_task;
 use crate::persistence::{
-    Device, DeviceKind, Group, NameValidator, Participant, Repository, Task as TaskModel, TaskType,
+    Device, DeviceKind, Group, NameValidator, Participant, PersistenceError, Repository,
+    Task as TaskModel, TaskType,
 };
 use crate::proto::{KeyType, ProtocolType};
 use crate::tasks::decrypt::DecryptTask;
@@ -115,7 +116,7 @@ impl State {
             return Err(Error::GeneralProtocolError("Invalid group_id".into()));
         };
         let participants = self.repo.get_group_participants(group_id).await?;
-        let group = crate::group::Group::try_from_model(group, participants)?;
+        let group = crate::group::Group::from_model(group, participants);
         let task = match group.key_type() {
             KeyType::SignPdf => {
                 let task = SignPDFTask::try_new(group.clone(), name.to_string(), data.to_vec())?;
@@ -160,7 +161,7 @@ impl State {
             return Err(Error::GeneralProtocolError("Invalid group_id".into()));
         };
         let participants = self.repo.get_group_participants(group_id).await?;
-        let group = crate::group::Group::try_from_model(group, participants)?;
+        let group = crate::group::Group::from_model(group, participants);
         let task = match group.key_type() {
             KeyType::Decrypt => {
                 let task = DecryptTask::try_new(
@@ -310,11 +311,11 @@ impl State {
         let Some(model) = self.repo.get_task(task_id).await? else {
             return Err(Error::GeneralProtocolError("Invalid task id".into()));
         };
-        let participants = self.repo.get_task_participants(task_id).await?;
-        let communicator = self.get_communicator(task_id).await?;
-
-        let task =
-            crate::tasks::from_model(model, participants, communicator, self.repo.clone()).await?;
+        let task = self
+            .tasks_from_task_models(vec![model])
+            .await?
+            .pop()
+            .unwrap();
         Ok(task)
     }
 
@@ -350,9 +351,7 @@ impl State {
             }
             RoundUpdate::Finished(round, result) => {
                 self.repo.set_task_round(task_id, round).await?;
-                self.repo
-                    .set_task_result(task_id, &Ok(result.as_bytes().to_vec()))
-                    .await?;
+                let result_bytes = result.as_bytes().to_vec();
                 if let TaskResult::GroupEstablished(group) = result {
                     self.repo
                         .add_group(
@@ -367,6 +366,9 @@ impl State {
                         )
                         .await?;
                 }
+                self.repo
+                    .set_task_result(task_id, &Ok(result_bytes))
+                    .await?;
                 // NOTE: Updates must be sent after the group is persisted
                 self.send_updates(task_id).await?;
             }
@@ -569,12 +571,94 @@ impl State {
             let participants = task_id_participants.remove(&task.id).unwrap();
             let communicator = self.get_communicator(&task.id).await?;
 
-            let task =
-                crate::tasks::from_model(task, participants, communicator, self.get_repo().clone())
-                    .await?;
+            let task = match task.task_type {
+                TaskType::Group => {
+                    self.group_task_from_model(task, communicator, participants)
+                        .await?
+                }
+                TaskType::SignChallenge | TaskType::SignPdf | TaskType::Decrypt => {
+                    self.threshold_task_from_model(task, communicator, participants)
+                        .await?
+                }
+            };
+
             tasks.push(task)
         }
         Ok(tasks)
+    }
+
+    async fn group_task_from_model(
+        &self,
+        task_model: TaskModel,
+        communicator: Arc<RwLock<Communicator>>,
+        participants: Vec<Participant>,
+    ) -> Result<Box<dyn Task + Send + Sync>, Error> {
+        let task_result = task_model.result.clone();
+        let group = if let Some(task_result) = task_result {
+            match task_result.try_into_option()?.unwrap() {
+                Ok(group_id) => {
+                    let Some(group_model) = self.repo.get_group(&group_id).await? else {
+                        return Err(Error::PersistenceError(
+                            PersistenceError::DataInconsistencyError(
+                                "Group task result references nonexistent group".into(),
+                            ),
+                        ));
+                    };
+                    let group = crate::group::Group::from_model(group_model, participants.clone());
+                    Some(group)
+                }
+                Err(_) => None,
+            }
+        } else {
+            None
+        };
+
+        assert_eq!(task_model.task_type, TaskType::Group);
+
+        let task = Box::new(GroupTask::from_model(
+            task_model,
+            participants,
+            communicator,
+            group,
+        )?);
+        Ok(task)
+    }
+
+    async fn threshold_task_from_model(
+        &self,
+        task_model: TaskModel,
+        communicator: Arc<RwLock<Communicator>>,
+        participants: Vec<Participant>,
+    ) -> Result<Box<dyn Task + Send + Sync>, Error> {
+        let Some(group_id) = &task_model.group_id else {
+            return Err(Error::PersistenceError(
+                PersistenceError::DataInconsistencyError(
+                    "Threshold task is missing a group".into(),
+                ),
+            ));
+        };
+        let Some(group_model) = self.repo.get_group(group_id).await? else {
+            return Err(Error::PersistenceError(
+                PersistenceError::DataInconsistencyError(
+                    "Threshold task references nonexistent group".into(),
+                ),
+            ));
+        };
+        let group = crate::group::Group::from_model(group_model, participants);
+
+        let task: Box<dyn Task + Send + Sync> = match task_model.task_type {
+            TaskType::Group => unreachable!(),
+            TaskType::SignPdf => {
+                Box::new(SignPDFTask::from_model(task_model, communicator, group)?)
+            }
+            TaskType::SignChallenge => {
+                Box::new(SignTask::from_model(task_model, communicator, group)?)
+            }
+            TaskType::Decrypt => {
+                Box::new(DecryptTask::from_model(task_model, communicator, group)?)
+            }
+        };
+        Ok(task)
     }
 
     pub fn set_task_last_update(&self, task_id: &Uuid) {

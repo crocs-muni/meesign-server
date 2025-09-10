@@ -1,7 +1,7 @@
 use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::group::Group;
-use crate::persistence::{Participant, Repository};
+use crate::persistence::{Participant, Task as TaskModel};
 use crate::proto::TaskType;
 use crate::tasks::sign::SignTask;
 use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult, TaskStatus};
@@ -39,6 +39,19 @@ impl SignPDFTask {
             sign_task,
             result: None,
         })
+    }
+
+    pub fn from_model(
+        model: TaskModel,
+        communicator: Arc<RwLock<Communicator>>,
+        group: Group,
+    ) -> Result<Self, Error> {
+        let result = match model.result.clone() {
+            Some(val) => val.try_into_option()?,
+            None => None,
+        };
+        let sign_task = SignTask::from_model(model, communicator, group)?;
+        Ok(Self { sign_task, result })
     }
 
     async fn start_task(&mut self) -> Result<RoundUpdate, Error> {
@@ -227,23 +240,6 @@ impl Task for SignPDFTask {
 
     fn get_attempts(&self) -> u32 {
         self.sign_task.get_attempts()
-    }
-
-    async fn from_model(
-        model: crate::persistence::Task,
-        participants: Vec<Participant>,
-        communicator: Arc<RwLock<Communicator>>,
-        repository: Arc<Repository>,
-    ) -> Result<Self, crate::error::Error>
-    where
-        Self: Sized,
-    {
-        let result = match model.result.clone() {
-            Some(val) => val.try_into_option()?,
-            None => None,
-        };
-        let sign_task = SignTask::from_model(model, participants, communicator, repository).await?;
-        Ok(Self { sign_task, result })
     }
 
     fn get_id(&self) -> &Uuid {

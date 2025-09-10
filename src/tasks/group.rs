@@ -3,7 +3,6 @@ use crate::error::Error;
 use crate::group::Group;
 use crate::persistence::Participant;
 use crate::persistence::PersistenceError;
-use crate::persistence::Repository;
 use crate::persistence::Task as TaskModel;
 use crate::proto::{KeyType, ProtocolType, TaskType};
 use crate::protocols::{create_keygen_protocol, Protocol};
@@ -107,6 +106,72 @@ impl GroupTask {
             attempts: 0,
             note,
             certificates_sent: false,
+        })
+    }
+
+    pub fn from_model(
+        model: TaskModel,
+        participants: Vec<Participant>,
+        communicator: Arc<RwLock<Communicator>>,
+        group: Option<Group>,
+    ) -> Result<Self, Error> {
+        let total_shares = participants.iter().map(|p| p.shares).sum();
+
+        let protocol = create_keygen_protocol(
+            model.protocol_type.into(),
+            model.key_type.clone().into(),
+            total_shares,
+            model.threshold as u32,
+            model.protocol_round as u16,
+        )?;
+
+        // TODO: refactor
+        let result = if let Some(result) = model.result {
+            let result = result.try_into_option()?;
+            result
+        } else {
+            None
+        };
+        let result: Option<Result<Group, String>> = match result {
+            Some(Ok(group_id)) => {
+                let Some(group) = group else {
+                    return Err(Error::PersistenceError(
+                        PersistenceError::DataInconsistencyError(
+                            "Established group is missing".into(),
+                        ),
+                    ));
+                };
+                assert_eq!(group_id, group.identifier());
+                Some(Ok(group))
+            }
+            Some(Err(err)) => Some(Err(err)),
+            None => None,
+        };
+        let name = if let Some(Ok(group)) = &result {
+            group.name().into()
+        } else {
+            "".into() // TODO add field to the task table
+        };
+        let Some(certificates_sent) = model.group_certificates_sent else {
+            return Err(Error::PersistenceError(
+                PersistenceError::DataInconsistencyError(
+                    "certificates_sent flag missing in group task".into(),
+                ),
+            ));
+        };
+        Ok(Self {
+            name,
+            id: model.id,
+            threshold: model.threshold as u32,
+            key_type: model.key_type.into(),
+            participants,
+            communicator,
+            result,
+            protocol,
+            request: model.request,
+            attempts: model.attempt_count as u32,
+            note: model.note,
+            certificates_sent, // TODO: remove the field completely
         })
     }
 
@@ -229,68 +294,6 @@ impl Task for GroupTask {
                 }
             }
         }
-    }
-
-    // TODO: unwraps
-    async fn from_model(
-        model: TaskModel,
-        participants: Vec<Participant>,
-        communicator: Arc<RwLock<Communicator>>,
-        repository: Arc<Repository>,
-    ) -> Result<Self, Error> {
-        let total_shares = participants.iter().map(|p| p.shares).sum();
-
-        let protocol = create_keygen_protocol(
-            model.protocol_type.into(),
-            model.key_type.clone().into(),
-            total_shares,
-            model.threshold as u32,
-            model.protocol_round as u16,
-        )?;
-
-        // TODO: refactor
-        let result = if let Some(result) = model.result {
-            let result = result.try_into_option()?;
-            result
-        } else {
-            None
-        };
-        let result: Option<Result<Group, String>> = match result {
-            Some(Ok(group_id)) => {
-                let Some(resulting_group) = repository.get_group(&group_id).await? else {
-                    return Err(Error::PersistenceError(
-                        PersistenceError::DataInconsistencyError(
-                            "Established group is missing".into(),
-                        ),
-                    ));
-                };
-                Some(Ok(crate::group::Group::try_from_model(
-                    resulting_group,
-                    participants.clone(),
-                )?))
-            }
-            Some(Err(err)) => Some(Err(err)),
-            None => None,
-        };
-        let name = if let Some(Ok(group)) = &result {
-            group.name().into()
-        } else {
-            "".into() // TODO add field to the task table
-        };
-        Ok(Self {
-            name,
-            id: model.id,
-            threshold: model.threshold as u32,
-            key_type: model.key_type.into(),
-            participants,
-            communicator,
-            result,
-            protocol,
-            request: model.request,
-            attempts: model.attempt_count as u32,
-            note: model.note,
-            certificates_sent: model.group_certificates_sent.unwrap(), // TODO: remove the field completely
-        })
     }
 
     fn get_type(&self) -> TaskType {

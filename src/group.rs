@@ -1,4 +1,3 @@
-use crate::error::Error;
 use crate::persistence::{Group as GroupModel, Participant};
 use crate::proto::{KeyType, ProtocolType};
 #[derive(Clone)]
@@ -74,11 +73,8 @@ impl Group {
     }
 
     // TODO: consider merging Group with GroupModel
-    pub fn try_from_model(
-        value: GroupModel,
-        participants: Vec<Participant>,
-    ) -> Result<Self, Error> {
-        Ok(Self {
+    pub fn from_model(value: GroupModel, participants: Vec<Participant>) -> Self {
+        Self {
             identifier: value.id,
             name: value.name,
             threshold: value.threshold as u32,
@@ -87,7 +83,7 @@ impl Group {
             key_type: value.key_type.into(),
             certificate: value.certificate,
             note: value.note,
-        })
+        }
     }
 }
 
