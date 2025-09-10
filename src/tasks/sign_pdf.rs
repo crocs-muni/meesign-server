@@ -46,10 +46,11 @@ impl SignPDFTask {
         communicator: Arc<RwLock<Communicator>>,
         group: Group,
     ) -> Result<Self, Error> {
-        let result = match model.result.clone() {
-            Some(val) => val.try_into_option()?,
-            None => None,
-        };
+        let result = model
+            .result
+            .clone()
+            .map(|res| res.try_into_result())
+            .transpose()?;
         let sign_task = SignTask::from_model(model, communicator, group)?;
         Ok(Self { sign_task, result })
     }

@@ -152,11 +152,11 @@ pub struct TaskResult {
 }
 
 impl TaskResult {
-    pub fn try_into_option(self) -> Result<Option<Result<Vec<u8>, String>>, PersistenceError> {
+    pub fn try_into_result(self) -> Result<Result<Vec<u8>, String>, PersistenceError> {
         if self.is_successful && self.data.is_some() {
-            Ok(Some(Ok(self.data.unwrap())))
+            Ok(Ok(self.data.unwrap()))
         } else if !self.is_successful && self.error_message.is_some() {
-            Ok(Some(Err(self.error_message.unwrap())))
+            Ok(Err(self.error_message.unwrap()))
         } else {
             Err(PersistenceError::DataInconsistencyError(format!(
                 "Inconsistent task result: {:?}",

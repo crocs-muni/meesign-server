@@ -80,10 +80,10 @@ impl DecryptTask {
         communicator: Arc<RwLock<Communicator>>,
         group: Group,
     ) -> Result<Self, Error> {
-        let result = match task_model.result {
-            Some(val) => val.try_into_option()?,
-            None => None,
-        };
+        let result = task_model
+            .result
+            .map(|res| res.try_into_result())
+            .transpose()?;
 
         let protocol = create_threshold_protocol(
             group.protocol(),

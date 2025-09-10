@@ -595,7 +595,7 @@ impl State {
     ) -> Result<Box<dyn Task + Send + Sync>, Error> {
         let task_result = task_model.result.clone();
         let group = if let Some(task_result) = task_result {
-            match task_result.try_into_option()?.unwrap() {
+            match task_result.try_into_result()? {
                 Ok(group_id) => {
                     let Some(group_model) = self.repo.get_group(&group_id).await? else {
                         return Err(Error::PersistenceError(

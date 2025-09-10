@@ -126,13 +126,8 @@ impl GroupTask {
         )?;
 
         // TODO: refactor
-        let result = if let Some(result) = model.result {
-            let result = result.try_into_option()?;
-            result
-        } else {
-            None
-        };
-        let result: Option<Result<Group, String>> = match result {
+        let result = model.result.map(|res| res.try_into_result()).transpose()?;
+        let result = match result {
             Some(Ok(group_id)) => {
                 let Some(group) = group else {
                     return Err(Error::PersistenceError(
