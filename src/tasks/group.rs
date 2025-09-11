@@ -295,15 +295,12 @@ impl Task for GroupTask {
         TaskType::Group
     }
 
-    async fn get_work(&self, device_id: Option<&[u8]>) -> Vec<Vec<u8>> {
-        if device_id.is_none() || !self.waiting_for(device_id.unwrap()).await {
+    async fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>> {
+        if !self.waiting_for(device_id).await {
             return Vec::new();
         }
 
-        self.communicator
-            .read()
-            .await
-            .get_messages(device_id.unwrap())
+        self.communicator.read().await.get_messages(device_id)
     }
 
     async fn get_decisions(&self) -> (u32, u32) {

@@ -747,17 +747,24 @@ impl State {
                             attempt,
                         }
                     }
-                    TaskStatus::Running(round) => proto::Task {
-                        id,
-                        r#type,
-                        state: proto::task::TaskState::Running.into(),
-                        round: round as u32,
-                        accept: u16::MAX as u32,
-                        reject: u16::MAX as u32,
-                        data: task.get_work(device_id).await,
-                        request,
-                        attempt,
-                    },
+                    TaskStatus::Running(round) => {
+                        let data = if let Some(device_id) = device_id {
+                            task.get_work(device_id).await
+                        } else {
+                            Vec::new()
+                        };
+                        proto::Task {
+                            id,
+                            r#type,
+                            state: proto::task::TaskState::Running.into(),
+                            round: round as u32,
+                            accept: u16::MAX as u32,
+                            reject: u16::MAX as u32,
+                            data,
+                            request,
+                            attempt,
+                        }
+                    }
                     _ => unreachable!(),
                 }
             }
