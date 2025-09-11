@@ -6,6 +6,7 @@ pub(crate) mod sign_pdf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use std::collections::HashSet;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -18,21 +19,20 @@ use crate::persistence::Participant;
 pub enum RoundUpdate {
     Listen,
     GroupCertificatesSent,
-    NextRound(u16),            // round number
-    Finished(u16, TaskResult), // round number, result
-    Failed(String),            // failure reason
+    NextRound(u16),              // round number
+    Finished(u16, FinishedTask), // round number, finished task
+    Failed(FailedTask),
 }
 
 #[must_use = "updates must be persisted"]
 pub enum DecisionUpdate {
     Undecided,
     Accepted(RoundUpdate),
-    Declined,
+    Declined(DeclinedTask),
 }
 
 #[must_use = "updates must be persisted"]
 pub enum RestartUpdate {
-    AlreadyFinished,
     Voting,
     Started(RoundUpdate),
 }
@@ -56,8 +56,42 @@ impl TaskResult {
     }
 }
 
+pub struct DeclinedTask {
+    pub accepts: u32,
+    pub rejects: u32,
+}
+pub struct FinishedTask {
+    pub result: TaskResult,
+    pub acknowledgements: HashSet<Vec<u8>>,
+}
+impl FinishedTask {
+    pub fn new(result: TaskResult) -> Self {
+        Self {
+            result,
+            acknowledgements: HashSet::new(),
+        }
+    }
+    pub fn acknowledge(&mut self, device_id: &[u8]) {
+        self.acknowledgements.insert(device_id.to_vec());
+    }
+}
+pub struct FailedTask {
+    pub reason: String,
+}
+
+pub enum TaskPhase {
+    Active(Box<dyn ActiveTask + Send + Sync>),
+    Declined(DeclinedTask),
+    Finished(FinishedTask),
+    Failed(FailedTask),
+}
+
+pub struct Task {
+    pub phase: TaskPhase,
+}
+
 #[async_trait]
-pub trait Task: Send + Sync {
+pub trait ActiveTask: Send + Sync {
     fn get_type(&self) -> crate::proto::TaskType;
     async fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>>;
     fn get_round(&self) -> u16;
@@ -78,7 +112,6 @@ pub trait Task: Send + Sync {
     /// Store `decision` by `device_id`
     async fn decide(&mut self, device_id: &[u8], decision: bool) -> Result<DecisionUpdate, Error>;
 
-    async fn acknowledge(&mut self, device_id: &[u8]);
     fn get_request(&self) -> &[u8];
 
     fn get_attempts(&self) -> u32;

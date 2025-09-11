@@ -18,8 +18,6 @@ pub struct Communicator {
     active_devices: Option<Vec<Vec<u8>>>,
     /// A mapping of device identifiers to their Task decision weight (0 - no decision, positive - accept, negative - reject)
     decisions: HashMap<Vec<u8>, i8>,
-    /// A mapping of device identifiers to their Task acknowledgement
-    acknowledgements: HashMap<Vec<u8>, bool>,
     /// A mapping of protocol indices to incoming messages
     input: HashMap<u32, ClientMessage>,
     /// A mapping of protocol indices to outgoing messages
@@ -39,7 +37,6 @@ impl Communicator {
         threshold: u32,
         protocol_type: ProtocolType,
         decisions: HashMap<Vec<u8>, i8>,
-        acknowledgements: HashMap<Vec<u8>, bool>,
     ) -> Self {
         let device_list: Vec<Device> = participants
             .into_iter()
@@ -56,7 +53,6 @@ impl Communicator {
             device_list,
             active_devices: None,
             decisions,
-            acknowledgements,
             input: HashMap::new(),
             output: HashMap::new(),
             protocol_type,
@@ -309,24 +305,6 @@ impl Communicator {
         }
     }
 
-    /// Save an acknowledgement by the given device
-    ///
-    /// # Returns
-    /// `false` if `device` is invalid or has already acknowledged this task's output
-    /// `true` otherwise
-    pub fn acknowledge(&mut self, device: &[u8]) -> bool {
-        if !self.acknowledgements.contains_key(device) || self.acknowledgements[device] {
-            return false;
-        }
-        self.acknowledgements.insert(device.to_vec(), true);
-        true
-    }
-
-    /// Check whether a device has acknowledged this task's output
-    pub fn device_acknowledged(&self, device: &[u8]) -> bool {
-        *self.acknowledgements.get(device).unwrap_or(&false)
-    }
-
     /// Get the protocol indices of active devices
     pub fn get_protocol_indices(&self) -> Vec<u32> {
         assert!(self.active_devices.is_some());
@@ -532,20 +510,6 @@ mod tests {
             );
         }
         assert_eq!(communicator.round_received(), false);
-        for participant in participants {
-            assert_eq!(
-                communicator.device_acknowledged(participant.device.identifier()),
-                false
-            );
-            assert_eq!(
-                communicator.acknowledge(participant.device.identifier()),
-                true
-            );
-            assert_eq!(
-                communicator.device_acknowledged(participant.device.identifier()),
-                true
-            );
-        }
     }
 
     #[test]
@@ -734,34 +698,6 @@ mod tests {
     }
 
     #[test]
-    fn unknown_device_acknowledgement() {
-        let participants = prepare_participants(3);
-        let mut communicator = new_communicator(
-            participants.iter().cloned().take(2).collect(),
-            2,
-            ProtocolType::Gg18,
-        );
-        assert_eq!(
-            communicator.acknowledge(participants[2].device.identifier()),
-            false
-        );
-    }
-
-    #[test]
-    fn repeated_device_acknowledgement() {
-        let participants = prepare_participants(2);
-        let mut communicator = new_communicator(participants.clone(), 2, ProtocolType::Gg18);
-        assert_eq!(
-            communicator.acknowledge(participants[0].device.identifier()),
-            true
-        );
-        assert_eq!(
-            communicator.acknowledge(participants[0].device.identifier()),
-            false
-        );
-    }
-
-    #[test]
     fn broadcast_messages() {
         let participants = prepare_participants(3);
         let mut communicator = new_communicator(participants.clone(), 2, ProtocolType::Frost);
@@ -821,17 +757,7 @@ mod tests {
             .iter()
             .map(|p| (p.device.identifier().clone(), 0))
             .collect();
-        let acknowledgements = participants
-            .iter()
-            .map(|p| (p.device.identifier().clone(), false))
-            .collect();
-        Communicator::new(
-            participants,
-            threshold,
-            protocol_type,
-            decisions,
-            acknowledgements,
-        )
+        Communicator::new(participants, threshold, protocol_type, decisions)
     }
 
     fn prepare_participants(n: usize) -> Vec<Participant> {

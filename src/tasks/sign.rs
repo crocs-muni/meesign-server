@@ -9,7 +9,10 @@ use crate::protocols::frost::FROSTSign;
 use crate::protocols::gg18::GG18Sign;
 use crate::protocols::musig2::MuSig2Sign;
 use crate::protocols::{create_threshold_protocol, Protocol};
-use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult};
+use crate::tasks::{
+    ActiveTask, DecisionUpdate, DeclinedTask, FailedTask, FinishedTask, RestartUpdate, RoundUpdate,
+    TaskResult,
+};
 use crate::utils;
 use async_trait::async_trait;
 use log::{info, warn};
@@ -22,7 +25,6 @@ pub struct SignTask {
     id: Uuid,
     group: Group,
     communicator: Arc<RwLock<Communicator>>,
-    result: Option<Result<Vec<u8>, String>>,
     pub(super) data: Vec<u8>,
     preprocessed: Option<Vec<u8>>,
     pub(super) protocol: Box<dyn Protocol + Send + Sync>,
@@ -40,17 +42,12 @@ impl SignTask {
             .iter()
             .map(|p| (p.device.identifier().clone(), 0))
             .collect();
-        let acknowledgements = participants
-            .iter()
-            .map(|p| (p.device.identifier().clone(), false))
-            .collect();
 
         let communicator = Arc::new(RwLock::new(Communicator::new(
             participants,
             group.threshold(),
             protocol_type,
             decisions,
-            acknowledgements,
         )));
 
         let request = (SignRequest {
@@ -65,7 +62,6 @@ impl SignTask {
             id,
             group,
             communicator,
-            result: None,
             data,
             preprocessed: None,
             protocol: match protocol_type {
@@ -87,10 +83,6 @@ impl SignTask {
         communicator: Arc<RwLock<Communicator>>,
         group: Group,
     ) -> Result<Self, Error> {
-        let result = task_model
-            .result
-            .map(|res| res.try_into_result())
-            .transpose()?;
         // TODO refactor
         let protocol = create_threshold_protocol(
             group.protocol(),
@@ -107,7 +99,6 @@ impl SignTask {
             id: task_model.id,
             group,
             communicator,
-            result,
             data,
             protocol,
             preprocessed: task_model.preprocessed,
@@ -146,8 +137,7 @@ impl SignTask {
             .finalize(&mut *self.communicator.write().await);
         if signature.is_none() {
             let reason = "Task failed (signature not output)".to_string();
-            self.set_result(Err(reason.clone()));
-            return Ok(RoundUpdate::Failed(reason));
+            return Ok(RoundUpdate::Failed(FailedTask { reason }));
         }
         let signature = signature.unwrap();
 
@@ -156,12 +146,10 @@ impl SignTask {
             utils::hextrunc(self.group.identifier())
         );
 
-        self.set_result(Ok(signature.clone()));
-
         self.communicator.write().await.clear_input();
         Ok(RoundUpdate::Finished(
             self.protocol.round(),
-            TaskResult::Signed(signature),
+            FinishedTask::new(TaskResult::Signed(signature)),
         ))
     }
 
@@ -219,9 +207,8 @@ impl SignTask {
     ) -> Option<bool> {
         self.communicator.write().await.decide(device_id, decision);
 
-        if self.result.is_none() && self.protocol.round() == 0 {
+        if self.protocol.round() == 0 {
             if self.communicator.read().await.reject_count() >= self.group.reject_threshold() {
-                self.set_result(Err("Task declined".to_string()));
                 return Some(false);
             } else if self.communicator.read().await.accept_count() >= self.group.threshold() {
                 return Some(true);
@@ -230,17 +217,13 @@ impl SignTask {
         None
     }
 
-    fn set_result(&mut self, result: Result<Vec<u8>, String>) {
-        self.result = Some(result);
-    }
-
     pub fn increment_attempt_count(&mut self) {
         self.attempts += 1;
     }
 }
 
 #[async_trait]
-impl Task for SignTask {
+impl ActiveTask for SignTask {
     fn get_type(&self) -> TaskType {
         TaskType::SignChallenge
     }
@@ -278,10 +261,6 @@ impl Task for SignTask {
     }
 
     async fn restart(&mut self) -> Result<RestartUpdate, Error> {
-        if self.result.is_some() {
-            return Ok(RestartUpdate::AlreadyFinished);
-        }
-
         if self.is_approved().await {
             self.increment_attempt_count();
             let round_update = self.start_task().await?;
@@ -302,8 +281,6 @@ impl Task for SignTask {
     async fn waiting_for(&self, device: &[u8]) -> bool {
         if self.protocol.round() == 0 {
             return !self.communicator.read().await.device_decided(device);
-        } else if self.protocol.round() >= self.protocol.last_round() {
-            return !self.communicator.read().await.device_acknowledged(device);
         }
 
         self.communicator.read().await.waiting_for(device)
@@ -316,14 +293,13 @@ impl Task for SignTask {
                 let round_update = self.next_round().await?;
                 DecisionUpdate::Accepted(round_update)
             }
-            Some(false) => DecisionUpdate::Declined,
+            Some(false) => {
+                let (accepts, rejects) = self.get_decisions().await;
+                DecisionUpdate::Declined(DeclinedTask { accepts, rejects })
+            }
             None => DecisionUpdate::Undecided,
         };
         Ok(decision_update)
-    }
-
-    async fn acknowledge(&mut self, device_id: &[u8]) {
-        self.communicator.write().await.acknowledge(device_id);
     }
 
     fn get_request(&self) -> &[u8] {

@@ -4,7 +4,9 @@ use crate::group::Group;
 use crate::persistence::{Participant, Task as TaskModel};
 use crate::proto::TaskType;
 use crate::tasks::sign::SignTask;
-use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult};
+use crate::tasks::{
+    ActiveTask, DecisionUpdate, DeclinedTask, FailedTask, RestartUpdate, RoundUpdate, TaskResult,
+};
 use async_trait::async_trait;
 use lazy_static::lazy_static;
 use log::{error, info, warn};
@@ -22,7 +24,6 @@ lazy_static! {
 
 pub struct SignPDFTask {
     sign_task: SignTask,
-    result: Option<Result<Vec<u8>, String>>,
 }
 
 impl SignPDFTask {
@@ -35,10 +36,7 @@ impl SignPDFTask {
 
         let sign_task = SignTask::try_new(group, name, data)?;
 
-        Ok(SignPDFTask {
-            sign_task,
-            result: None,
-        })
+        Ok(SignPDFTask { sign_task })
     }
 
     pub fn from_model(
@@ -46,13 +44,8 @@ impl SignPDFTask {
         communicator: Arc<RwLock<Communicator>>,
         group: Group,
     ) -> Result<Self, Error> {
-        let result = model
-            .result
-            .clone()
-            .map(|res| res.try_into_result())
-            .transpose()?;
         let sign_task = SignTask::from_model(model, communicator, group)?;
-        Ok(Self { sign_task, result })
+        Ok(Self { sign_task })
     }
 
     async fn start_task(&mut self) -> Result<RoundUpdate, Error> {
@@ -60,15 +53,13 @@ impl SignPDFTask {
         if file.is_err() {
             error!("Could not create temporary file");
             let reason = "Task failed (server error)".to_string();
-            self.set_result(Err(reason.clone()));
-            return Ok(RoundUpdate::Failed(reason));
+            return Ok(RoundUpdate::Failed(FailedTask { reason }));
         }
         let mut file = file.unwrap();
         if file.write_all(&self.sign_task.data).is_err() {
             error!("Could not write in temporary file");
             let reason = "Task failed (server error)".to_string();
-            self.set_result(Err(reason.clone()));
-            return Ok(RoundUpdate::Failed(reason));
+            return Ok(RoundUpdate::Failed(FailedTask { reason }));
         }
 
         let pdfhelper = Command::new("java")
@@ -83,8 +74,7 @@ impl SignPDFTask {
         if pdfhelper.is_err() {
             error!("Could not start PDFHelper");
             let reason = "Task failed (server error)".to_string();
-            self.set_result(Err(reason.clone()));
-            return Ok(RoundUpdate::Failed(reason));
+            return Ok(RoundUpdate::Failed(FailedTask { reason }));
         }
         let mut pdfhelper = pdfhelper.unwrap();
 
@@ -94,8 +84,7 @@ impl SignPDFTask {
         );
         if hash.is_empty() {
             let reason = "Task failed (invalid PDF)".to_string();
-            self.set_result(Err(reason.clone()));
-            return Ok(RoundUpdate::Failed(reason));
+            return Ok(RoundUpdate::Failed(FailedTask { reason }));
         }
         PDF_HELPERS
             .lock()
@@ -111,17 +100,19 @@ impl SignPDFTask {
 
     async fn finalize_task(&mut self) -> Result<RoundUpdate, Error> {
         let round_update = match self.sign_task.finalize_task().await? {
-            RoundUpdate::Finished(round, TaskResult::Signed(signature)) => {
+            RoundUpdate::Finished(round, mut task) => {
                 let mut pdfhelper = PDF_HELPERS.lock().unwrap().remove(self.get_id()).unwrap();
+                let TaskResult::Signed(signature) = task.result else {
+                    unreachable!()
+                };
                 let signed = include_signature(&mut pdfhelper, &signature);
 
                 info!(
                     "PDF signed by group_id={}",
                     hex::encode(self.sign_task.get_group().identifier())
                 );
-
-                self.set_result(Ok(signed.clone()));
-                RoundUpdate::Finished(round, TaskResult::SignedPdf(signed))
+                task.result = TaskResult::SignedPdf(signed);
+                RoundUpdate::Finished(round, task)
             }
             other => other,
         };
@@ -137,14 +128,10 @@ impl SignPDFTask {
             self.finalize_task().await
         }
     }
-
-    fn set_result(&mut self, result: Result<Vec<u8>, String>) {
-        self.result = Some(result);
-    }
 }
 
 #[async_trait]
-impl Task for SignPDFTask {
+impl ActiveTask for SignPDFTask {
     fn get_type(&self) -> TaskType {
         TaskType::SignPdf
     }
@@ -175,10 +162,6 @@ impl Task for SignPDFTask {
     }
 
     async fn restart(&mut self) -> Result<RestartUpdate, Error> {
-        if self.result.is_some() {
-            return Ok(RestartUpdate::AlreadyFinished);
-        }
-
         if self.is_approved().await {
             if let Some(mut pdfhelper) = PDF_HELPERS.lock().unwrap().remove(self.get_id()) {
                 pdfhelper.kill().unwrap();
@@ -211,16 +194,12 @@ impl Task for SignPDFTask {
                 DecisionUpdate::Accepted(round_update)
             }
             Some(false) => {
-                self.set_result(Err("Task declined".into()));
-                DecisionUpdate::Declined
+                let (accepts, rejects) = self.get_decisions().await;
+                DecisionUpdate::Declined(DeclinedTask { accepts, rejects })
             }
             None => DecisionUpdate::Undecided,
         };
         Ok(decision_update)
-    }
-
-    async fn acknowledge(&mut self, device_id: &[u8]) {
-        self.sign_task.acknowledge(device_id).await;
     }
 
     fn get_request(&self) -> &[u8] {

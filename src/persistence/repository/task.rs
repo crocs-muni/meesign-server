@@ -2,7 +2,7 @@ use diesel::result::Error::NotFound;
 use diesel::{pg::Pg, QueryDsl};
 use diesel::{BoolExpressionMethods, ExpressionMethods, NullableExpressionMethods};
 use diesel_async::{AsyncConnection, RunQueryDsl};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use super::utils::NameValidator;
@@ -303,7 +303,7 @@ where
 pub async fn get_task_acknowledgements<Conn>(
     connection: &mut Conn,
     task_id: &Uuid,
-) -> Result<HashMap<Vec<u8>, bool>, PersistenceError>
+) -> Result<HashSet<Vec<u8>>, PersistenceError>
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
@@ -316,7 +316,10 @@ where
         .load::<(Vec<u8>, Option<bool>)>(connection)
         .await?
         .into_iter()
-        .map(|(device_id, acknowledgement)| (device_id, acknowledgement.unwrap_or(false)))
+        .filter_map(|(device_id, acknowledgement)| match acknowledgement {
+            Some(true) => Some(device_id),
+            _ => None,
+        })
         .collect();
     Ok(acknowledgements)
 }

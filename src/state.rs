@@ -15,7 +15,10 @@ use crate::tasks::decrypt::DecryptTask;
 use crate::tasks::group::GroupTask;
 use crate::tasks::sign::SignTask;
 use crate::tasks::sign_pdf::SignPDFTask;
-use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult};
+use crate::tasks::{
+    ActiveTask, DecisionUpdate, DeclinedTask, FailedTask, FinishedTask, RestartUpdate, RoundUpdate,
+    Task, TaskPhase, TaskResult,
+};
 use crate::{get_timestamp, utils};
 use tokio::sync::mpsc::Sender;
 use tonic::codegen::Arc;
@@ -84,14 +87,14 @@ impl State {
                 Participant { device, shares }
             })
             .collect();
-        let task = Box::new(GroupTask::try_new(
+        let task: Box<dyn ActiveTask + Send + Sync> = Box::new(GroupTask::try_new(
             name,
             participants,
             threshold,
             protocol,
             key_type,
             note,
-        )?) as Box<dyn Task + Sync + Send>;
+        )?);
 
         // TODO: group ID?
         let task_id = self.add_task(task, &[], key_type, protocol).await?;
@@ -116,14 +119,14 @@ impl State {
         };
         let participants = self.repo.get_group_participants(group_id).await?;
         let group = crate::group::Group::from_model(group, participants);
-        let task = match group.key_type() {
+        let task: Box<dyn ActiveTask + Send + Sync> = match group.key_type() {
             KeyType::SignPdf => {
                 let task = SignPDFTask::try_new(group.clone(), name.to_string(), data.to_vec())?;
-                Box::new(task) as Box<dyn Task + Sync + Send>
+                Box::new(task)
             }
             KeyType::SignChallenge => {
                 let task = SignTask::try_new(group.clone(), name.to_string(), data.to_vec())?;
-                Box::new(task) as Box<dyn Task + Sync + Send>
+                Box::new(task)
             }
             KeyType::Decrypt => {
                 warn!(
@@ -161,7 +164,7 @@ impl State {
         };
         let participants = self.repo.get_group_participants(group_id).await?;
         let group = crate::group::Group::from_model(group, participants);
-        let task = match group.key_type() {
+        let task: Box<dyn ActiveTask + Send + Sync> = match group.key_type() {
             KeyType::Decrypt => {
                 let task = DecryptTask::try_new(
                     group.clone(),
@@ -169,7 +172,7 @@ impl State {
                     data.to_vec(),
                     data_type.to_string(),
                 )?;
-                Box::new(task) as Box<dyn Task + Sync + Send>
+                Box::new(task)
             }
             KeyType::SignPdf | KeyType::SignChallenge => {
                 warn!(
@@ -191,7 +194,7 @@ impl State {
 
     async fn add_task(
         &mut self,
-        task: Box<dyn Task + Sync + Send>,
+        task: Box<dyn ActiveTask + Sync + Send>,
         group_id: &[u8],
         key_type: KeyType,
         protocol_type: ProtocolType,
@@ -305,7 +308,12 @@ impl State {
         attempt: u32,
     ) -> Result<(), Error> {
         let task_model = self.get_task(task_id).await?;
-        let mut task = self.task_from_task_model(task_model).await?;
+        let task = self.task_from_task_model(task_model).await?;
+        let TaskPhase::Active(mut task) = task.phase else {
+            return Err(Error::GeneralProtocolError(
+                "Cannot update inactive task".into(),
+            ));
+        };
         self.set_task_last_update(task_id);
         if attempt != task.get_attempts() {
             warn!(
@@ -324,12 +332,13 @@ impl State {
                 self.repo.set_task_round(task_id, round).await?;
                 self.send_updates(task_id).await?;
             }
-            RoundUpdate::Failed(reason) => {
+            RoundUpdate::Failed(FailedTask { reason }) => {
                 self.repo.set_task_result(task_id, &Err(reason)).await?;
                 self.send_updates(task_id).await?;
             }
-            RoundUpdate::Finished(round, result) => {
+            RoundUpdate::Finished(round, task) => {
                 self.repo.set_task_round(task_id, round).await?;
+                let result = task.result;
                 let result_bytes = result.as_bytes().to_vec();
                 if let TaskResult::GroupEstablished(group) = result {
                     self.repo
@@ -362,7 +371,12 @@ impl State {
         decision: bool,
     ) -> Result<(), Error> {
         let task_model = self.get_task(task_id).await?;
-        let mut task = self.task_from_task_model(task_model).await?;
+        let task = self.task_from_task_model(task_model).await?;
+        let TaskPhase::Active(mut task) = task.phase else {
+            return Err(Error::GeneralProtocolError(
+                "Cannot decide inactive task".into(),
+            ));
+        };
         self.set_task_last_update(task_id);
         let decision_update = task.decide(device, decision).await?;
         self.repo
@@ -386,13 +400,13 @@ impl State {
                     RoundUpdate::NextRound(round) => {
                         self.repo.set_task_round(task_id, round).await?;
                     }
-                    RoundUpdate::Failed(reason) => {
+                    RoundUpdate::Failed(FailedTask { reason }) => {
                         self.repo.set_task_result(task_id, &Err(reason)).await?;
                     }
                 }
                 self.send_updates(task_id).await?;
             }
-            DecisionUpdate::Declined => {
+            DecisionUpdate::Declined(_) => {
                 log::info!(
                     "Task declined task_id={}",
                     utils::hextrunc(task_id.as_bytes())
@@ -408,19 +422,27 @@ impl State {
 
     pub async fn acknowledge_task(&mut self, task_id: &Uuid, device: &[u8]) -> Result<(), Error> {
         let task_model = self.get_task(task_id).await?;
-        let mut task = self.task_from_task_model(task_model).await?;
-        task.acknowledge(device).await;
+        let task = self.task_from_task_model(task_model).await?;
+        let TaskPhase::Finished(mut task) = task.phase else {
+            return Err(Error::GeneralProtocolError(
+                "Cannot acknowledge unfinished task".into(),
+            ));
+        };
+        task.acknowledge(device);
         self.repo.set_task_acknowledgement(task_id, device).await?;
         Ok(())
     }
 
     pub async fn restart_task(&mut self, task_id: &Uuid) -> Result<bool, Error> {
         let task_model = self.get_task(task_id).await?;
-        let mut task = self.task_from_task_model(task_model).await?;
+        let task = self.task_from_task_model(task_model).await?;
+        let TaskPhase::Active(mut task) = task.phase else {
+            // NOTE: Only active tasks can be restarted
+            return Ok(false);
+        };
         self.set_task_last_update(task_id);
 
         match task.restart().await? {
-            RestartUpdate::AlreadyFinished => Ok(false),
             RestartUpdate::Voting => Ok(false),
             RestartUpdate::Started(round_update) => {
                 self.repo.increment_task_attempt_count(task_id).await?;
@@ -435,7 +457,7 @@ impl State {
                     RoundUpdate::NextRound(round) => {
                         self.repo.set_task_round(task_id, round).await?;
                     }
-                    RoundUpdate::Failed(reason) => {
+                    RoundUpdate::Failed(FailedTask { reason }) => {
                         self.repo.set_task_result(task_id, &Err(reason)).await?;
                     }
                 }
@@ -452,15 +474,13 @@ impl State {
 
         let mut restarts = Vec::new();
         for (task_model, task) in task_models.into_iter().zip(tasks.into_iter()) {
+            let TaskPhase::Active(task) = task.phase else {
+                // NOTE: Only active tasks can be restarted
+                continue;
+            };
             let task_id = &task_model.id;
-            let result = task_model
-                .result
-                .map(|res| res.try_into_result())
-                .transpose()?;
             let last_update = self.get_task_last_update(task_id);
-            let stale = result.is_none()
-                && task.is_approved().await
-                && now.saturating_sub(last_update) > 30;
+            let stale = task.is_approved().await && now.saturating_sub(last_update) > 30;
             if stale {
                 debug!("Stale task detected task_id={:?}", utils::hextrunc(task_id));
                 restarts.push(*task_id);
@@ -535,7 +555,6 @@ impl State {
             Entry::Vacant(entry) => {
                 participants.sort_by(|a, b| a.device.identifier().cmp(b.device.identifier()));
                 let decisions = self.repo.get_task_decisions(&task_model.id).await?;
-                let acknowledgements = self.repo.get_task_acknowledgements(&task_model.id).await?;
                 let threshold = match task_model.task_type {
                     TaskType::Group => participants.iter().map(|p| p.shares).sum(),
                     _ => task_model.threshold as u32,
@@ -546,7 +565,6 @@ impl State {
                     threshold,
                     task_model.protocol_type.into(),
                     decisions,
-                    acknowledgements,
                 ))))
             }
         }
@@ -554,10 +572,7 @@ impl State {
         Ok(communicator)
     }
 
-    async fn task_from_task_model(
-        &self,
-        task_model: TaskModel,
-    ) -> Result<Box<dyn Task + Send + Sync>, Error> {
+    async fn task_from_task_model(&self, task_model: TaskModel) -> Result<Task, Error> {
         let task = self
             .tasks_from_task_models(vec![task_model])
             .await?
@@ -569,7 +584,7 @@ impl State {
     async fn tasks_from_task_models(
         &self,
         task_models: Vec<TaskModel>,
-    ) -> Result<Vec<Box<dyn Task + Send + Sync>>, Error> {
+    ) -> Result<Vec<Task>, Error> {
         // NOTE: Sorted and unique task models (strict inequality)
         assert!(task_models.windows(2).all(|w| w[0].id < w[1].id));
 
@@ -614,9 +629,11 @@ impl State {
         task_model: TaskModel,
         communicator: Arc<RwLock<Communicator>>,
         participants: Vec<Participant>,
-    ) -> Result<Box<dyn Task + Send + Sync>, Error> {
+    ) -> Result<Task, Error> {
+        assert_eq!(task_model.task_type, TaskType::Group);
+
         let task_result = task_model.result.clone();
-        let group = if let Some(task_result) = task_result {
+        let phase = if let Some(task_result) = task_result {
             match task_result.try_into_result()? {
                 Ok(group_id) => {
                     let Some(group_model) = self.repo.get_group(&group_id).await? else {
@@ -627,23 +644,34 @@ impl State {
                         ));
                     };
                     let group = crate::group::Group::from_model(group_model, participants.clone());
-                    Some(group)
+                    let result = TaskResult::GroupEstablished(group);
+                    let acknowledgements =
+                        self.repo.get_task_acknowledgements(&task_model.id).await?;
+                    TaskPhase::Finished(FinishedTask {
+                        result,
+                        acknowledgements,
+                    })
                 }
-                Err(_) => None,
+                Err(reason) => {
+                    let communicator = communicator.read().await;
+                    let accepts = communicator.accept_count();
+                    let rejects = communicator.reject_count();
+                    if rejects > 0 {
+                        TaskPhase::Declined(DeclinedTask { accepts, rejects })
+                    } else {
+                        TaskPhase::Failed(FailedTask { reason })
+                    }
+                }
             }
         } else {
-            None
+            let task = Box::new(GroupTask::from_model(
+                task_model,
+                participants,
+                communicator,
+            )?);
+            TaskPhase::Active(task)
         };
-
-        assert_eq!(task_model.task_type, TaskType::Group);
-
-        let task = Box::new(GroupTask::from_model(
-            task_model,
-            participants,
-            communicator,
-            group,
-        )?);
-        Ok(task)
+        Ok(Task { phase })
     }
 
     async fn threshold_task_from_model(
@@ -651,36 +679,68 @@ impl State {
         task_model: TaskModel,
         communicator: Arc<RwLock<Communicator>>,
         participants: Vec<Participant>,
-    ) -> Result<Box<dyn Task + Send + Sync>, Error> {
-        let Some(group_id) = &task_model.group_id else {
-            return Err(Error::PersistenceError(
-                PersistenceError::DataInconsistencyError(
-                    "Threshold task is missing a group".into(),
-                ),
-            ));
-        };
-        let Some(group_model) = self.repo.get_group(group_id).await? else {
-            return Err(Error::PersistenceError(
-                PersistenceError::DataInconsistencyError(
-                    "Threshold task references nonexistent group".into(),
-                ),
-            ));
-        };
-        let group = crate::group::Group::from_model(group_model, participants);
-
-        let task: Box<dyn Task + Send + Sync> = match task_model.task_type {
-            TaskType::Group => unreachable!(),
-            TaskType::SignPdf => {
-                Box::new(SignPDFTask::from_model(task_model, communicator, group)?)
+    ) -> Result<Task, Error> {
+        let task_result = task_model.result.clone();
+        let phase = if let Some(task_result) = task_result {
+            match task_result.try_into_result()? {
+                Ok(data) => {
+                    let result = match task_model.task_type {
+                        TaskType::Group => unreachable!(),
+                        TaskType::SignPdf => TaskResult::SignedPdf(data),
+                        TaskType::SignChallenge => TaskResult::Signed(data),
+                        TaskType::Decrypt => TaskResult::Decrypted(data),
+                    };
+                    let acknowledgements =
+                        self.repo.get_task_acknowledgements(&task_model.id).await?;
+                    TaskPhase::Finished(FinishedTask {
+                        result,
+                        acknowledgements,
+                    })
+                }
+                Err(reason) => {
+                    let communicator = communicator.read().await;
+                    let accepts = communicator.accept_count();
+                    let rejects = communicator.reject_count();
+                    let total_shares: u32 = participants.iter().map(|p| p.shares).sum();
+                    let reject_threshold = total_shares - task_model.threshold as u32 + 1;
+                    if rejects >= reject_threshold {
+                        TaskPhase::Declined(DeclinedTask { accepts, rejects })
+                    } else {
+                        TaskPhase::Failed(FailedTask { reason })
+                    }
+                }
             }
-            TaskType::SignChallenge => {
-                Box::new(SignTask::from_model(task_model, communicator, group)?)
-            }
-            TaskType::Decrypt => {
-                Box::new(DecryptTask::from_model(task_model, communicator, group)?)
-            }
+        } else {
+            let Some(group_id) = &task_model.group_id else {
+                return Err(Error::PersistenceError(
+                    PersistenceError::DataInconsistencyError(
+                        "Threshold task is missing a group".into(),
+                    ),
+                ));
+            };
+            let Some(group_model) = self.repo.get_group(group_id).await? else {
+                return Err(Error::PersistenceError(
+                    PersistenceError::DataInconsistencyError(
+                        "Threshold task references nonexistent group".into(),
+                    ),
+                ));
+            };
+            let group = crate::group::Group::from_model(group_model, participants);
+            let task: Box<dyn ActiveTask + Send + Sync> = match task_model.task_type {
+                TaskType::Group => unreachable!(),
+                TaskType::SignPdf => {
+                    Box::new(SignPDFTask::from_model(task_model, communicator, group)?)
+                }
+                TaskType::SignChallenge => {
+                    Box::new(SignTask::from_model(task_model, communicator, group)?)
+                }
+                TaskType::Decrypt => {
+                    Box::new(DecryptTask::from_model(task_model, communicator, group)?)
+                }
+            };
+            TaskPhase::Active(task)
         };
-        Ok(task)
+        Ok(Task { phase })
     }
 
     pub fn set_task_last_update(&self, task_id: &Uuid) {
@@ -706,9 +766,9 @@ impl State {
         let r#type: proto::TaskType = task_model.task_type.clone().into();
         let r#type = r#type.into();
         let attempt = task_model.attempt_count as u32;
-        let task = match task_model.result.clone() {
-            None => {
-                let task = self.task_from_task_model(task_model).await?;
+        let task = self.task_from_task_model(task_model.clone()).await?;
+        let task = match task.phase {
+            TaskPhase::Active(task) => {
                 if !task.is_approved().await {
                     let (accept, reject) = task.get_decisions().await;
                     proto::Task::created(id, r#type, accept, reject, request, attempt)
@@ -722,15 +782,24 @@ impl State {
                     proto::Task::running(id, r#type, round, data, request, attempt)
                 }
             }
-            Some(result) => match result.try_into_result()? {
-                Ok(result) => proto::Task::finished(id, r#type, result, request, attempt),
-                Err(reason) => {
-                    let round = task_model.protocol_round as u32;
-                    let task = self.task_from_task_model(task_model).await?;
-                    let (accept, reject) = task.get_decisions().await;
-                    proto::Task::failed(id, r#type, round, accept, reject, reason, request, attempt)
-                }
-            },
+            TaskPhase::Finished(task) => proto::Task::finished(
+                id,
+                r#type,
+                task.result.as_bytes().to_vec(),
+                request,
+                attempt,
+            ),
+            TaskPhase::Failed(task) => proto::Task::failed(
+                id,
+                r#type,
+                task_model.protocol_round as u32,
+                task.reason,
+                request,
+                attempt,
+            ),
+            TaskPhase::Declined(task) => {
+                proto::Task::declined(id, r#type, task.accepts, task.rejects, request, attempt)
+            }
         };
         Ok(task)
     }

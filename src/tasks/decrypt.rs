@@ -7,7 +7,10 @@ use crate::persistence::{Participant, PersistenceError, Task as TaskModel};
 use crate::proto::{DecryptRequest, TaskType};
 use crate::protocols::elgamal::ElgamalDecrypt;
 use crate::protocols::{create_threshold_protocol, Protocol};
-use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult};
+use crate::tasks::{
+    ActiveTask, DecisionUpdate, DeclinedTask, FailedTask, FinishedTask, RestartUpdate, RoundUpdate,
+    TaskResult,
+};
 use crate::utils;
 use async_trait::async_trait;
 use log::info;
@@ -20,7 +23,6 @@ pub struct DecryptTask {
     id: Uuid,
     group: Group,
     communicator: Arc<RwLock<Communicator>>,
-    result: Option<Result<Vec<u8>, String>>,
     pub(super) data: Vec<u8>,
     pub(super) protocol: Box<dyn Protocol + Send + Sync>,
     request: Vec<u8>,
@@ -41,17 +43,12 @@ impl DecryptTask {
             .iter()
             .map(|p| (p.device.identifier().clone(), 0))
             .collect();
-        let acknowledgements = participants
-            .iter()
-            .map(|p| (p.device.identifier().clone(), false))
-            .collect();
 
         let communicator = Arc::new(RwLock::new(Communicator::new(
             participants,
             group.threshold(),
             group.protocol(),
             decisions,
-            acknowledgements,
         )));
 
         let request = (DecryptRequest {
@@ -67,7 +64,6 @@ impl DecryptTask {
             id,
             group,
             communicator,
-            result: None,
             data,
             protocol: Box::new(ElgamalDecrypt::new()),
             request,
@@ -80,11 +76,6 @@ impl DecryptTask {
         communicator: Arc<RwLock<Communicator>>,
         group: Group,
     ) -> Result<Self, Error> {
-        let result = task_model
-            .result
-            .map(|res| res.try_into_result())
-            .transpose()?;
-
         let protocol = create_threshold_protocol(
             group.protocol(),
             group.key_type(),
@@ -99,7 +90,6 @@ impl DecryptTask {
             id: task_model.id,
             group,
             communicator,
-            result,
             data,
             protocol,
             request: task_model.request,
@@ -126,8 +116,7 @@ impl DecryptTask {
             .finalize(&mut *self.communicator.write().await);
         if decrypted.is_none() {
             let reason = "Task failed (data not output)".to_string();
-            self.set_result(Err(reason.clone()));
-            return Ok(RoundUpdate::Failed(reason));
+            return Ok(RoundUpdate::Failed(FailedTask { reason }));
         }
         let decrypted = decrypted.unwrap();
 
@@ -136,12 +125,10 @@ impl DecryptTask {
             utils::hextrunc(self.group.identifier())
         );
 
-        self.set_result(Ok(decrypted.clone()));
-
         self.communicator.write().await.clear_input();
         Ok(RoundUpdate::Finished(
             self.protocol.round(),
-            TaskResult::Decrypted(decrypted),
+            FinishedTask::new(TaskResult::Decrypted(decrypted)),
         ))
     }
 
@@ -199,9 +186,8 @@ impl DecryptTask {
     ) -> Option<bool> {
         self.communicator.write().await.decide(device_id, decision);
 
-        if self.result.is_none() && self.protocol.round() == 0 {
+        if self.protocol.round() == 0 {
             if self.communicator.read().await.reject_count() >= self.group.reject_threshold() {
-                self.set_result(Err("Task declined".to_string()));
                 return Some(false);
             } else if self.communicator.read().await.accept_count() >= self.group.threshold() {
                 return Some(true);
@@ -210,17 +196,13 @@ impl DecryptTask {
         None
     }
 
-    fn set_result(&mut self, result: Result<Vec<u8>, String>) {
-        self.result = Some(result);
-    }
-
     fn increment_attempt_count(&mut self) {
         self.attempts += 1;
     }
 }
 
 #[async_trait]
-impl Task for DecryptTask {
+impl ActiveTask for DecryptTask {
     fn get_type(&self) -> TaskType {
         TaskType::Decrypt
     }
@@ -258,10 +240,6 @@ impl Task for DecryptTask {
     }
 
     async fn restart(&mut self) -> Result<RestartUpdate, Error> {
-        if self.result.is_some() {
-            return Ok(RestartUpdate::AlreadyFinished);
-        }
-
         if self.is_approved().await {
             self.increment_attempt_count();
             let round_update = self.start_task().await?;
@@ -282,8 +260,6 @@ impl Task for DecryptTask {
     async fn waiting_for(&self, device: &[u8]) -> bool {
         if self.protocol.round() == 0 {
             return !self.communicator.read().await.device_decided(device);
-        } else if self.protocol.round() >= self.protocol.last_round() {
-            return !self.communicator.read().await.device_acknowledged(device);
         }
 
         self.communicator.read().await.waiting_for(device)
@@ -296,14 +272,13 @@ impl Task for DecryptTask {
                 let round_update = self.next_round().await?;
                 DecisionUpdate::Accepted(round_update)
             }
-            Some(false) => DecisionUpdate::Declined,
+            Some(false) => {
+                let (accepts, rejects) = self.get_decisions().await;
+                DecisionUpdate::Declined(DeclinedTask { accepts, rejects })
+            }
             None => DecisionUpdate::Undecided,
         };
         Ok(decision_update)
-    }
-
-    async fn acknowledge(&mut self, device_id: &[u8]) {
-        self.communicator.write().await.acknowledge(device_id);
     }
 
     fn get_request(&self) -> &[u8] {

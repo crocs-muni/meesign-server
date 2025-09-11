@@ -113,6 +113,26 @@ mod proto {
                 attempt,
             }
         }
+        pub fn declined(
+            id: Vec<u8>,
+            r#type: i32,
+            accept: u32,
+            reject: u32,
+            request: Option<Vec<u8>>,
+            attempt: u32,
+        ) -> Self {
+            Self {
+                id,
+                r#type,
+                state: task::TaskState::Failed.into(),
+                round: 0,
+                accept,
+                reject,
+                data: vec!["Task declined".to_string().into_bytes()],
+                request,
+                attempt,
+            }
+        }
         pub fn running(
             id: Vec<u8>,
             r#type: i32,
@@ -156,8 +176,6 @@ mod proto {
             id: Vec<u8>,
             r#type: i32,
             round: u32,
-            accept: u32,
-            reject: u32,
             reason: String,
             request: Option<Vec<u8>>,
             attempt: u32,
@@ -167,8 +185,8 @@ mod proto {
                 r#type,
                 state: task::TaskState::Failed.into(),
                 round,
-                accept,
-                reject,
+                accept: u32::MAX,
+                reject: 0,
                 data: vec![reason.into_bytes()],
                 request,
                 attempt,

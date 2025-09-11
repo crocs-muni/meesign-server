@@ -34,7 +34,7 @@ use diesel_async::{
     pooled_connection::AsyncDieselConnectionManager, scoped_futures::ScopedFutureExt,
 };
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::sync::Arc;
 
@@ -322,7 +322,7 @@ impl Repository {
     pub async fn get_task_acknowledgements(
         &self,
         task_id: &Uuid,
-    ) -> Result<HashMap<Vec<u8>, bool>, PersistenceError> {
+    ) -> Result<HashSet<Vec<u8>>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         get_task_acknowledgements(connection, task_id).await
     }
