@@ -7,7 +7,7 @@ use crate::persistence::{Participant, PersistenceError, Task as TaskModel};
 use crate::proto::{DecryptRequest, TaskType};
 use crate::protocols::elgamal::ElgamalDecrypt;
 use crate::protocols::{create_threshold_protocol, Protocol};
-use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult, TaskStatus};
+use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult};
 use crate::utils;
 use async_trait::async_trait;
 use log::info;
@@ -221,20 +221,6 @@ impl DecryptTask {
 
 #[async_trait]
 impl Task for DecryptTask {
-    fn get_status(&self) -> TaskStatus {
-        match &self.result {
-            Some(Err(e)) => TaskStatus::Failed(e.clone()),
-            Some(Ok(_)) => TaskStatus::Finished,
-            None => {
-                if self.protocol.round() == 0 {
-                    TaskStatus::Created
-                } else {
-                    TaskStatus::Running(self.protocol.round())
-                }
-            }
-        }
-    }
-
     fn get_type(&self) -> TaskType {
         TaskType::Decrypt
     }

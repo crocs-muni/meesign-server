@@ -9,7 +9,7 @@ use crate::protocols::frost::FROSTSign;
 use crate::protocols::gg18::GG18Sign;
 use crate::protocols::musig2::MuSig2Sign;
 use crate::protocols::{create_threshold_protocol, Protocol};
-use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult, TaskStatus};
+use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult};
 use crate::utils;
 use async_trait::async_trait;
 use log::{info, warn};
@@ -241,20 +241,6 @@ impl SignTask {
 
 #[async_trait]
 impl Task for SignTask {
-    fn get_status(&self) -> TaskStatus {
-        match &self.result {
-            Some(Err(e)) => TaskStatus::Failed(e.clone()),
-            Some(Ok(_)) => TaskStatus::Finished,
-            None => {
-                if self.protocol.round() == 0 {
-                    TaskStatus::Created
-                } else {
-                    TaskStatus::Running(self.protocol.round())
-                }
-            }
-        }
-    }
-
     fn get_type(&self) -> TaskType {
         TaskType::SignChallenge
     }

@@ -6,7 +6,7 @@ use crate::persistence::PersistenceError;
 use crate::persistence::Task as TaskModel;
 use crate::proto::{KeyType, ProtocolType, TaskType};
 use crate::protocols::{create_keygen_protocol, Protocol};
-use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult, TaskStatus};
+use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult};
 use crate::utils;
 use async_trait::async_trait;
 use log::{info, warn};
@@ -277,20 +277,6 @@ impl GroupTask {
 
 #[async_trait]
 impl Task for GroupTask {
-    fn get_status(&self) -> TaskStatus {
-        match &self.result {
-            Some(Err(e)) => TaskStatus::Failed(e.clone()),
-            Some(Ok(_)) => TaskStatus::Finished,
-            None => {
-                if self.protocol.round() == 0 && !self.certificates_sent {
-                    TaskStatus::Created
-                } else {
-                    TaskStatus::Running(self.protocol.round() + 1)
-                }
-            }
-        }
-    }
-
     fn get_type(&self) -> TaskType {
         TaskType::Group
     }

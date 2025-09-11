@@ -4,7 +4,7 @@ use crate::group::Group;
 use crate::persistence::{Participant, Task as TaskModel};
 use crate::proto::TaskType;
 use crate::tasks::sign::SignTask;
-use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult, TaskStatus};
+use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult};
 use async_trait::async_trait;
 use lazy_static::lazy_static;
 use log::{error, info, warn};
@@ -145,10 +145,6 @@ impl SignPDFTask {
 
 #[async_trait]
 impl Task for SignPDFTask {
-    fn get_status(&self) -> TaskStatus {
-        self.sign_task.get_status()
-    }
-
     fn get_type(&self) -> TaskType {
         TaskType::SignPdf
     }

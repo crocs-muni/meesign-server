@@ -37,15 +37,6 @@ pub enum RestartUpdate {
     Started(RoundUpdate),
 }
 
-#[derive(Clone, PartialEq, Eq)]
-pub enum TaskStatus {
-    Created,
-    Running(u16),
-    // round
-    Finished,
-    Failed(String),
-}
-
 #[derive(Clone)]
 pub enum TaskResult {
     GroupEstablished(Group),
@@ -67,7 +58,6 @@ impl TaskResult {
 
 #[async_trait]
 pub trait Task: Send + Sync {
-    fn get_status(&self) -> TaskStatus;
     fn get_type(&self) -> crate::proto::TaskType;
     async fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>>;
     async fn get_decisions(&self) -> (u32, u32);

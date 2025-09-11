@@ -15,7 +15,7 @@ use crate::tasks::decrypt::DecryptTask;
 use crate::tasks::group::GroupTask;
 use crate::tasks::sign::SignTask;
 use crate::tasks::sign_pdf::SignPDFTask;
-use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult, TaskStatus};
+use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult};
 use crate::{get_timestamp, utils};
 use tokio::sync::mpsc::Sender;
 use tonic::codegen::Arc;
@@ -249,18 +249,21 @@ impl State {
     pub async fn get_active_device_tasks(&self, device: &[u8]) -> Result<Vec<TaskModel>, Error> {
         let task_models = self.get_repo().get_active_device_tasks(device).await?;
         let tasks = self.tasks_from_task_models(task_models.clone()).await?;
-        let mut filtered_tasks = Vec::new();
         // TODO: Filter in DB, do not hydrate tasks here
-        for task in tasks.into_iter() {
-            if task.get_status() != TaskStatus::Finished
-                || (task.get_status() == TaskStatus::Finished
-                    && !task.device_acknowledged(device).await)
-            {
-                let task_model = task_models
-                    .iter()
-                    .find(|task_model| task_model.id == *task.get_id())
-                    .unwrap();
-                filtered_tasks.push(task_model.clone());
+        let mut filtered_tasks = Vec::new();
+        for (task_model, task) in task_models.into_iter().zip(tasks.into_iter()) {
+            let result = task_model
+                .result
+                .clone()
+                .map(|res| res.try_into_result())
+                .transpose()?;
+            let active = match result {
+                None => true,
+                Some(Ok(_)) => !task.device_acknowledged(device).await,
+                _ => false,
+            };
+            if active {
+                filtered_tasks.push(task_model);
             }
         }
         Ok(filtered_tasks)
@@ -479,16 +482,21 @@ impl State {
 
     pub async fn get_tasks_for_restart(&self) -> Result<Vec<Uuid>, Error> {
         let task_models = self.get_tasks().await?;
-        let tasks = self.tasks_from_task_models(task_models).await?;
+        let tasks = self.tasks_from_task_models(task_models.clone()).await?;
         let now = get_timestamp();
 
         let mut restarts = Vec::new();
-        for task in tasks {
-            let task_id = task.get_id();
-            if task.get_status() != TaskStatus::Finished
+        for (task_model, task) in task_models.into_iter().zip(tasks.into_iter()) {
+            let task_id = &task_model.id;
+            let result = task_model
+                .result
+                .map(|res| res.try_into_result())
+                .transpose()?;
+            let last_update = self.get_task_last_update(task_id);
+            let stale = result.is_none()
                 && task.is_approved().await
-                && now.saturating_sub(self.get_task_last_update(task_id)) > 30
-            {
+                && now.saturating_sub(last_update) > 30;
+            if stale {
                 debug!("Stale task detected task_id={:?}", utils::hextrunc(task_id));
                 restarts.push(*task_id);
             }
@@ -728,44 +736,50 @@ impl State {
         let task = match task_model.result.clone() {
             None => {
                 let task = self
-                    .tasks_from_task_models(vec![task_model])
+                    .tasks_from_task_models(vec![task_model.clone()])
                     .await?
                     .pop()
                     .unwrap();
-                match task.get_status() {
-                    TaskStatus::Created => {
-                        let (accept, reject) = task.get_decisions().await;
-                        proto::Task {
-                            id,
-                            r#type,
-                            state: proto::task::TaskState::Created.into(),
-                            round: 0,
-                            accept,
-                            reject,
-                            data: Vec::new(),
-                            request,
-                            attempt,
-                        }
+                if !task.is_approved().await {
+                    let (accept, reject) = task.get_decisions().await;
+                    proto::Task {
+                        id,
+                        r#type,
+                        state: proto::task::TaskState::Created.into(),
+                        round: 0,
+                        accept,
+                        reject,
+                        data: Vec::new(),
+                        request,
+                        attempt,
                     }
-                    TaskStatus::Running(round) => {
-                        let data = if let Some(device_id) = device_id {
-                            task.get_work(device_id).await
-                        } else {
-                            Vec::new()
-                        };
-                        proto::Task {
-                            id,
-                            r#type,
-                            state: proto::task::TaskState::Running.into(),
-                            round: round as u32,
-                            accept: u16::MAX as u32,
-                            reject: u16::MAX as u32,
-                            data,
-                            request,
-                            attempt,
+                } else {
+                    let round = match task_model.task_type {
+                        TaskType::Group => {
+                            if let Some(true) = task_model.group_certificates_sent {
+                                task_model.protocol_round as u32 + 1
+                            } else {
+                                0
+                            }
                         }
+                        _ => task_model.protocol_round as u32,
+                    };
+                    let data = if let Some(device_id) = device_id {
+                        task.get_work(device_id).await
+                    } else {
+                        Vec::new()
+                    };
+                    proto::Task {
+                        id,
+                        r#type,
+                        state: proto::task::TaskState::Running.into(),
+                        round,
+                        accept: u16::MAX as u32,
+                        reject: u16::MAX as u32,
+                        data,
+                        request,
+                        attempt,
                     }
-                    _ => unreachable!(),
                 }
             }
             Some(result) => match result.try_into_result()? {
