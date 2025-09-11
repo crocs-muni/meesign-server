@@ -270,14 +270,6 @@ impl Task for SignTask {
             .get_messages(device_id.unwrap())
     }
 
-    fn get_result(&self) -> Option<TaskResult> {
-        if let Some(Ok(signature)) = &self.result {
-            Some(TaskResult::Signed(signature.clone()))
-        } else {
-            None
-        }
-    }
-
     async fn get_decisions(&self) -> (u32, u32) {
         (
             self.communicator.read().await.accept_count(),

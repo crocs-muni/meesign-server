@@ -6,12 +6,11 @@ use uuid::Uuid;
 
 use crate::communicator::Communicator;
 use crate::error::Error;
-use crate::interfaces::grpc::format_task;
 use crate::persistence::{
     Device, DeviceKind, Group, NameValidator, Participant, PersistenceError, Repository,
     Task as TaskModel, TaskType,
 };
-use crate::proto::{KeyType, ProtocolType};
+use crate::proto::{self, KeyType, ProtocolType};
 use crate::tasks::decrypt::DecryptTask;
 use crate::tasks::group::GroupTask;
 use crate::tasks::sign::SignTask;
@@ -247,20 +246,21 @@ impl State {
         Ok(created_task.id)
     }
 
-    pub async fn get_active_device_tasks(
-        &self,
-        device: &[u8],
-    ) -> Result<Vec<Box<dyn Task>>, Error> {
+    pub async fn get_active_device_tasks(&self, device: &[u8]) -> Result<Vec<TaskModel>, Error> {
         let task_models = self.get_repo().get_active_device_tasks(device).await?;
-        let tasks = self.tasks_from_task_models(task_models).await?;
+        let tasks = self.tasks_from_task_models(task_models.clone()).await?;
         let mut filtered_tasks = Vec::new();
-        // TODO: can we simplify the condition so that we can filter it in DB? Maybe store task acknowledgements in task_participant
+        // TODO: Filter in DB, do not hydrate tasks here
         for task in tasks.into_iter() {
             if task.get_status() != TaskStatus::Finished
                 || (task.get_status() == TaskStatus::Finished
                     && !task.device_acknowledged(device).await)
             {
-                filtered_tasks.push(task as Box<dyn Task>);
+                let task_model = task_models
+                    .iter()
+                    .find(|task_model| task_model.id == *task.get_id())
+                    .unwrap();
+                filtered_tasks.push(task_model.clone());
             }
         }
         Ok(filtered_tasks)
@@ -302,21 +302,15 @@ impl State {
         Ok(self.get_repo().get_groups().await?)
     }
 
-    pub async fn get_tasks(&self) -> Result<Vec<Box<dyn Task + Send + Sync>>, Error> {
-        let task_models = self.get_repo().get_tasks().await?;
-        self.tasks_from_task_models(task_models).await
+    pub async fn get_tasks(&self) -> Result<Vec<TaskModel>, Error> {
+        Ok(self.repo.get_tasks().await?)
     }
 
-    pub async fn get_task(&self, task_id: &Uuid) -> Result<Box<dyn Task>, Error> {
-        let Some(model) = self.repo.get_task(task_id).await? else {
+    pub async fn get_task(&self, task_id: &Uuid) -> Result<TaskModel, Error> {
+        let Some(task_model) = self.repo.get_task(task_id).await? else {
             return Err(Error::GeneralProtocolError("Invalid task id".into()));
         };
-        let task = self
-            .tasks_from_task_models(vec![model])
-            .await?
-            .pop()
-            .unwrap();
-        Ok(task)
+        Ok(task_model)
     }
 
     pub async fn update_task(
@@ -326,7 +320,12 @@ impl State {
         data: &Vec<Vec<u8>>,
         attempt: u32,
     ) -> Result<(), Error> {
-        let mut task = self.get_task(task_id).await?;
+        let task_model = self.get_task(task_id).await?;
+        let mut task = self
+            .tasks_from_task_models(vec![task_model])
+            .await?
+            .pop()
+            .unwrap();
         self.set_task_last_update(task_id);
         if attempt != task.get_attempts() {
             warn!(
@@ -382,7 +381,12 @@ impl State {
         device: &[u8],
         decision: bool,
     ) -> Result<(), Error> {
-        let mut task = self.get_task(task_id).await?;
+        let task_model = self.get_task(task_id).await?;
+        let mut task = self
+            .tasks_from_task_models(vec![task_model])
+            .await?
+            .pop()
+            .unwrap();
         self.set_task_last_update(task_id);
         let decision_update = task.decide(device, decision).await?;
         self.repo
@@ -427,14 +431,24 @@ impl State {
     }
 
     pub async fn acknowledge_task(&mut self, task_id: &Uuid, device: &[u8]) -> Result<(), Error> {
-        let mut task = self.get_task(task_id).await?;
+        let task_model = self.get_task(task_id).await?;
+        let mut task = self
+            .tasks_from_task_models(vec![task_model])
+            .await?
+            .pop()
+            .unwrap();
         task.acknowledge(device).await;
         self.repo.set_task_acknowledgement(task_id, device).await?;
         Ok(())
     }
 
     pub async fn restart_task(&mut self, task_id: &Uuid) -> Result<bool, Error> {
-        let mut task = self.get_task(task_id).await?;
+        let task_model = self.get_task(task_id).await?;
+        let mut task = self
+            .tasks_from_task_models(vec![task_model])
+            .await?
+            .pop()
+            .unwrap();
         self.set_task_last_update(task_id);
 
         match task.restart().await? {
@@ -463,6 +477,25 @@ impl State {
         }
     }
 
+    pub async fn get_tasks_for_restart(&self) -> Result<Vec<Uuid>, Error> {
+        let task_models = self.get_tasks().await?;
+        let tasks = self.tasks_from_task_models(task_models).await?;
+        let now = get_timestamp();
+
+        let mut restarts = Vec::new();
+        for task in tasks {
+            let task_id = task.get_id();
+            if task.get_status() != TaskStatus::Finished
+                && task.is_approved().await
+                && now.saturating_sub(self.get_task_last_update(task_id)) > 30
+            {
+                debug!("Stale task detected task_id={:?}", utils::hextrunc(task_id));
+                restarts.push(*task_id);
+            }
+        }
+        Ok(restarts)
+    }
+
     pub fn add_subscriber(
         &mut self,
         device_id: Vec<u8>,
@@ -484,14 +517,22 @@ impl State {
     }
 
     pub async fn send_updates(&mut self, task_id: &Uuid) -> Result<(), Error> {
-        let task = self.get_task(task_id).await?;
+        let Some(task_model) = self.repo.get_task(task_id).await? else {
+            return Err(Error::GeneralProtocolError("Invalid task id".into()));
+        };
+        let task = self
+            .tasks_from_task_models(vec![task_model.clone()])
+            .await?
+            .pop()
+            .unwrap();
         let mut remove = Vec::new();
 
         for participant in task.get_participants() {
             let device_id = participant.device.identifier();
             if let Some(tx) = self.subscribers.get(device_id) {
-                let result =
-                    tx.try_send(Ok(format_task(task_id, &*task, Some(device_id), None).await));
+                let result = tx.try_send(Ok(self
+                    .format_task(task_model.clone(), Some(device_id), None)
+                    .await?));
 
                 if result.is_err() {
                     debug!(
@@ -671,5 +712,89 @@ impl State {
             .task_last_updates
             .entry(task_id.clone())
             .or_insert(get_timestamp())
+    }
+
+    pub async fn format_task(
+        &self,
+        task_model: TaskModel,
+        device_id: Option<&[u8]>,
+        request: Option<Vec<u8>>,
+    ) -> Result<proto::Task, Error> {
+        let request = request.map(Vec::from);
+        let id = task_model.id.as_bytes().to_vec();
+        let r#type: proto::TaskType = task_model.task_type.clone().into();
+        let r#type = r#type.into();
+        let attempt = task_model.attempt_count as u32;
+        let task = match task_model.result.clone() {
+            None => {
+                let task = self
+                    .tasks_from_task_models(vec![task_model])
+                    .await?
+                    .pop()
+                    .unwrap();
+                match task.get_status() {
+                    TaskStatus::Created => {
+                        let (accept, reject) = task.get_decisions().await;
+                        proto::Task {
+                            id,
+                            r#type,
+                            state: proto::task::TaskState::Created.into(),
+                            round: 0,
+                            accept,
+                            reject,
+                            data: Vec::new(),
+                            request,
+                            attempt,
+                        }
+                    }
+                    TaskStatus::Running(round) => proto::Task {
+                        id,
+                        r#type,
+                        state: proto::task::TaskState::Running.into(),
+                        round: round as u32,
+                        accept: u16::MAX as u32,
+                        reject: u16::MAX as u32,
+                        data: task.get_work(device_id).await,
+                        request,
+                        attempt,
+                    },
+                    _ => unreachable!(),
+                }
+            }
+            Some(result) => match result.try_into_result()? {
+                Ok(result) => proto::Task {
+                    id,
+                    r#type,
+                    state: proto::task::TaskState::Finished.into(),
+                    round: u16::MAX as u32,
+                    accept: u16::MAX as u32,
+                    reject: u16::MAX as u32,
+                    data: vec![result],
+                    request,
+                    attempt,
+                },
+                Err(reason) => {
+                    let round = task_model.protocol_round as u32;
+                    let task = self
+                        .tasks_from_task_models(vec![task_model])
+                        .await?
+                        .pop()
+                        .unwrap();
+                    let (accept, reject) = task.get_decisions().await;
+                    proto::Task {
+                        id,
+                        r#type,
+                        state: proto::task::TaskState::Failed.into(),
+                        round,
+                        accept,
+                        reject,
+                        data: vec![reason.into_bytes()],
+                        request,
+                        attempt,
+                    }
+                }
+            },
+        };
+        Ok(task)
     }
 }

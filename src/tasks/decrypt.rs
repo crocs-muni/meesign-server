@@ -250,14 +250,6 @@ impl Task for DecryptTask {
             .get_messages(device_id.unwrap())
     }
 
-    fn get_result(&self) -> Option<TaskResult> {
-        if let Some(Ok(decrypted)) = &self.result {
-            Some(TaskResult::Decrypted(decrypted.clone()))
-        } else {
-            None
-        }
-    }
-
     async fn get_decisions(&self) -> (u32, u32) {
         (
             self.communicator.read().await.accept_count(),

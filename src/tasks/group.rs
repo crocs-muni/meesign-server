@@ -306,14 +306,6 @@ impl Task for GroupTask {
             .get_messages(device_id.unwrap())
     }
 
-    fn get_result(&self) -> Option<TaskResult> {
-        if let Some(Ok(group)) = &self.result {
-            Some(TaskResult::GroupEstablished(group.clone()))
-        } else {
-            None
-        }
-    }
-
     async fn get_decisions(&self) -> (u32, u32) {
         let communicator = self.communicator.read().await;
         (communicator.accept_count(), communicator.reject_count())

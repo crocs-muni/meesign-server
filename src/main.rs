@@ -72,6 +72,17 @@ mod proto {
         }
     }
 
+    impl Into<TaskType> for crate::persistence::TaskType {
+        fn into(self) -> TaskType {
+            match self {
+                Self::Group => TaskType::Group,
+                Self::SignChallenge => TaskType::SignChallenge,
+                Self::SignPdf => TaskType::SignPdf,
+                Self::Decrypt => TaskType::Decrypt,
+            }
+        }
+    }
+
     impl Into<DeviceKind> for crate::persistence::DeviceKind {
         fn into(self) -> DeviceKind {
             match self {

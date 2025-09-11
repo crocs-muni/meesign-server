@@ -157,14 +157,6 @@ impl Task for SignPDFTask {
         self.sign_task.get_work(device_id).await
     }
 
-    fn get_result(&self) -> Option<TaskResult> {
-        if let Some(Ok(signature)) = &self.result {
-            Some(TaskResult::SignedPdf(signature.clone()))
-        } else {
-            None
-        }
-    }
-
     async fn get_decisions(&self) -> (u32, u32) {
         self.sign_task.get_decisions().await
     }

@@ -1,4 +1,3 @@
-use futures::future;
 use log::{debug, error, info, warn};
 use openssl::asn1::{Asn1Integer, Asn1Time};
 use openssl::bn::BigNum;
@@ -21,7 +20,6 @@ use uuid::Uuid;
 use crate::persistence::DeviceKind;
 use crate::proto::{Group, KeyType, MeeSign, MeeSignServer, ProtocolType};
 use crate::state::State;
-use crate::tasks::{Task, TaskStatus};
 use crate::{proto as msg, utils, CA_CERT, CA_KEY};
 
 use std::pin::Pin;
@@ -119,10 +117,9 @@ impl MeeSign for MeeSignService {
 
         let mut state = self.state.lock().await;
         let task_id = state.add_sign_task(&group_id, &name, &data).await?;
-        let task = state.get_task(&task_id).await?;
-        Ok(Response::new(
-            format_task(&task_id, &*task, None, None).await,
-        ))
+        let task_model = state.get_task(&task_id).await?;
+        let task = state.format_task(task_model, None, None).await?;
+        Ok(Response::new(task))
     }
 
     async fn decrypt(
@@ -142,10 +139,9 @@ impl MeeSign for MeeSignService {
         let task_id = state
             .add_decrypt_task(&group_id, &name, &data, &data_type)
             .await?;
-        let task = state.get_task(&task_id).await?;
-        Ok(Response::new(
-            format_task(&task_id, &*task, None, None).await,
-        ))
+        let task_model = state.get_task(&task_id).await?;
+        let task = state.format_task(task_model, None, None).await?;
+        Ok(Response::new(task))
     }
 
     async fn get_task(
@@ -172,11 +168,11 @@ impl MeeSign for MeeSignService {
         if device_id.is_some() {
             state.activate_device(device_id.unwrap());
         }
-        let task = state.get_task(&task_id).await?;
-        let request = Some(task.get_request());
+        let task_model = state.get_task(&task_id).await?;
+        let request = Some(task_model.request.clone());
 
-        let resp = format_task(&task_id, &*task, device_id, request).await;
-        Ok(Response::new(resp))
+        let task = state.format_task(task_model, device_id, request).await?;
+        Ok(Response::new(task))
     }
 
     async fn update_task(
@@ -246,27 +242,21 @@ impl MeeSign for MeeSignService {
         debug!("TasksRequest device_id={}", device_str);
 
         let state = self.state.lock().await;
-        let tasks = if let Some(device_id) = device_id {
-            state.activate_device(&device_id);
-            future::join_all(
-                state
-                    .get_active_device_tasks(&device_id)
-                    .await?
-                    .iter()
-                    .map(|task| format_task(task.get_id(), task.as_ref(), Some(&device_id), None)),
-            )
-            .await
+
+        let task_models = if let Some(device_id) = &device_id {
+            state.activate_device(device_id);
+            state.get_active_device_tasks(device_id).await?
         } else {
-            future::join_all(
-                state
-                    .get_tasks()
-                    .await?
-                    .iter()
-                    .map(|task| format_task(task.get_id(), task.as_ref(), None, None)),
-            )
-            .await
+            state.get_tasks().await?
         };
 
+        let mut tasks = Vec::new();
+        for task_model in task_models {
+            let task = state
+                .format_task(task_model, device_id.as_deref(), None)
+                .await?;
+            tasks.push(task);
+        }
         Ok(Response::new(msg::Tasks { tasks }))
     }
 
@@ -349,10 +339,9 @@ impl MeeSign for MeeSignService {
             Ok(task_id) => {
                 state.send_updates(&task_id).await?;
                 // TODO: use group task
-                let task = state.get_task(&task_id).await?;
-                Ok(Response::new(
-                    format_task(&task_id, &*task, None, None).await,
-                ))
+                let task_model = state.get_task(&task_id).await?;
+                let task = state.format_task(task_model, None, None).await?;
+                Ok(Response::new(task))
             }
             Err(err) => {
                 error!("{}", err);
@@ -509,52 +498,6 @@ impl MeeSign for MeeSignService {
         self.state.lock().await.add_subscriber(device_id, tx);
 
         Ok(Response::new(Box::pin(ReceiverStream::new(rx))))
-    }
-}
-
-pub async fn format_task(
-    task_id: &Uuid,
-    task: &dyn Task,
-    device_id: Option<&[u8]>,
-    request: Option<&[u8]>,
-) -> msg::Task {
-    let task_status = task.get_status();
-
-    let (task_status, round, data) = match task_status {
-        TaskStatus::Created => (
-            msg::task::TaskState::Created,
-            0,
-            task.get_work(device_id).await,
-        ),
-        TaskStatus::Running(round) => (
-            msg::task::TaskState::Running,
-            round,
-            task.get_work(device_id).await,
-        ),
-        TaskStatus::Finished => (
-            msg::task::TaskState::Finished,
-            u16::MAX,
-            vec![task.get_result().unwrap().as_bytes().to_vec()],
-        ),
-        TaskStatus::Failed(data) => (
-            msg::task::TaskState::Failed,
-            u16::MAX,
-            vec![data.as_bytes().to_vec()],
-        ),
-    };
-
-    let (accept, reject) = task.get_decisions().await;
-
-    msg::Task {
-        id: task_id.as_bytes().to_vec(),
-        r#type: task.get_type() as i32,
-        state: task_status as i32,
-        round: round.into(),
-        accept,
-        reject,
-        data,
-        request: request.map(Vec::from),
-        attempt: task.get_attempts(),
     }
 }
 

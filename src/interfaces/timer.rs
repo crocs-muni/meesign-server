@@ -1,7 +1,6 @@
 use crate::error::Error;
 use crate::state::State;
-use crate::tasks::TaskStatus;
-use crate::{get_timestamp, utils};
+use crate::utils;
 
 use log::debug;
 use tokio::sync::MutexGuard;
@@ -19,19 +18,7 @@ pub async fn run_timer(state: Arc<Mutex<State>>) -> Result<(), String> {
 }
 
 async fn check_tasks(state: &mut MutexGuard<'_, State>) -> Result<(), Error> {
-    let mut restarts = Vec::new();
-    let timestamp = get_timestamp();
-    for task in state.get_tasks().await? {
-        let task_id = task.get_id();
-        if task.get_status() != TaskStatus::Finished
-            && task.is_approved().await
-            && timestamp.saturating_sub(state.get_task_last_update(task_id)) > 30
-        {
-            debug!("Stale task detected task_id={:?}", utils::hextrunc(task_id));
-            restarts.push(*task_id);
-        }
-    }
-    for task_id in restarts {
+    for task_id in state.get_tasks_for_restart().await? {
         state.restart_task(&task_id).await?;
     }
     Ok(())
