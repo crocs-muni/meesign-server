@@ -63,16 +63,10 @@ pub trait Task: Send + Sync {
     fn get_round(&self) -> u16;
     async fn get_decisions(&self) -> (u32, u32);
     /// Update protocol state with `data` from `device_id`
-    ///
-    /// # Returns
-    /// `Ok(true)` if this update caused the next round to start; `Ok(false)` otherwise.
     async fn update(&mut self, device_id: &[u8], data: &Vec<Vec<u8>>)
         -> Result<RoundUpdate, Error>;
 
     /// Attempt to restart protocol in task
-    ///
-    /// # Returns
-    /// Ok(true) if task restarted successfully; Ok(false) otherwise.
     async fn restart(&mut self) -> Result<RestartUpdate, Error>;
 
     /// True if the task has been approved
@@ -82,11 +76,6 @@ pub trait Task: Send + Sync {
     async fn waiting_for(&self, device_id: &[u8]) -> bool;
 
     /// Store `decision` by `device_id`
-    ///
-    /// # Returns
-    /// `Some(true)` if this decision caused the protocol to start;
-    /// `Some(false)` if this decision caused the protocol to fail;
-    /// `None` otherwise.
     async fn decide(&mut self, device_id: &[u8], decision: bool) -> Result<DecisionUpdate, Error>;
 
     async fn acknowledge(&mut self, device_id: &[u8]);

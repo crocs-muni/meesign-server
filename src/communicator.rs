@@ -29,10 +29,10 @@ pub struct Communicator {
 }
 
 impl Communicator {
-    /// Constructs a new Communicator instance with given Devices, threshold and ProtocolType
+    /// Constructs a new Communicator instance with given Participants, threshold, ProtocolType, decisions and acknowledgements
     ///
     /// # Arguments
-    /// * `devices` - Sorted list of devices; items of the list need to be unique
+    /// * `participants` - List of distinct participants sorted by device id
     /// * `threshold` - The minimal number of devices to successfully complete the task
     pub fn new(
         participants: Vec<Participant>,
