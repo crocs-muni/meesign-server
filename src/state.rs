@@ -493,10 +493,10 @@ impl State {
         let Some(task_model) = self.repo.get_task(task_id).await? else {
             return Err(Error::GeneralProtocolError("Invalid task id".into()));
         };
-        let task = self.task_from_task_model(task_model.clone()).await?;
+        let participants = self.repo.get_task_participants(task_id).await?;
         let mut remove = Vec::new();
 
-        for participant in task.get_participants() {
+        for participant in participants {
             let device_id = participant.device.identifier();
             if let Some(tx) = self.subscribers.get(device_id) {
                 let result = tx.try_send(Ok(self
