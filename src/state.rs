@@ -730,17 +730,7 @@ impl State {
                 let task = self.task_from_task_model(task_model.clone()).await?;
                 if !task.is_approved().await {
                     let (accept, reject) = task.get_decisions().await;
-                    proto::Task {
-                        id,
-                        r#type,
-                        state: proto::task::TaskState::Created.into(),
-                        round: 0,
-                        accept,
-                        reject,
-                        data: Vec::new(),
-                        request,
-                        attempt,
-                    }
+                    proto::Task::created(id, r#type, accept, reject, request, attempt)
                 } else {
                     let round = match task_model.task_type {
                         TaskType::Group => {
@@ -757,46 +747,16 @@ impl State {
                     } else {
                         Vec::new()
                     };
-                    proto::Task {
-                        id,
-                        r#type,
-                        state: proto::task::TaskState::Running.into(),
-                        round,
-                        accept: u16::MAX as u32,
-                        reject: u16::MAX as u32,
-                        data,
-                        request,
-                        attempt,
-                    }
+                    proto::Task::running(id, r#type, round, data, request, attempt)
                 }
             }
             Some(result) => match result.try_into_result()? {
-                Ok(result) => proto::Task {
-                    id,
-                    r#type,
-                    state: proto::task::TaskState::Finished.into(),
-                    round: u16::MAX as u32,
-                    accept: u16::MAX as u32,
-                    reject: u16::MAX as u32,
-                    data: vec![result],
-                    request,
-                    attempt,
-                },
+                Ok(result) => proto::Task::finished(id, r#type, result, request, attempt),
                 Err(reason) => {
                     let round = task_model.protocol_round as u32;
                     let task = self.task_from_task_model(task_model).await?;
                     let (accept, reject) = task.get_decisions().await;
-                    proto::Task {
-                        id,
-                        r#type,
-                        state: proto::task::TaskState::Failed.into(),
-                        round,
-                        accept,
-                        reject,
-                        data: vec![reason.into_bytes()],
-                        request,
-                        attempt,
-                    }
+                    proto::Task::failed(id, r#type, round, accept, reject, reason, request, attempt)
                 }
             },
         };

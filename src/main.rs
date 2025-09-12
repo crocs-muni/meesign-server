@@ -92,6 +92,90 @@ mod proto {
         }
     }
 
+    impl Task {
+        pub fn created(
+            id: Vec<u8>,
+            r#type: i32,
+            accept: u32,
+            reject: u32,
+            request: Option<Vec<u8>>,
+            attempt: u32,
+        ) -> Self {
+            Self {
+                id,
+                r#type,
+                state: task::TaskState::Created.into(),
+                round: 0,
+                accept,
+                reject,
+                data: Vec::new(),
+                request,
+                attempt,
+            }
+        }
+        pub fn running(
+            id: Vec<u8>,
+            r#type: i32,
+            round: u32,
+            data: Vec<Vec<u8>>,
+            request: Option<Vec<u8>>,
+            attempt: u32,
+        ) -> Self {
+            Self {
+                id,
+                r#type,
+                state: task::TaskState::Running.into(),
+                round,
+                accept: u16::MAX as u32,
+                reject: u16::MAX as u32,
+                data,
+                request,
+                attempt,
+            }
+        }
+        pub fn finished(
+            id: Vec<u8>,
+            r#type: i32,
+            result: Vec<u8>,
+            request: Option<Vec<u8>>,
+            attempt: u32,
+        ) -> Self {
+            Self {
+                id,
+                r#type,
+                state: task::TaskState::Finished.into(),
+                round: u16::MAX as u32,
+                accept: u16::MAX as u32,
+                reject: u16::MAX as u32,
+                data: vec![result],
+                request,
+                attempt,
+            }
+        }
+        pub fn failed(
+            id: Vec<u8>,
+            r#type: i32,
+            round: u32,
+            accept: u32,
+            reject: u32,
+            reason: String,
+            request: Option<Vec<u8>>,
+            attempt: u32,
+        ) -> Self {
+            Self {
+                id,
+                r#type,
+                state: task::TaskState::Failed.into(),
+                round,
+                accept,
+                reject,
+                data: vec![reason.into_bytes()],
+                request,
+                attempt,
+            }
+        }
+    }
+
     impl Group {
         pub fn from_model(model: GroupModel) -> Self {
             let protocol: crate::proto::ProtocolType = model.protocol.into();
