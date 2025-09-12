@@ -175,7 +175,6 @@ mod proto {
         pub fn failed(
             id: Vec<u8>,
             r#type: i32,
-            round: u32,
             reason: String,
             request: Option<Vec<u8>>,
             attempt: u32,
@@ -184,7 +183,7 @@ mod proto {
                 id,
                 r#type,
                 state: task::TaskState::Failed.into(),
-                round,
+                round: u32::MAX,
                 accept: u32::MAX,
                 reject: 0,
                 data: vec![reason.into_bytes()],

@@ -898,14 +898,7 @@ impl State {
                 request,
                 attempt,
             ),
-            Task::Failed(task) => proto::Task::failed(
-                id,
-                r#type,
-                task_model.protocol_round as u32,
-                task.reason,
-                request,
-                attempt,
-            ),
+            Task::Failed(task) => proto::Task::failed(id, r#type, task.reason, request, attempt),
             Task::Declined(task) => {
                 proto::Task::declined(id, r#type, task.accepts, task.rejects, request, attempt)
             }
