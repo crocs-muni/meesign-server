@@ -324,11 +324,7 @@ impl State {
         attempt: u32,
     ) -> Result<(), Error> {
         let task_model = self.get_task(task_id).await?;
-        let mut task = self
-            .tasks_from_task_models(vec![task_model])
-            .await?
-            .pop()
-            .unwrap();
+        let mut task = self.task_from_task_model(task_model).await?;
         self.set_task_last_update(task_id);
         if attempt != task.get_attempts() {
             warn!(
@@ -385,11 +381,7 @@ impl State {
         decision: bool,
     ) -> Result<(), Error> {
         let task_model = self.get_task(task_id).await?;
-        let mut task = self
-            .tasks_from_task_models(vec![task_model])
-            .await?
-            .pop()
-            .unwrap();
+        let mut task = self.task_from_task_model(task_model).await?;
         self.set_task_last_update(task_id);
         let decision_update = task.decide(device, decision).await?;
         self.repo
@@ -435,11 +427,7 @@ impl State {
 
     pub async fn acknowledge_task(&mut self, task_id: &Uuid, device: &[u8]) -> Result<(), Error> {
         let task_model = self.get_task(task_id).await?;
-        let mut task = self
-            .tasks_from_task_models(vec![task_model])
-            .await?
-            .pop()
-            .unwrap();
+        let mut task = self.task_from_task_model(task_model).await?;
         task.acknowledge(device).await;
         self.repo.set_task_acknowledgement(task_id, device).await?;
         Ok(())
@@ -447,11 +435,7 @@ impl State {
 
     pub async fn restart_task(&mut self, task_id: &Uuid) -> Result<bool, Error> {
         let task_model = self.get_task(task_id).await?;
-        let mut task = self
-            .tasks_from_task_models(vec![task_model])
-            .await?
-            .pop()
-            .unwrap();
+        let mut task = self.task_from_task_model(task_model).await?;
         self.set_task_last_update(task_id);
 
         match task.restart().await? {
@@ -528,11 +512,7 @@ impl State {
         let Some(task_model) = self.repo.get_task(task_id).await? else {
             return Err(Error::GeneralProtocolError("Invalid task id".into()));
         };
-        let task = self
-            .tasks_from_task_models(vec![task_model.clone()])
-            .await?
-            .pop()
-            .unwrap();
+        let task = self.task_from_task_model(task_model.clone()).await?;
         let mut remove = Vec::new();
 
         for participant in task.get_participants() {
@@ -591,6 +571,18 @@ impl State {
         }
         .clone();
         Ok(communicator)
+    }
+
+    async fn task_from_task_model(
+        &self,
+        task_model: TaskModel,
+    ) -> Result<Box<dyn Task + Send + Sync>, Error> {
+        let task = self
+            .tasks_from_task_models(vec![task_model])
+            .await?
+            .pop()
+            .unwrap();
+        Ok(task)
     }
 
     async fn tasks_from_task_models(
@@ -735,11 +727,7 @@ impl State {
         let attempt = task_model.attempt_count as u32;
         let task = match task_model.result.clone() {
             None => {
-                let task = self
-                    .tasks_from_task_models(vec![task_model.clone()])
-                    .await?
-                    .pop()
-                    .unwrap();
+                let task = self.task_from_task_model(task_model.clone()).await?;
                 if !task.is_approved().await {
                     let (accept, reject) = task.get_decisions().await;
                     proto::Task {
@@ -796,11 +784,7 @@ impl State {
                 },
                 Err(reason) => {
                     let round = task_model.protocol_round as u32;
-                    let task = self
-                        .tasks_from_task_models(vec![task_model])
-                        .await?
-                        .pop()
-                        .unwrap();
+                    let task = self.task_from_task_model(task_model).await?;
                     let (accept, reject) = task.get_decisions().await;
                     proto::Task {
                         id,
