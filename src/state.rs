@@ -66,7 +66,7 @@ impl State {
         protocol_type: ProtocolType,
         key_type: KeyType,
         note: Option<String>,
-    ) -> Result<Uuid, Error> {
+    ) -> Result<Task, Error> {
         if !name.is_name_valid() {
             error!("Group request with invalid group name {}", name);
             return Err(Error::GeneralProtocolError(format!(
@@ -125,8 +125,7 @@ impl State {
             .iter()
             .map(|participant| (participant.device.id.as_slice(), participant.shares))
             .collect();
-        let task_model = self
-            .repo
+        self.repo
             .create_group_task(
                 Some(&task.task_info.id),
                 &participant_ids_shares,
@@ -138,9 +137,9 @@ impl State {
             )
             .await?;
 
-        let task = self.task_from_task_model(task_model).await?;
+        let task = Task::Voting(task);
         self.send_updates(&task).await?;
-        Ok(task.task_info().id)
+        Ok(task)
     }
 
     pub async fn add_sign_task(
@@ -148,7 +147,7 @@ impl State {
         group_id: &[u8],
         name: &str,
         data: &[u8],
-    ) -> Result<Uuid, Error> {
+    ) -> Result<Task, Error> {
         let group = self.get_repo().get_group(group_id).await?;
         let Some(group) = group else {
             warn!(
@@ -206,10 +205,7 @@ impl State {
             running_task_context,
         };
 
-        let task = self.add_threshold_task(task).await?;
-        self.send_updates(&task).await?;
-
-        Ok(task.task_info().id)
+        self.add_threshold_task(task).await
     }
 
     pub async fn add_decrypt_task(
@@ -218,7 +214,7 @@ impl State {
         name: &str,
         data: &[u8],
         data_type: &str,
-    ) -> Result<Uuid, Error> {
+    ) -> Result<Task, Error> {
         let group: Option<Group> = self.get_repo().get_group(group_id).await?;
         let Some(group) = group else {
             warn!(
@@ -270,9 +266,7 @@ impl State {
             running_task_context,
         };
 
-        let task = self.add_threshold_task(task).await?;
-        self.send_updates(&task).await?;
-        Ok(task.task_info().id)
+        self.add_threshold_task(task).await
     }
 
     async fn add_threshold_task(&mut self, task: VotingTask) -> Result<Task, Error> {
@@ -282,7 +276,7 @@ impl State {
             .iter()
             .map(|participant| (participant.device.id.as_slice(), participant.shares))
             .collect();
-        let (task_type, group, data) = match task.running_task_context {
+        let (task_type, group, data) = match &task.running_task_context {
             RunningTaskContext::Group { .. } => unreachable!(),
             RunningTaskContext::SignChallenge { group, data } => {
                 (TaskType::SignChallenge, group, data)
@@ -290,8 +284,7 @@ impl State {
             RunningTaskContext::SignPdf { group, data } => (TaskType::SignPdf, group, data),
             RunningTaskContext::Decrypt { group, data, .. } => (TaskType::Decrypt, group, data),
         };
-        let task_model = self
-            .repo
+        self.repo
             .create_threshold_task(
                 Some(&task.task_info.id),
                 group.identifier(),
@@ -305,7 +298,9 @@ impl State {
                 task.task_info.protocol_type.into(),
             )
             .await?;
-        let task = self.task_from_task_model(task_model).await?;
+
+        let task = Task::Voting(task);
+        self.send_updates(&task).await?;
         Ok(task)
     }
 
@@ -353,11 +348,16 @@ impl State {
         Ok(self.repo.get_tasks().await?)
     }
 
-    pub async fn get_task(&self, task_id: &Uuid) -> Result<TaskModel, Error> {
+    pub async fn get_task(&self, task_id: &Uuid) -> Result<Task, Error> {
         let Some(task_model) = self.repo.get_task(task_id).await? else {
             return Err(Error::GeneralProtocolError("Invalid task id".into()));
         };
-        Ok(task_model)
+        let task = self
+            .tasks_from_task_models(vec![task_model])
+            .await?
+            .pop()
+            .unwrap();
+        Ok(task)
     }
 
     pub async fn update_task(
@@ -367,9 +367,7 @@ impl State {
         data: &Vec<Vec<u8>>,
         attempt: u32,
     ) -> Result<(), Error> {
-        let task_model = self.get_task(task_id).await?;
-        let task = self.task_from_task_model(task_model).await?;
-        let Task::Running(mut task) = task else {
+        let Task::Running(mut task) = self.get_task(task_id).await? else {
             return Err(Error::GeneralProtocolError(
                 "Cannot update non-running task".into(),
             ));
@@ -432,9 +430,7 @@ impl State {
         device_id: &[u8],
         accept: bool,
     ) -> Result<(), Error> {
-        let task_model = self.get_task(task_id).await?;
-        let task = self.task_from_task_model(task_model).await?;
-        let Task::Voting(task) = task else {
+        let Task::Voting(task) = self.get_task(task_id).await? else {
             return Err(Error::GeneralProtocolError(
                 "Cannot decide non-voting task".into(),
             ));
@@ -499,9 +495,7 @@ impl State {
     }
 
     pub async fn acknowledge_task(&mut self, task_id: &Uuid, device: &[u8]) -> Result<(), Error> {
-        let task_model = self.get_task(task_id).await?;
-        let task = self.task_from_task_model(task_model).await?;
-        let Task::Finished(mut task) = task else {
+        let Task::Finished(mut task) = self.get_task(task_id).await? else {
             return Err(Error::GeneralProtocolError(
                 "Cannot acknowledge unfinished task".into(),
             ));
@@ -512,9 +506,7 @@ impl State {
     }
 
     pub async fn restart_task(&mut self, task_id: &Uuid) -> Result<bool, Error> {
-        let task_model = self.get_task(task_id).await?;
-        let task = self.task_from_task_model(task_model).await?;
-        let Task::Running(mut task) = task else {
+        let Task::Running(mut task) = self.get_task(task_id).await? else {
             // NOTE: Only running tasks can be restarted
             return Ok(false);
         };
@@ -641,15 +633,6 @@ impl State {
         }
         .clone();
         Ok(communicator)
-    }
-
-    pub async fn task_from_task_model(&self, task_model: TaskModel) -> Result<Task, Error> {
-        let task = self
-            .tasks_from_task_models(vec![task_model])
-            .await?
-            .pop()
-            .unwrap();
-        Ok(task)
     }
 
     pub async fn tasks_from_task_models(

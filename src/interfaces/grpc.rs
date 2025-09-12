@@ -20,6 +20,7 @@ use uuid::Uuid;
 use crate::persistence::DeviceKind;
 use crate::proto::{Group, KeyType, MeeSign, MeeSignServer, ProtocolType};
 use crate::state::State;
+use crate::tasks::Task;
 use crate::{proto as msg, utils, CA_CERT, CA_KEY};
 
 use std::pin::Pin;
@@ -116,9 +117,7 @@ impl MeeSign for MeeSignService {
         info!("SignRequest group_id={}", utils::hextrunc(&group_id));
 
         let mut state = self.state.lock().await;
-        let task_id = state.add_sign_task(&group_id, &name, &data).await?;
-        let task_model = state.get_task(&task_id).await?;
-        let task = state.task_from_task_model(task_model).await?;
+        let task = state.add_sign_task(&group_id, &name, &data).await?;
         let task = state.format_task(&task, None, None).await?;
         Ok(Response::new(task))
     }
@@ -137,11 +136,9 @@ impl MeeSign for MeeSignService {
         info!("DecryptRequest group_id={}", utils::hextrunc(&group_id));
 
         let mut state = self.state.lock().await;
-        let task_id = state
+        let task = state
             .add_decrypt_task(&group_id, &name, &data, &data_type)
             .await?;
-        let task_model = state.get_task(&task_id).await?;
-        let task = state.task_from_task_model(task_model).await?;
         let task = state.format_task(&task, None, None).await?;
         Ok(Response::new(task))
     }
@@ -170,9 +167,14 @@ impl MeeSign for MeeSignService {
         if device_id.is_some() {
             state.activate_device(device_id.unwrap());
         }
-        let task_model = state.get_task(&task_id).await?;
-        let request = Some(task_model.request.clone());
-        let task = state.task_from_task_model(task_model).await?;
+        let task = state.get_task(&task_id).await?;
+        let request = if let Task::Voting(task) = &task {
+            Some(task.request.clone())
+        } else {
+            return Err(Status::failed_precondition(
+                "get_task only responds on tasks in their voting phase",
+            ));
+        };
         let task = state.format_task(&task, device_id, request).await?;
         Ok(Response::new(task))
     }
@@ -340,10 +342,7 @@ impl MeeSign for MeeSignService {
             )
             .await
         {
-            Ok(task_id) => {
-                let task_model = state.get_task(&task_id).await?;
-                let task = state.task_from_task_model(task_model).await?;
-                state.send_updates(&task).await?;
+            Ok(task) => {
                 let task = state.format_task(&task, None, None).await?;
                 Ok(Response::new(task))
             }
