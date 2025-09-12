@@ -10,7 +10,7 @@ use self::{
     device::{add_device, get_devices, get_devices_with_ids},
     group::get_group,
     task::{
-        get_device_tasks, get_task_acknowledgements, get_task_decisions, get_tasks,
+        get_active_device_tasks, get_task_acknowledgements, get_task_decisions, get_tasks,
         increment_task_attempt_count, set_task_acknowledgement, set_task_decision,
         set_task_group_certificates_sent, set_task_result, set_task_round,
     },
@@ -289,7 +289,7 @@ impl Repository {
         identifier: &[u8],
     ) -> Result<Vec<Task>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
-        get_device_tasks(connection, identifier).await
+        get_active_device_tasks(connection, identifier).await
     }
 
     pub async fn set_task_decision(

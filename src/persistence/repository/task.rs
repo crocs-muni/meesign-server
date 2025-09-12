@@ -1,7 +1,6 @@
 use diesel::result::Error::NotFound;
-use diesel::ExpressionMethods;
-use diesel::NullableExpressionMethods;
 use diesel::{pg::Pg, QueryDsl};
+use diesel::{BoolExpressionMethods, ExpressionMethods, NullableExpressionMethods};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -208,7 +207,7 @@ where
     Ok(tasks)
 }
 
-pub async fn get_device_tasks<Conn>(
+pub async fn get_active_device_tasks<Conn>(
     connection: &mut Conn,
     identifier: &[u8],
 ) -> Result<Vec<Task>, PersistenceError>
@@ -219,6 +218,13 @@ where
         .left_outer_join(task_result::table)
         .inner_join(task_participant::table)
         .filter(task_participant::device_id.eq(identifier))
+        .filter(
+            task_result::is_successful
+                .is_null()
+                .or(task_participant::acknowledgment
+                    .is_null()
+                    .or(task_participant::acknowledgment.eq(false))),
+        )
         .select(task_model_columns!())
         .order_by(task::id.asc())
         .load(connection)

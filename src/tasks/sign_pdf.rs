@@ -223,10 +223,6 @@ impl Task for SignPDFTask {
         self.sign_task.acknowledge(device_id).await;
     }
 
-    async fn device_acknowledged(&self, device_id: &[u8]) -> bool {
-        self.sign_task.device_acknowledged(device_id).await
-    }
-
     fn get_request(&self) -> &[u8] {
         self.sign_task.get_request()
     }

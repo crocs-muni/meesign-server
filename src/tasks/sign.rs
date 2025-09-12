@@ -326,13 +326,6 @@ impl Task for SignTask {
         self.communicator.write().await.acknowledge(device_id);
     }
 
-    async fn device_acknowledged(&self, device_id: &[u8]) -> bool {
-        self.communicator
-            .read()
-            .await
-            .device_acknowledged(device_id)
-    }
-
     fn get_request(&self) -> &[u8] {
         &self.request
     }

@@ -247,26 +247,7 @@ impl State {
     }
 
     pub async fn get_active_device_tasks(&self, device: &[u8]) -> Result<Vec<TaskModel>, Error> {
-        let task_models = self.get_repo().get_active_device_tasks(device).await?;
-        let tasks = self.tasks_from_task_models(task_models.clone()).await?;
-        // TODO: Filter in DB, do not hydrate tasks here
-        let mut filtered_tasks = Vec::new();
-        for (task_model, task) in task_models.into_iter().zip(tasks.into_iter()) {
-            let result = task_model
-                .result
-                .clone()
-                .map(|res| res.try_into_result())
-                .transpose()?;
-            let active = match result {
-                None => true,
-                Some(Ok(_)) => !task.device_acknowledged(device).await,
-                _ => false,
-            };
-            if active {
-                filtered_tasks.push(task_model);
-            }
-        }
-        Ok(filtered_tasks)
+        Ok(self.get_repo().get_active_device_tasks(device).await?)
     }
 
     pub fn activate_device(&self, device_id: &[u8]) {

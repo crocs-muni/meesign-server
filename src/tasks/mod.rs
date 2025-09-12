@@ -90,7 +90,6 @@ pub trait Task: Send + Sync {
     async fn decide(&mut self, device_id: &[u8], decision: bool) -> Result<DecisionUpdate, Error>;
 
     async fn acknowledge(&mut self, device_id: &[u8]);
-    async fn device_acknowledged(&self, device_id: &[u8]) -> bool;
     fn get_request(&self) -> &[u8];
 
     fn get_attempts(&self) -> u32;
