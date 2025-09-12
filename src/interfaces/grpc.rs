@@ -41,7 +41,7 @@ impl MeeSignService {
     ) -> Result<(), Status> {
         if let Some(certs) = certs {
             let device_id = certs.get(0).map(cert_to_id).unwrap_or(vec![]);
-            if !self.state.lock().await.device_exists(&device_id).await? {
+            if !self.state.lock().await.device_exists(&device_id) {
                 return Err(Status::unauthenticated("Unknown device certificate"));
             }
         } else if required {
@@ -367,7 +367,6 @@ impl MeeSign for MeeSignService {
                 .lock()
                 .await
                 .get_devices()
-                .await?
                 .into_iter()
                 .map(|(device, last_active)| msg::Device {
                     identifier: device.id,

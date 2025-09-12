@@ -263,8 +263,11 @@ async fn main() -> Result<(), String> {
         .await
         .expect("Coudln't init postgres repo");
     repo.apply_migrations().expect("Couldn't apply migrations");
+    let state = State::restore(Arc::new(repo))
+        .await
+        .expect("Couldn't initialize State");
     // TODO: remove mutex when DB done
-    let state = Arc::new(Mutex::new(State::new(Arc::new(repo))));
+    let state = Arc::new(Mutex::new(state));
 
     let grpc = interfaces::grpc::run_grpc(state.clone(), &args.addr, args.port);
     let timer = interfaces::timer::run_timer(state);

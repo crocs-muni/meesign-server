@@ -27,6 +27,7 @@ use tonic::Status;
 
 pub struct State {
     // tasks: HashMap<Uuid, Box<dyn Task + Send + Sync>>,
+    devices: DashMap<Vec<u8>, Device>,
     subscribers: DashMap<Vec<u8>, Sender<Result<crate::proto::Task, Status>>>,
     repo: Arc<Repository>,
     communicators: DashMap<Uuid, Arc<RwLock<Communicator>>>,
@@ -35,15 +36,22 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(repo: Arc<Repository>) -> Self {
-        State {
+    pub async fn restore(repo: Arc<Repository>) -> Result<Self, Error> {
+        let devices = repo
+            .get_devices()
+            .await?
+            .into_iter()
+            .map(|dev| (dev.id.clone(), dev))
+            .collect();
+        Ok(State {
             // tasks: HashMap::new(),
+            devices,
             subscribers: DashMap::new(),
             repo,
             communicators: DashMap::default(),
             task_last_updates: DashMap::new(),
             device_last_activations: DashMap::new(),
-        }
+        })
     }
 
     pub async fn add_device(
@@ -53,10 +61,12 @@ impl State {
         kind: &DeviceKind,
         certificate: &[u8],
     ) -> Result<Device, Error> {
-        Ok(self
+        let device = self
             .get_repo()
             .add_device(identifier, name, kind, certificate)
-            .await?)
+            .await?;
+        self.devices.insert(device.id.clone(), device.clone());
+        Ok(device)
     }
     pub async fn add_group_task(
         &mut self,
@@ -79,9 +89,7 @@ impl State {
         }
         let device_ids: Vec<&[u8]> = shares.keys().cloned().collect();
         let participants = self
-            .get_repo()
             .get_devices_with_ids(&device_ids)
-            .await?
             .into_iter()
             .map(|device| {
                 let shares = shares[device.id.as_slice()];
@@ -313,27 +321,28 @@ impl State {
             .insert(device_id.to_vec(), get_timestamp());
     }
 
-    pub async fn device_exists(&self, device_id: &[u8]) -> Result<bool, Error> {
-        // TODO: Optimize query / cache devices in State
-        let devices = self.repo.get_devices_with_ids(&[device_id]).await?;
-        Ok(devices.len() == 1 && devices[0].id == device_id)
+    pub fn device_exists(&self, device_id: &[u8]) -> bool {
+        self.devices.contains_key(device_id)
     }
 
-    pub async fn get_devices(&self) -> Result<Vec<(Device, u64)>, Error> {
-        let devices = self
-            .get_repo()
-            .get_devices()
-            .await?
-            .into_iter()
-            .map(|dev| {
+    pub fn get_devices(&self) -> Vec<(Device, u64)> {
+        self.devices
+            .iter()
+            .map(|entry| {
                 let last_active = *self
                     .device_last_activations
-                    .entry(dev.id.clone())
-                    .or_insert(get_timestamp());
-                (dev, last_active)
+                    .entry(entry.key().clone())
+                    .or_insert(get_timestamp()); // TODO: Assume inactive device?
+                (entry.value().clone(), last_active)
             })
-            .collect();
-        Ok(devices)
+            .collect()
+    }
+
+    fn get_devices_with_ids(&self, device_ids: &[&[u8]]) -> Vec<Device> {
+        device_ids
+            .into_iter()
+            .filter_map(|device_id| self.devices.get(*device_id).map(|dev| dev.clone()))
+            .collect()
     }
 
     pub async fn get_device_groups(&self, device: &[u8]) -> Result<Vec<Group>, Error> {
