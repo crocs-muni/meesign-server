@@ -118,7 +118,8 @@ impl MeeSign for MeeSignService {
         let mut state = self.state.lock().await;
         let task_id = state.add_sign_task(&group_id, &name, &data).await?;
         let task_model = state.get_task(&task_id).await?;
-        let task = state.format_task(task_model, None, None).await?;
+        let task = state.task_from_task_model(task_model).await?;
+        let task = state.format_task(&task, None, None).await?;
         Ok(Response::new(task))
     }
 
@@ -140,7 +141,8 @@ impl MeeSign for MeeSignService {
             .add_decrypt_task(&group_id, &name, &data, &data_type)
             .await?;
         let task_model = state.get_task(&task_id).await?;
-        let task = state.format_task(task_model, None, None).await?;
+        let task = state.task_from_task_model(task_model).await?;
+        let task = state.format_task(&task, None, None).await?;
         Ok(Response::new(task))
     }
 
@@ -170,8 +172,8 @@ impl MeeSign for MeeSignService {
         }
         let task_model = state.get_task(&task_id).await?;
         let request = Some(task_model.request.clone());
-
-        let task = state.format_task(task_model, device_id, request).await?;
+        let task = state.task_from_task_model(task_model).await?;
+        let task = state.format_task(&task, device_id, request).await?;
         Ok(Response::new(task))
     }
 
@@ -250,14 +252,16 @@ impl MeeSign for MeeSignService {
             state.get_tasks().await?
         };
 
-        let mut tasks = Vec::new();
-        for task_model in task_models {
-            let task = state
-                .format_task(task_model, device_id.as_deref(), None)
-                .await?;
-            tasks.push(task);
+        let tasks = state.tasks_from_task_models(task_models).await?;
+
+        let mut formatted_tasks = Vec::new();
+        for task in tasks {
+            let task = state.format_task(&task, device_id.as_deref(), None).await?;
+            formatted_tasks.push(task);
         }
-        Ok(Response::new(msg::Tasks { tasks }))
+        Ok(Response::new(msg::Tasks {
+            tasks: formatted_tasks,
+        }))
     }
 
     async fn get_groups(
@@ -337,10 +341,10 @@ impl MeeSign for MeeSignService {
             .await
         {
             Ok(task_id) => {
-                state.send_updates(&task_id).await?;
-                // TODO: use group task
                 let task_model = state.get_task(&task_id).await?;
-                let task = state.format_task(task_model, None, None).await?;
+                let task = state.task_from_task_model(task_model).await?;
+                state.send_updates(&task).await?;
+                let task = state.format_task(&task, None, None).await?;
                 Ok(Response::new(task))
             }
             Err(err) => {

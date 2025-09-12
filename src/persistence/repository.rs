@@ -16,7 +16,7 @@ use self::{
     },
 };
 use self::{
-    device::{get_group_participants, get_task_participants, get_tasks_participants},
+    device::{get_group_participants, get_tasks_participants},
     task::{create_group_task, create_task},
 };
 use self::{
@@ -117,14 +117,6 @@ impl Repository {
     ) -> Result<Vec<Participant>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         get_group_participants(connection, group_id).await
-    }
-
-    pub async fn get_task_participants(
-        &self,
-        task_id: &Uuid,
-    ) -> Result<Vec<Participant>, PersistenceError> {
-        let connection = &mut self.get_async_connection().await?;
-        get_task_participants(connection, task_id).await
     }
 
     pub async fn get_tasks_participants(

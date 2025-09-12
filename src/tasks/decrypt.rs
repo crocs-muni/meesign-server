@@ -20,7 +20,6 @@ pub struct DecryptTask {
     communicator: Arc<RwLock<Communicator>>,
     pub(super) data: Vec<u8>,
     pub(super) protocol: Box<dyn Protocol + Send + Sync>,
-    pub(super) attempts: u32,
 }
 
 impl DecryptTask {
@@ -46,7 +45,6 @@ impl DecryptTask {
             communicator,
             data,
             protocol: Box::new(ElgamalDecrypt::new()),
-            attempts: 0,
         })
     }
 
@@ -72,7 +70,6 @@ impl DecryptTask {
             communicator,
             data,
             protocol,
-            attempts: task_model.attempt_count as u32,
         };
         Ok(task)
     }
@@ -94,7 +91,10 @@ impl DecryptTask {
             .finalize(&mut *self.communicator.write().await);
         if decrypted.is_none() {
             let reason = "Task failed (data not output)".to_string();
-            return Ok(RoundUpdate::Failed(FailedTask { reason }));
+            return Ok(RoundUpdate::Failed(FailedTask {
+                task_info: self.task_info.clone(),
+                reason,
+            }));
         }
         let decrypted = decrypted.unwrap();
 
@@ -106,7 +106,7 @@ impl DecryptTask {
         self.communicator.write().await.clear_input();
         Ok(RoundUpdate::Finished(
             self.protocol.round(),
-            FinishedTask::new(TaskResult::Decrypted(decrypted)),
+            FinishedTask::new(self.task_info.clone(), TaskResult::Decrypted(decrypted)),
         ))
     }
 
@@ -151,12 +151,16 @@ impl DecryptTask {
     }
 
     fn increment_attempt_count(&mut self) {
-        self.attempts += 1;
+        self.task_info.attempts += 1;
     }
 }
 
 #[async_trait]
 impl RunningTask for DecryptTask {
+    fn task_info(&self) -> &TaskInfo {
+        &self.task_info
+    }
+
     async fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>> {
         if !self.waiting_for(device_id).await {
             return Vec::new();
@@ -193,10 +197,6 @@ impl RunningTask for DecryptTask {
 
     async fn waiting_for(&self, device: &[u8]) -> bool {
         self.communicator.read().await.waiting_for(device)
-    }
-
-    fn get_attempts(&self) -> u32 {
-        self.attempts
     }
 
     fn get_communicator(&self) -> Arc<RwLock<Communicator>> {

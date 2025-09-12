@@ -21,7 +21,6 @@ pub struct GroupTask {
     threshold: u32,
     communicator: Arc<RwLock<Communicator>>,
     protocol: Box<dyn Protocol + Send + Sync>,
-    attempts: u32,
     note: Option<String>,
     certificates_sent: bool, // TODO: remove the field completely
 }
@@ -70,7 +69,6 @@ impl GroupTask {
             threshold,
             communicator,
             protocol,
-            attempts: 0,
             note,
             certificates_sent: false,
         })
@@ -100,14 +98,13 @@ impl GroupTask {
             threshold: model.threshold as u32,
             communicator,
             protocol,
-            attempts: model.attempt_count as u32,
             note: model.note,
             certificates_sent, // TODO: remove the field completely
         })
     }
 
     fn increment_attempt_count(&mut self) {
-        self.attempts += 1;
+        self.task_info.attempts += 1;
     }
 
     async fn start_task(&mut self) -> Result<RoundUpdate, Error> {
@@ -127,7 +124,10 @@ impl GroupTask {
             .finalize(&mut *self.communicator.write().await);
         let Some(identifier) = identifier else {
             let reason = "Task failed (group key not output)".to_string();
-            return Ok(RoundUpdate::Failed(FailedTask { reason }));
+            return Ok(RoundUpdate::Failed(FailedTask {
+                task_info: self.task_info.clone(),
+                reason,
+            }));
         };
         // TODO
         let certificate = if self.protocol.get_type() == ProtocolType::Gg18 {
@@ -160,7 +160,7 @@ impl GroupTask {
         self.communicator.write().await.clear_input();
         Ok(RoundUpdate::Finished(
             self.protocol.round(),
-            FinishedTask::new(TaskResult::GroupEstablished(group)),
+            FinishedTask::new(self.task_info.clone(), TaskResult::GroupEstablished(group)),
         ))
     }
 
@@ -208,6 +208,10 @@ impl GroupTask {
 
 #[async_trait]
 impl RunningTask for GroupTask {
+    fn task_info(&self) -> &TaskInfo {
+        &self.task_info
+    }
+
     async fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>> {
         if !self.waiting_for(device_id).await {
             return Vec::new();
@@ -269,10 +273,6 @@ impl RunningTask for GroupTask {
 
     async fn waiting_for(&self, device: &[u8]) -> bool {
         self.communicator.write().await.waiting_for(device)
-    }
-
-    fn get_attempts(&self) -> u32 {
-        self.attempts
     }
 
     fn get_communicator(&self) -> Arc<RwLock<Communicator>> {

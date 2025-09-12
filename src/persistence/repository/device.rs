@@ -60,28 +60,6 @@ where
     Ok(devices)
 }
 
-pub async fn get_task_participants<Conn>(
-    connection: &mut Conn,
-    task_id: &Uuid,
-) -> Result<Vec<Participant>, PersistenceError>
-where
-    Conn: AsyncConnection<Backend = Pg>,
-{
-    let devices = task_participant::table
-        .inner_join(device::table)
-        .filter(task_participant::task_id.eq(task_id))
-        .select((Device::as_returning(), task_participant::shares))
-        .load::<(Device, i32)>(connection)
-        .await?
-        .into_iter()
-        .map(|(device, shares)| Participant {
-            device,
-            shares: shares as u32,
-        })
-        .collect();
-    Ok(devices)
-}
-
 pub async fn get_tasks_participants<Conn>(
     connection: &mut Conn,
     task_ids: &[Uuid],

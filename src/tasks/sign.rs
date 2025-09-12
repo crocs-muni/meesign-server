@@ -24,7 +24,6 @@ pub struct SignTask {
     pub(super) data: Vec<u8>,
     preprocessed: Option<Vec<u8>>,
     pub(super) protocol: Box<dyn Protocol + Send + Sync>,
-    pub(super) attempts: u32,
 }
 
 impl SignTask {
@@ -60,7 +59,6 @@ impl SignTask {
                     return Err("Unsupported protocol type for signing".into());
                 }
             },
-            attempts: 0,
         })
     }
 
@@ -88,7 +86,6 @@ impl SignTask {
             data,
             protocol,
             preprocessed: task_model.preprocessed,
-            attempts: task_model.attempt_count as u32,
         };
         Ok(task)
     }
@@ -121,7 +118,10 @@ impl SignTask {
             .finalize(&mut *self.communicator.write().await);
         if signature.is_none() {
             let reason = "Task failed (signature not output)".to_string();
-            return Ok(RoundUpdate::Failed(FailedTask { reason }));
+            return Ok(RoundUpdate::Failed(FailedTask {
+                task_info: self.task_info.clone(),
+                reason,
+            }));
         }
         let signature = signature.unwrap();
 
@@ -133,7 +133,7 @@ impl SignTask {
         self.communicator.write().await.clear_input();
         Ok(RoundUpdate::Finished(
             self.protocol.round(),
-            FinishedTask::new(TaskResult::Signed(signature)),
+            FinishedTask::new(self.task_info.clone(), TaskResult::Signed(signature)),
         ))
     }
 
@@ -178,12 +178,16 @@ impl SignTask {
     }
 
     pub fn increment_attempt_count(&mut self) {
-        self.attempts += 1;
+        self.task_info.attempts += 1;
     }
 }
 
 #[async_trait]
 impl RunningTask for SignTask {
+    fn task_info(&self) -> &TaskInfo {
+        &self.task_info
+    }
+
     async fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>> {
         if !self.waiting_for(device_id).await {
             return Vec::new();
@@ -220,10 +224,6 @@ impl RunningTask for SignTask {
 
     async fn waiting_for(&self, device: &[u8]) -> bool {
         self.communicator.read().await.waiting_for(device)
-    }
-
-    fn get_attempts(&self) -> u32 {
-        self.attempts
     }
 
     fn get_communicator(&self) -> Arc<RwLock<Communicator>> {

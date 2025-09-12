@@ -58,13 +58,19 @@ impl SignPDFTask {
         if file.is_err() {
             error!("Could not create temporary file");
             let reason = "Task failed (server error)".to_string();
-            return Ok(RoundUpdate::Failed(FailedTask { reason }));
+            return Ok(RoundUpdate::Failed(FailedTask {
+                task_info: self.task_info().clone(),
+                reason,
+            }));
         }
         let mut file = file.unwrap();
         if file.write_all(&self.sign_task.data).is_err() {
             error!("Could not write in temporary file");
             let reason = "Task failed (server error)".to_string();
-            return Ok(RoundUpdate::Failed(FailedTask { reason }));
+            return Ok(RoundUpdate::Failed(FailedTask {
+                task_info: self.task_info().clone(),
+                reason,
+            }));
         }
 
         let pdfhelper = Command::new("java")
@@ -79,7 +85,10 @@ impl SignPDFTask {
         if pdfhelper.is_err() {
             error!("Could not start PDFHelper");
             let reason = "Task failed (server error)".to_string();
-            return Ok(RoundUpdate::Failed(FailedTask { reason }));
+            return Ok(RoundUpdate::Failed(FailedTask {
+                task_info: self.task_info().clone(),
+                reason,
+            }));
         }
         let mut pdfhelper = pdfhelper.unwrap();
 
@@ -89,7 +98,10 @@ impl SignPDFTask {
         );
         if hash.is_empty() {
             let reason = "Task failed (invalid PDF)".to_string();
-            return Ok(RoundUpdate::Failed(FailedTask { reason }));
+            return Ok(RoundUpdate::Failed(FailedTask {
+                task_info: self.task_info().clone(),
+                reason,
+            }));
         }
         PDF_HELPERS
             .lock()
@@ -137,14 +149,14 @@ impl SignPDFTask {
             self.finalize_task().await
         }
     }
-
-    fn task_info(&self) -> &TaskInfo {
-        &self.sign_task.task_info
-    }
 }
 
 #[async_trait]
 impl RunningTask for SignPDFTask {
+    fn task_info(&self) -> &TaskInfo {
+        &self.sign_task.task_info
+    }
+
     async fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>> {
         self.sign_task.get_work(device_id).await
     }
@@ -180,10 +192,6 @@ impl RunningTask for SignPDFTask {
 
     async fn waiting_for(&self, device: &[u8]) -> bool {
         self.sign_task.waiting_for(device).await
-    }
-
-    fn get_attempts(&self) -> u32 {
-        self.sign_task.get_attempts()
     }
 
     fn get_communicator(&self) -> Arc<RwLock<Communicator>> {

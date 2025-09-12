@@ -14,7 +14,7 @@ use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::group::Group;
 use crate::persistence::Participant;
-use crate::proto::{KeyType, ProtocolType};
+use crate::proto::{KeyType, ProtocolType, TaskType};
 
 #[must_use = "updates must be persisted"]
 pub enum RoundUpdate {
@@ -83,7 +83,11 @@ impl VotingTask {
                 .await?;
             DecisionUpdate::Accepted(running_task)
         } else if rejects >= self.reject_threshold() {
-            DecisionUpdate::Declined(DeclinedTask { accepts, rejects })
+            DecisionUpdate::Declined(DeclinedTask {
+                task_info: self.task_info,
+                accepts,
+                rejects,
+            })
         } else {
             DecisionUpdate::Undecided(self)
         };
@@ -107,16 +111,19 @@ impl VotingTask {
     }
 }
 pub struct DeclinedTask {
+    pub task_info: TaskInfo,
     pub accepts: u32,
     pub rejects: u32,
 }
 pub struct FinishedTask {
+    pub task_info: TaskInfo,
     pub result: TaskResult,
     pub acknowledgements: HashSet<Vec<u8>>,
 }
 impl FinishedTask {
-    pub fn new(result: TaskResult) -> Self {
+    pub fn new(task_info: TaskInfo, result: TaskResult) -> Self {
         Self {
+            task_info,
             result,
             acknowledgements: HashSet::new(),
         }
@@ -127,6 +134,7 @@ impl FinishedTask {
     }
 }
 pub struct FailedTask {
+    pub task_info: TaskInfo,
     pub reason: String,
 }
 
@@ -138,12 +146,27 @@ pub enum Task {
     Failed(FailedTask),
 }
 
+impl Task {
+    pub fn task_info(&self) -> &TaskInfo {
+        match self {
+            Task::Voting(task) => &task.task_info,
+            Task::Running(task) => task.task_info(),
+            Task::Declined(task) => &task.task_info,
+            Task::Finished(task) => &task.task_info,
+            Task::Failed(task) => &task.task_info,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct TaskInfo {
     pub id: Uuid,
     pub name: String,
+    pub task_type: TaskType,
     pub protocol_type: ProtocolType,
     pub key_type: KeyType,
     pub participants: Vec<Participant>,
+    pub attempts: u32,
 }
 impl TaskInfo {
     pub fn total_shares(&self) -> u32 {
@@ -153,6 +176,8 @@ impl TaskInfo {
 
 #[async_trait]
 pub trait RunningTask: Send + Sync {
+    fn task_info(&self) -> &TaskInfo;
+
     async fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>>;
 
     fn get_round(&self) -> u16;
@@ -168,7 +193,6 @@ pub trait RunningTask: Send + Sync {
 
     async fn waiting_for(&self, device_id: &[u8]) -> bool;
 
-    fn get_attempts(&self) -> u32;
     fn get_communicator(&self) -> Arc<RwLock<Communicator>>;
 }
 
