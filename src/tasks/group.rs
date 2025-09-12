@@ -289,6 +289,14 @@ impl Task for GroupTask {
         self.communicator.read().await.get_messages(device_id)
     }
 
+    fn get_round(&self) -> u16 {
+        if !self.certificates_sent {
+            0
+        } else {
+            self.protocol.round() + 1
+        }
+    }
+
     async fn get_decisions(&self) -> (u32, u32) {
         let communicator = self.communicator.read().await;
         (communicator.accept_count(), communicator.reject_count())

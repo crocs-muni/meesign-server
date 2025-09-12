@@ -60,6 +60,7 @@ impl TaskResult {
 pub trait Task: Send + Sync {
     fn get_type(&self) -> crate::proto::TaskType;
     async fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>>;
+    fn get_round(&self) -> u16;
     async fn get_decisions(&self) -> (u32, u32);
     /// Update protocol state with `data` from `device_id`
     ///

@@ -727,21 +727,12 @@ impl State {
         let attempt = task_model.attempt_count as u32;
         let task = match task_model.result.clone() {
             None => {
-                let task = self.task_from_task_model(task_model.clone()).await?;
+                let task = self.task_from_task_model(task_model).await?;
                 if !task.is_approved().await {
                     let (accept, reject) = task.get_decisions().await;
                     proto::Task::created(id, r#type, accept, reject, request, attempt)
                 } else {
-                    let round = match task_model.task_type {
-                        TaskType::Group => {
-                            if let Some(true) = task_model.group_certificates_sent {
-                                task_model.protocol_round as u32 + 1
-                            } else {
-                                0
-                            }
-                        }
-                        _ => task_model.protocol_round as u32,
-                    };
+                    let round = task.get_round() as u32;
                     let data = if let Some(device_id) = device_id {
                         task.get_work(device_id).await
                     } else {

@@ -153,6 +153,10 @@ impl Task for SignPDFTask {
         self.sign_task.get_work(device_id).await
     }
 
+    fn get_round(&self) -> u16 {
+        self.sign_task.get_round()
+    }
+
     async fn get_decisions(&self) -> (u32, u32) {
         self.sign_task.get_decisions().await
     }

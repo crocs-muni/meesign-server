@@ -233,6 +233,10 @@ impl Task for DecryptTask {
         self.communicator.read().await.get_messages(device_id)
     }
 
+    fn get_round(&self) -> u16 {
+        self.protocol.round()
+    }
+
     async fn get_decisions(&self) -> (u32, u32) {
         (
             self.communicator.read().await.accept_count(),
