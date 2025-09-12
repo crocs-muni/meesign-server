@@ -6,7 +6,7 @@ pub(crate) mod sign_pdf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -14,6 +14,7 @@ use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::group::Group;
 use crate::persistence::Participant;
+use crate::proto::{KeyType, ProtocolType};
 
 #[must_use = "updates must be persisted"]
 pub enum RoundUpdate {
@@ -26,15 +27,9 @@ pub enum RoundUpdate {
 
 #[must_use = "updates must be persisted"]
 pub enum DecisionUpdate {
-    Undecided,
-    Accepted(RoundUpdate),
+    Undecided(VotingTask),
+    Accepted(Box<dyn RunningTask>),
     Declined(DeclinedTask),
-}
-
-#[must_use = "updates must be persisted"]
-pub enum RestartUpdate {
-    Voting,
-    Started(RoundUpdate),
 }
 
 #[derive(Clone)]
@@ -56,6 +51,61 @@ impl TaskResult {
     }
 }
 
+pub struct VotingTask {
+    pub task_info: TaskInfo,
+    pub decisions: HashMap<Vec<u8>, i8>,
+    pub accept_threshold: u32,
+    pub request: Vec<u8>,
+    pub running_task_context: RunningTaskContext,
+}
+impl VotingTask {
+    pub async fn decide(mut self, device_id: &[u8], accept: bool) -> Result<DecisionUpdate, Error> {
+        let shares = self
+            .task_info
+            .participants
+            .iter()
+            .find(|p| p.device.id == device_id)
+            .ok_or(Error::GeneralProtocolError(
+                "Invalid task participant id".into(),
+            ))?
+            .shares as i8;
+        let vote = if accept { shares } else { -shares };
+
+        // TODO: Check if this device has already decided
+        self.decisions.insert(device_id.to_vec(), vote);
+
+        let (accepts, rejects) = Self::accepts_rejects(&self.decisions);
+
+        let decision_update = if accepts >= self.accept_threshold {
+            let running_task = self
+                .running_task_context
+                .create_running_task(self.task_info, self.decisions)
+                .await?;
+            DecisionUpdate::Accepted(running_task)
+        } else if rejects >= self.reject_threshold() {
+            DecisionUpdate::Declined(DeclinedTask { accepts, rejects })
+        } else {
+            DecisionUpdate::Undecided(self)
+        };
+        Ok(decision_update)
+    }
+    pub fn accepts_rejects(decisions: &HashMap<Vec<u8>, i8>) -> (u32, u32) {
+        let mut accepts = 0;
+        let mut rejects = 0;
+        for vote in decisions.values() {
+            if *vote > 0 {
+                accepts += vote.abs() as u32;
+            }
+            if *vote < 0 {
+                rejects += vote.abs() as u32;
+            }
+        }
+        (accepts, rejects)
+    }
+    pub fn reject_threshold(&self) -> u32 {
+        self.task_info.total_shares() - self.accept_threshold + 1
+    }
+}
 pub struct DeclinedTask {
     pub accepts: u32,
     pub rejects: u32,
@@ -72,6 +122,7 @@ impl FinishedTask {
         }
     }
     pub fn acknowledge(&mut self, device_id: &[u8]) {
+        // TODO: Check if device_id is a participant
         self.acknowledgements.insert(device_id.to_vec());
     }
 }
@@ -79,44 +130,86 @@ pub struct FailedTask {
     pub reason: String,
 }
 
-pub enum TaskPhase {
-    Active(Box<dyn ActiveTask + Send + Sync>),
+pub enum Task {
+    Voting(VotingTask),
+    Running(Box<dyn RunningTask + Send + Sync>),
     Declined(DeclinedTask),
     Finished(FinishedTask),
     Failed(FailedTask),
 }
 
-pub struct Task {
-    pub phase: TaskPhase,
+pub struct TaskInfo {
+    pub id: Uuid,
+    pub name: String,
+    pub protocol_type: ProtocolType,
+    pub key_type: KeyType,
+    pub participants: Vec<Participant>,
+}
+impl TaskInfo {
+    pub fn total_shares(&self) -> u32 {
+        self.participants.iter().map(|p| p.shares).sum()
+    }
 }
 
 #[async_trait]
-pub trait ActiveTask: Send + Sync {
-    fn get_type(&self) -> crate::proto::TaskType;
+pub trait RunningTask: Send + Sync {
     async fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>>;
+
     fn get_round(&self) -> u16;
-    async fn get_decisions(&self) -> (u32, u32);
+
+    async fn initialize(&mut self) -> Result<RoundUpdate, Error>;
+
     /// Update protocol state with `data` from `device_id`
     async fn update(&mut self, device_id: &[u8], data: &Vec<Vec<u8>>)
         -> Result<RoundUpdate, Error>;
 
     /// Attempt to restart protocol in task
-    async fn restart(&mut self) -> Result<RestartUpdate, Error>;
+    async fn restart(&mut self) -> Result<RoundUpdate, Error>;
 
-    /// True if the task has been approved
-    async fn is_approved(&self) -> bool;
-
-    fn get_participants(&self) -> &Vec<Participant>;
     async fn waiting_for(&self, device_id: &[u8]) -> bool;
 
-    /// Store `decision` by `device_id`
-    async fn decide(&mut self, device_id: &[u8], decision: bool) -> Result<DecisionUpdate, Error>;
-
-    fn get_request(&self) -> &[u8];
-
     fn get_attempts(&self) -> u32;
-    fn get_id(&self) -> &Uuid;
     fn get_communicator(&self) -> Arc<RwLock<Communicator>>;
-    fn get_threshold(&self) -> u32;
-    fn get_data(&self) -> Option<&[u8]>;
+}
+
+pub enum RunningTaskContext {
+    Group {
+        threshold: u32,
+        note: Option<String>,
+    },
+    SignChallenge {
+        group: Group,
+        data: Vec<u8>,
+    },
+    SignPdf {
+        group: Group,
+        data: Vec<u8>,
+    },
+    Decrypt {
+        group: Group,
+        data: Vec<u8>,
+    },
+}
+impl RunningTaskContext {
+    async fn create_running_task(
+        self,
+        task_info: TaskInfo,
+        decisions: HashMap<Vec<u8>, i8>,
+    ) -> Result<Box<dyn RunningTask>, Error> {
+        let task: Box<dyn RunningTask> = match self {
+            Self::Group { threshold, note } => Box::new(group::GroupTask::try_new(
+                task_info, threshold, note, decisions,
+            )?),
+            Self::SignChallenge { group, data } => {
+                Box::new(sign::SignTask::try_new(task_info, group, data, decisions)?)
+            }
+            Self::SignPdf { group, data } => Box::new(sign_pdf::SignPDFTask::try_new(
+                task_info, group, data, decisions,
+            )?),
+            Self::Decrypt { group, data } => Box::new(decrypt::DecryptTask::try_new(
+                task_info, group, data, decisions,
+            )?),
+        };
+        Ok(task)
+    }
 }

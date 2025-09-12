@@ -1,12 +1,9 @@
 use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::group::Group;
-use crate::persistence::{Participant, Task as TaskModel};
-use crate::proto::TaskType;
+use crate::persistence::Task as TaskModel;
 use crate::tasks::sign::SignTask;
-use crate::tasks::{
-    ActiveTask, DecisionUpdate, DeclinedTask, FailedTask, RestartUpdate, RoundUpdate, TaskResult,
-};
+use crate::tasks::{FailedTask, RoundUpdate, RunningTask, TaskInfo, TaskResult};
 use async_trait::async_trait;
 use lazy_static::lazy_static;
 use log::{error, info, warn};
@@ -27,24 +24,32 @@ pub struct SignPDFTask {
 }
 
 impl SignPDFTask {
-    pub fn try_new(group: Group, name: String, data: Vec<u8>) -> Result<Self, String> {
-        if data.len() > 8 * 1024 * 1024 || name.len() > 256 || name.chars().any(|x| x.is_control())
+    pub fn try_new(
+        task_info: TaskInfo,
+        group: Group,
+        data: Vec<u8>,
+        decisions: HashMap<Vec<u8>, i8>,
+    ) -> Result<Self, String> {
+        if data.len() > 8 * 1024 * 1024
+            || task_info.name.len() > 256
+            || task_info.name.chars().any(|x| x.is_control())
         {
-            warn!("Invalid input name={} len={}", name, data.len());
+            warn!("Invalid input name={} len={}", task_info.name, data.len());
             return Err("Invalid input".to_string());
         }
 
-        let sign_task = SignTask::try_new(group, name, data)?;
+        let sign_task = SignTask::try_new(task_info, group, data, decisions)?;
 
         Ok(SignPDFTask { sign_task })
     }
 
     pub fn from_model(
+        task_info: TaskInfo,
         model: TaskModel,
         communicator: Arc<RwLock<Communicator>>,
         group: Group,
     ) -> Result<Self, Error> {
-        let sign_task = SignTask::from_model(model, communicator, group)?;
+        let sign_task = SignTask::from_model(task_info, model, communicator, group)?;
         Ok(Self { sign_task })
     }
 
@@ -89,7 +94,7 @@ impl SignPDFTask {
         PDF_HELPERS
             .lock()
             .unwrap()
-            .insert(self.get_id().clone(), pdfhelper);
+            .insert(self.task_info().id.clone(), pdfhelper);
         self.sign_task.set_preprocessed(hash);
         self.sign_task.start_task().await
     }
@@ -101,7 +106,11 @@ impl SignPDFTask {
     async fn finalize_task(&mut self) -> Result<RoundUpdate, Error> {
         let round_update = match self.sign_task.finalize_task().await? {
             RoundUpdate::Finished(round, mut task) => {
-                let mut pdfhelper = PDF_HELPERS.lock().unwrap().remove(self.get_id()).unwrap();
+                let mut pdfhelper = PDF_HELPERS
+                    .lock()
+                    .unwrap()
+                    .remove(&self.task_info().id)
+                    .unwrap();
                 let TaskResult::Signed(signature) = task.result else {
                     unreachable!()
                 };
@@ -128,14 +137,14 @@ impl SignPDFTask {
             self.finalize_task().await
         }
     }
+
+    fn task_info(&self) -> &TaskInfo {
+        &self.sign_task.task_info
+    }
 }
 
 #[async_trait]
-impl ActiveTask for SignPDFTask {
-    fn get_type(&self) -> TaskType {
-        TaskType::SignPdf
-    }
-
+impl RunningTask for SignPDFTask {
     async fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>> {
         self.sign_task.get_work(device_id).await
     }
@@ -144,8 +153,8 @@ impl ActiveTask for SignPDFTask {
         self.sign_task.get_round()
     }
 
-    async fn get_decisions(&self) -> (u32, u32) {
-        self.sign_task.get_decisions().await
+    async fn initialize(&mut self) -> Result<RoundUpdate, Error> {
+        self.start_task().await
     }
 
     async fn update(
@@ -161,68 +170,24 @@ impl ActiveTask for SignPDFTask {
         Ok(round_update)
     }
 
-    async fn restart(&mut self) -> Result<RestartUpdate, Error> {
-        if self.is_approved().await {
-            if let Some(mut pdfhelper) = PDF_HELPERS.lock().unwrap().remove(self.get_id()) {
-                pdfhelper.kill().unwrap();
-            }
-            self.sign_task.increment_attempt_count();
-            let round_update = self.start_task().await?;
-            Ok(RestartUpdate::Started(round_update))
-        } else {
-            Ok(RestartUpdate::Voting)
+    async fn restart(&mut self) -> Result<RoundUpdate, Error> {
+        if let Some(mut pdfhelper) = PDF_HELPERS.lock().unwrap().remove(&self.task_info().id) {
+            pdfhelper.kill().unwrap();
         }
-    }
-
-    async fn is_approved(&self) -> bool {
-        self.sign_task.is_approved().await
-    }
-
-    fn get_participants(&self) -> &Vec<Participant> {
-        self.sign_task.get_participants()
+        self.sign_task.increment_attempt_count();
+        self.start_task().await
     }
 
     async fn waiting_for(&self, device: &[u8]) -> bool {
         self.sign_task.waiting_for(device).await
     }
 
-    async fn decide(&mut self, device_id: &[u8], decision: bool) -> Result<DecisionUpdate, Error> {
-        let result = self.sign_task.decide_internal(device_id, decision).await;
-        let decision_update = match result {
-            Some(true) => {
-                let round_update = self.next_round().await?;
-                DecisionUpdate::Accepted(round_update)
-            }
-            Some(false) => {
-                let (accepts, rejects) = self.get_decisions().await;
-                DecisionUpdate::Declined(DeclinedTask { accepts, rejects })
-            }
-            None => DecisionUpdate::Undecided,
-        };
-        Ok(decision_update)
-    }
-
-    fn get_request(&self) -> &[u8] {
-        self.sign_task.get_request()
-    }
-
     fn get_attempts(&self) -> u32 {
         self.sign_task.get_attempts()
     }
 
-    fn get_id(&self) -> &Uuid {
-        self.sign_task.get_id()
-    }
-
     fn get_communicator(&self) -> Arc<RwLock<Communicator>> {
         self.sign_task.get_communicator()
-    }
-
-    fn get_threshold(&self) -> u32 {
-        self.sign_task.get_threshold()
-    }
-    fn get_data(&self) -> Option<&[u8]> {
-        self.sign_task.get_data()
     }
 }
 

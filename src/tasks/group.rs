@@ -1,36 +1,26 @@
 use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::group::Group;
-use crate::persistence::Participant;
 use crate::persistence::PersistenceError;
 use crate::persistence::Task as TaskModel;
-use crate::proto::{KeyType, ProtocolType, TaskType};
+use crate::proto::ProtocolType;
 use crate::protocols::{create_keygen_protocol, Protocol};
-use crate::tasks::{
-    ActiveTask, DecisionUpdate, DeclinedTask, FailedTask, FinishedTask, RestartUpdate, RoundUpdate,
-    TaskResult,
-};
+use crate::tasks::{FailedTask, FinishedTask, RoundUpdate, RunningTask, TaskInfo, TaskResult};
 use crate::utils;
 use async_trait::async_trait;
 use log::{info, warn};
 use meesign_crypto::proto::{ClientMessage, Message as _, ServerMessage};
-use prost::Message as _;
 use std::collections::HashMap;
 use std::io::Read;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use uuid::Uuid;
 
 pub struct GroupTask {
-    name: String,
-    id: Uuid,
+    task_info: TaskInfo,
     threshold: u32,
-    key_type: KeyType,
-    participants: Vec<Participant>,
     communicator: Arc<RwLock<Communicator>>,
     protocol: Box<dyn Protocol + Send + Sync>,
-    request: Vec<u8>,
     attempts: u32,
     note: Option<String>,
     certificates_sent: bool, // TODO: remove the field completely
@@ -38,18 +28,20 @@ pub struct GroupTask {
 
 impl GroupTask {
     pub fn try_new(
-        name: &str,
-        mut participants: Vec<Participant>,
+        mut task_info: TaskInfo,
         threshold: u32,
-        protocol_type: ProtocolType,
-        key_type: KeyType,
         note: Option<String>,
+        decisions: HashMap<Vec<u8>, i8>,
     ) -> Result<Self, String> {
-        let id = Uuid::new_v4();
+        let total_shares = task_info.total_shares();
 
-        let total_shares: u32 = participants.iter().map(|p| p.shares).sum();
-
-        let protocol = create_keygen_protocol(protocol_type, key_type, total_shares, threshold, 0)?;
+        let protocol = create_keygen_protocol(
+            task_info.protocol_type,
+            task_info.key_type,
+            total_shares,
+            threshold,
+            0,
+        )?;
 
         if total_shares < 1 {
             warn!("Invalid number of parties {}", total_shares);
@@ -60,45 +52,24 @@ impl GroupTask {
             return Err("Invalid input".into());
         }
 
-        participants.sort_by(|a, b| a.device.identifier().cmp(b.device.identifier()));
+        task_info
+            .participants
+            .sort_by(|a, b| a.device.identifier().cmp(b.device.identifier()));
 
         let group_task_threshold = total_shares;
 
-        let decisions = participants
-            .iter()
-            .map(|p| (p.device.identifier().clone(), 0))
-            .collect();
-
         let communicator = Arc::new(RwLock::new(Communicator::new(
-            participants.clone(),
+            task_info.participants.clone(),
             group_task_threshold,
-            protocol.get_type(),
+            task_info.protocol_type,
             decisions,
         )));
 
-        let device_ids = participants
-            .iter()
-            .flat_map(|p| std::iter::repeat(p.device.identifier().to_vec()).take(p.shares as usize))
-            .collect();
-        let request = (crate::proto::GroupRequest {
-            device_ids,
-            name: String::from(name),
-            threshold,
-            protocol: protocol.get_type() as i32,
-            key_type: key_type as i32,
-            note: note.to_owned(),
-        })
-        .encode_to_vec();
-
         Ok(GroupTask {
-            name: name.into(),
-            id,
+            task_info,
             threshold,
-            participants: participants.to_vec(),
-            key_type,
             communicator,
             protocol,
-            request,
             attempts: 0,
             note,
             certificates_sent: false,
@@ -106,21 +77,17 @@ impl GroupTask {
     }
 
     pub fn from_model(
+        task_info: TaskInfo,
         model: TaskModel,
-        participants: Vec<Participant>,
         communicator: Arc<RwLock<Communicator>>,
     ) -> Result<Self, Error> {
-        let total_shares = participants.iter().map(|p| p.shares).sum();
-
         let protocol = create_keygen_protocol(
             model.protocol_type.into(),
             model.key_type.clone().into(),
-            total_shares,
+            task_info.total_shares(),
             model.threshold as u32,
             model.protocol_round as u16,
         )?;
-
-        let name = "".into(); // TODO: Add "name" to "task" table
         let Some(certificates_sent) = model.group_certificates_sent else {
             return Err(Error::PersistenceError(
                 PersistenceError::DataInconsistencyError(
@@ -129,14 +96,10 @@ impl GroupTask {
             ));
         };
         Ok(Self {
-            name,
-            id: model.id,
+            task_info,
             threshold: model.threshold as u32,
-            key_type: model.key_type.into(),
-            participants,
             communicator,
             protocol,
-            request: model.request,
             attempts: model.attempt_count as u32,
             note: model.note,
             certificates_sent, // TODO: remove the field completely
@@ -168,7 +131,7 @@ impl GroupTask {
         };
         // TODO
         let certificate = if self.protocol.get_type() == ProtocolType::Gg18 {
-            Some(issue_certificate(&self.name, &identifier)?)
+            Some(issue_certificate(&self.task_info.name, &identifier)?)
         } else {
             None
         };
@@ -176,7 +139,8 @@ impl GroupTask {
         info!(
             "Group established group_id={} devices={:?}",
             utils::hextrunc(&identifier),
-            self.participants
+            self.task_info
+                .participants
                 .iter()
                 .map(|p| (utils::hextrunc(p.device.identifier()), p.shares))
                 .collect::<Vec<_>>()
@@ -184,11 +148,11 @@ impl GroupTask {
 
         let group = Group::new(
             identifier.clone(),
-            self.name.clone(),
+            self.task_info.name.clone(),
             self.threshold,
-            self.participants.clone(),
+            self.task_info.participants.clone(),
             self.protocol.get_type(),
-            self.key_type,
+            self.task_info.key_type,
             certificate,
             self.note.clone(),
         );
@@ -217,7 +181,8 @@ impl GroupTask {
 
         let certs: HashMap<u32, Vec<u8>> = {
             let communicator_read = self.communicator.read().await;
-            self.participants
+            self.task_info
+                .participants
                 .iter()
                 .flat_map(|p| {
                     let cert = &p.device.certificate;
@@ -242,11 +207,7 @@ impl GroupTask {
 }
 
 #[async_trait]
-impl ActiveTask for GroupTask {
-    fn get_type(&self) -> TaskType {
-        TaskType::Group
-    }
-
+impl RunningTask for GroupTask {
     async fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>> {
         if !self.waiting_for(device_id).await {
             return Vec::new();
@@ -263,9 +224,8 @@ impl ActiveTask for GroupTask {
         }
     }
 
-    async fn get_decisions(&self) -> (u32, u32) {
-        let communicator = self.communicator.read().await;
-        (communicator.accept_count(), communicator.reject_count())
+    async fn initialize(&mut self) -> Result<RoundUpdate, Error> {
+        self.send_certificates().await
     }
 
     async fn update(
@@ -273,13 +233,6 @@ impl ActiveTask for GroupTask {
         device_id: &[u8],
         data: &Vec<Vec<u8>>,
     ) -> Result<RoundUpdate, Error> {
-        let total_shares: u32 = self.participants.iter().map(|p| p.shares).sum();
-        if self.communicator.read().await.accept_count() != total_shares {
-            return Err(Error::GeneralProtocolError(
-                "Not enough agreements to proceed with the protocol.".into(),
-            ));
-        }
-
         if !self.waiting_for(device_id).await {
             return Err(Error::GeneralProtocolError(
                 "Wasn't waiting for a message from this ID.".into(),
@@ -308,75 +261,22 @@ impl ActiveTask for GroupTask {
         Ok(RoundUpdate::Listen)
     }
 
-    async fn restart(&mut self) -> Result<RestartUpdate, Error> {
-        if self.is_approved().await {
-            self.increment_attempt_count();
-            // TODO: Should this instead be the certificate exchange round?
-            let round_update = self.start_task().await?;
-            Ok(RestartUpdate::Started(round_update))
-        } else {
-            Ok(RestartUpdate::Voting)
-        }
-    }
-
-    async fn is_approved(&self) -> bool {
-        let total_shares: u32 = self.participants.iter().map(|p| p.shares).sum();
-        self.communicator.read().await.accept_count() == total_shares
-    }
-
-    fn get_participants(&self) -> &Vec<Participant> {
-        &self.participants
+    async fn restart(&mut self) -> Result<RoundUpdate, Error> {
+        self.increment_attempt_count();
+        // TODO: Should this instead be the certificate exchange round?
+        self.start_task().await
     }
 
     async fn waiting_for(&self, device: &[u8]) -> bool {
-        let communicator = self.communicator.write().await;
-        if !self.certificates_sent && self.protocol.round() == 0 {
-            return !communicator.device_decided(device);
-        }
-
-        communicator.waiting_for(device)
-    }
-
-    async fn decide(&mut self, device_id: &[u8], decision: bool) -> Result<DecisionUpdate, Error> {
-        self.communicator.write().await.decide(device_id, decision);
-        let decision_update = if self.protocol.round() == 0 {
-            if self.communicator.read().await.reject_count() > 0 {
-                let (accepts, rejects) = self.get_decisions().await;
-                DecisionUpdate::Declined(DeclinedTask { accepts, rejects })
-            } else if self.is_approved().await {
-                let round_update = self.next_round().await?;
-                DecisionUpdate::Accepted(round_update)
-            } else {
-                DecisionUpdate::Undecided
-            }
-        } else {
-            DecisionUpdate::Undecided
-        };
-        Ok(decision_update)
-    }
-
-    fn get_request(&self) -> &[u8] {
-        &self.request
+        self.communicator.write().await.waiting_for(device)
     }
 
     fn get_attempts(&self) -> u32 {
         self.attempts
     }
 
-    fn get_id(&self) -> &Uuid {
-        &self.id
-    }
-
     fn get_communicator(&self) -> Arc<RwLock<Communicator>> {
         self.communicator.clone()
-    }
-
-    fn get_threshold(&self) -> u32 {
-        self.threshold
-    }
-
-    fn get_data(&self) -> Option<&[u8]> {
-        None
     }
 }
 

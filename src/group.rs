@@ -51,11 +51,6 @@ impl Group {
         self.threshold
     }
 
-    pub fn reject_threshold(&self) -> u32 {
-        let total_parties: u32 = self.participants.iter().map(|p| p.shares).sum();
-        total_parties - self.threshold + 1 // rejects >= threshold_reject => fail
-    }
-
     pub fn protocol(&self) -> ProtocolType {
         self.protocol
     }
@@ -179,7 +174,6 @@ mod tests {
         assert_eq!(group.identifier(), &identifier);
         assert_eq!(group.name(), &name);
         assert_eq!(group.threshold(), threshold);
-        assert_eq!(group.reject_threshold(), 3);
         for (a, b) in group.participants().iter().zip(participants.iter()) {
             assert_eq!(a.device.identifier(), b.device.identifier());
         }

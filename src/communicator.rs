@@ -204,7 +204,6 @@ impl Communicator {
     /// Considers only those devices which accepted participation
     /// If enough devices are available, additionaly filters by response latency
     pub fn set_active_devices(&mut self, pg_pool: Option<Arc<PgPool>>) -> Vec<Vec<u8>> {
-        assert!(self.accept_count() >= self.threshold);
         let agreeing_devices = self
             .device_list
             .iter()
@@ -257,54 +256,6 @@ impl Communicator {
         self.active_devices.clone()
     }
 
-    /// Save a decision by the given device
-    ///
-    /// # Returns
-    /// `false` if the `device_id` is invalid or has already decided
-    /// `true` otherwise
-    pub fn decide(&mut self, device_id: &[u8], decision: bool) -> bool {
-        if !self.decisions.contains_key(device_id) || self.decisions[device_id] != 0 {
-            return false;
-        }
-        let votes = self
-            .device_list
-            .iter()
-            .filter(|x| x.identifier() == device_id)
-            .count() as i8;
-        self.decisions
-            .insert(device_id.to_vec(), if decision { votes } else { -votes });
-        true
-    }
-
-    /// Get the number of Task accepts
-    pub fn accept_count(&self) -> u32 {
-        self.decisions
-            .iter()
-            .filter(|x| *x.1 > 0)
-            .map(|x| *x.1 as i32)
-            .sum::<i32>()
-            .abs() as u32
-    }
-
-    /// Get the number of Task rejects
-    pub fn reject_count(&self) -> u32 {
-        self.decisions
-            .iter()
-            .filter(|x| *x.1 < 0)
-            .map(|x| *x.1 as i32)
-            .sum::<i32>()
-            .abs() as u32
-    }
-
-    /// Check whether a device submitted its decision
-    pub fn device_decided(&self, device_id: &[u8]) -> bool {
-        if let Some(d) = self.decisions.get(device_id) {
-            *d != 0
-        } else {
-            false
-        }
-    }
-
     /// Get the protocol indices of active devices
     pub fn get_protocol_indices(&self) -> Vec<u32> {
         assert!(self.active_devices.is_some());
@@ -353,6 +304,56 @@ mod tests {
     use crate::persistence::DeviceKind;
 
     use super::*;
+
+    impl Communicator {
+        /// Save a decision by the given device
+        ///
+        /// # Returns
+        /// `false` if the `device_id` is invalid or has already decided
+        /// `true` otherwise
+        pub fn decide(&mut self, device_id: &[u8], decision: bool) -> bool {
+            if !self.decisions.contains_key(device_id) || self.decisions[device_id] != 0 {
+                return false;
+            }
+            let votes = self
+                .device_list
+                .iter()
+                .filter(|x| x.identifier() == device_id)
+                .count() as i8;
+            self.decisions
+                .insert(device_id.to_vec(), if decision { votes } else { -votes });
+            true
+        }
+
+        /// Get the number of Task accepts
+        pub fn accept_count(&self) -> u32 {
+            self.decisions
+                .iter()
+                .filter(|x| *x.1 > 0)
+                .map(|x| *x.1 as i32)
+                .sum::<i32>()
+                .abs() as u32
+        }
+
+        /// Get the number of Task rejects
+        pub fn reject_count(&self) -> u32 {
+            self.decisions
+                .iter()
+                .filter(|x| *x.1 < 0)
+                .map(|x| *x.1 as i32)
+                .sum::<i32>()
+                .abs() as u32
+        }
+
+        /// Check whether a device submitted its decision
+        pub fn device_decided(&self, device_id: &[u8]) -> bool {
+            if let Some(d) = self.decisions.get(device_id) {
+                *d != 0
+            } else {
+                false
+            }
+        }
+    }
 
     #[test]
     #[should_panic]

@@ -4,44 +4,39 @@ use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::group::Group;
 use crate::persistence::{Participant, PersistenceError, Task as TaskModel};
-use crate::proto::{ProtocolType, SignRequest, TaskType};
+use crate::proto::ProtocolType;
 use crate::protocols::frost::FROSTSign;
 use crate::protocols::gg18::GG18Sign;
 use crate::protocols::musig2::MuSig2Sign;
 use crate::protocols::{create_threshold_protocol, Protocol};
-use crate::tasks::{
-    ActiveTask, DecisionUpdate, DeclinedTask, FailedTask, FinishedTask, RestartUpdate, RoundUpdate,
-    TaskResult,
-};
+use crate::tasks::{FailedTask, FinishedTask, RoundUpdate, RunningTask, TaskInfo, TaskResult};
 use crate::utils;
 use async_trait::async_trait;
 use log::{info, warn};
 use meesign_crypto::proto::{ClientMessage, Message as _};
-use prost::Message as _;
+use std::collections::HashMap;
 use tokio::sync::RwLock;
-use uuid::Uuid;
 
 pub struct SignTask {
-    id: Uuid,
+    pub(super) task_info: TaskInfo,
     group: Group,
     communicator: Arc<RwLock<Communicator>>,
     pub(super) data: Vec<u8>,
     preprocessed: Option<Vec<u8>>,
     pub(super) protocol: Box<dyn Protocol + Send + Sync>,
-    request: Vec<u8>,
     pub(super) attempts: u32,
 }
 
 impl SignTask {
-    pub fn try_new(group: Group, name: String, data: Vec<u8>) -> Result<Self, String> {
+    pub fn try_new(
+        task_info: TaskInfo,
+        group: Group,
+        data: Vec<u8>,
+        decisions: HashMap<Vec<u8>, i8>,
+    ) -> Result<Self, String> {
         let mut participants: Vec<Participant> = group.participants().to_vec();
         participants.sort_by(|a, b| a.device.identifier().cmp(b.device.identifier()));
         let protocol_type = group.protocol();
-
-        let decisions = participants
-            .iter()
-            .map(|p| (p.device.identifier().clone(), 0))
-            .collect();
 
         let communicator = Arc::new(RwLock::new(Communicator::new(
             participants,
@@ -50,16 +45,8 @@ impl SignTask {
             decisions,
         )));
 
-        let request = (SignRequest {
-            group_id: group.identifier().to_vec(),
-            name,
-            data: data.clone(),
-        })
-        .encode_to_vec();
-
-        let id = Uuid::new_v4();
         Ok(SignTask {
-            id,
+            task_info,
             group,
             communicator,
             data,
@@ -73,17 +60,16 @@ impl SignTask {
                     return Err("Unsupported protocol type for signing".into());
                 }
             },
-            request,
             attempts: 0,
         })
     }
 
     pub fn from_model(
+        task_info: TaskInfo,
         task_model: TaskModel,
         communicator: Arc<RwLock<Communicator>>,
         group: Group,
     ) -> Result<Self, Error> {
-        // TODO refactor
         let protocol = create_threshold_protocol(
             group.protocol(),
             group.key_type(),
@@ -96,13 +82,12 @@ impl SignTask {
                 "Task data not set for a sign task".into(),
             ))?;
         let task = Self {
-            id: task_model.id,
+            task_info,
             group,
             communicator,
             data,
             protocol,
             preprocessed: task_model.preprocessed,
-            request: task_model.request,
             attempts: task_model.attempt_count as u32,
         };
         Ok(task)
@@ -118,7 +103,6 @@ impl SignTask {
     }
 
     pub(super) async fn start_task(&mut self) -> Result<RoundUpdate, Error> {
-        assert!(self.communicator.read().await.accept_count() >= self.group.threshold());
         self.protocol.initialize(
             &mut *self.communicator.write().await,
             self.preprocessed.as_ref().unwrap_or(&self.data),
@@ -168,12 +152,6 @@ impl SignTask {
         device_id: &[u8],
         data: &Vec<Vec<u8>>,
     ) -> Result<bool, Error> {
-        if self.communicator.read().await.accept_count() < self.group.threshold() {
-            return Err(Error::GeneralProtocolError(
-                "Not enough agreements to proceed with the protocol.".into(),
-            ));
-        }
-
         if !self.waiting_for(device_id).await {
             return Err(Error::GeneralProtocolError(
                 "Wasn't waiting for a message from this ID.".into(),
@@ -199,35 +177,13 @@ impl SignTask {
         Ok(false)
     }
 
-    // TODO: deduplicate across sign and decrypt
-    pub(super) async fn decide_internal(
-        &mut self,
-        device_id: &[u8],
-        decision: bool,
-    ) -> Option<bool> {
-        self.communicator.write().await.decide(device_id, decision);
-
-        if self.protocol.round() == 0 {
-            if self.communicator.read().await.reject_count() >= self.group.reject_threshold() {
-                return Some(false);
-            } else if self.communicator.read().await.accept_count() >= self.group.threshold() {
-                return Some(true);
-            }
-        }
-        None
-    }
-
     pub fn increment_attempt_count(&mut self) {
         self.attempts += 1;
     }
 }
 
 #[async_trait]
-impl ActiveTask for SignTask {
-    fn get_type(&self) -> TaskType {
-        TaskType::SignChallenge
-    }
-
+impl RunningTask for SignTask {
     async fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>> {
         if !self.waiting_for(device_id).await {
             return Vec::new();
@@ -240,11 +196,8 @@ impl ActiveTask for SignTask {
         self.protocol.round()
     }
 
-    async fn get_decisions(&self) -> (u32, u32) {
-        (
-            self.communicator.read().await.accept_count(),
-            self.communicator.read().await.reject_count(),
-        )
+    async fn initialize(&mut self) -> Result<RoundUpdate, Error> {
+        self.start_task().await
     }
 
     async fn update(
@@ -260,69 +213,20 @@ impl ActiveTask for SignTask {
         Ok(round_update)
     }
 
-    async fn restart(&mut self) -> Result<RestartUpdate, Error> {
-        if self.is_approved().await {
-            self.increment_attempt_count();
-            let round_update = self.start_task().await?;
-            Ok(RestartUpdate::Started(round_update))
-        } else {
-            Ok(RestartUpdate::Voting)
-        }
-    }
-
-    async fn is_approved(&self) -> bool {
-        self.communicator.read().await.accept_count() >= self.group.threshold()
-    }
-
-    fn get_participants(&self) -> &Vec<Participant> {
-        &self.group.participants()
+    async fn restart(&mut self) -> Result<RoundUpdate, Error> {
+        self.increment_attempt_count();
+        self.start_task().await
     }
 
     async fn waiting_for(&self, device: &[u8]) -> bool {
-        if self.protocol.round() == 0 {
-            return !self.communicator.read().await.device_decided(device);
-        }
-
         self.communicator.read().await.waiting_for(device)
-    }
-
-    async fn decide(&mut self, device_id: &[u8], decision: bool) -> Result<DecisionUpdate, Error> {
-        let result = self.decide_internal(device_id, decision).await;
-        let decision_update = match result {
-            Some(true) => {
-                let round_update = self.next_round().await?;
-                DecisionUpdate::Accepted(round_update)
-            }
-            Some(false) => {
-                let (accepts, rejects) = self.get_decisions().await;
-                DecisionUpdate::Declined(DeclinedTask { accepts, rejects })
-            }
-            None => DecisionUpdate::Undecided,
-        };
-        Ok(decision_update)
-    }
-
-    fn get_request(&self) -> &[u8] {
-        &self.request
     }
 
     fn get_attempts(&self) -> u32 {
         self.attempts
     }
 
-    fn get_id(&self) -> &Uuid {
-        &self.id
-    }
-
     fn get_communicator(&self) -> Arc<RwLock<Communicator>> {
         self.communicator.clone()
-    }
-
-    fn get_threshold(&self) -> u32 {
-        self.get_group().threshold()
-    }
-
-    fn get_data(&self) -> Option<&[u8]> {
-        Some(&self.data)
     }
 }
