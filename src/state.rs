@@ -524,27 +524,27 @@ impl State {
         &self.repo
     }
 
-    async fn get_communicator(&self, task_id: &Uuid) -> Result<Arc<RwLock<Communicator>>, Error> {
+    async fn get_communicator(
+        &self,
+        task_model: &TaskModel,
+        mut participants: Vec<Participant>,
+    ) -> Result<Arc<RwLock<Communicator>>, Error> {
         use dashmap::mapref::entry::Entry;
-        let communicator = match self.communicators.entry(task_id.clone()) {
+        let communicator = match self.communicators.entry(task_model.id.clone()) {
             Entry::Occupied(entry) => entry.into_ref(),
             Entry::Vacant(entry) => {
-                let Some(model) = self.repo.get_task(task_id).await? else {
-                    return Err(Error::GeneralProtocolError("Invalid task id".into()));
-                };
-                let mut participants = self.repo.get_task_participants(task_id).await?;
                 participants.sort_by(|a, b| a.device.identifier().cmp(b.device.identifier()));
-                let decisions = self.repo.get_task_decisions(task_id).await?;
-                let acknowledgements = self.repo.get_task_acknowledgements(task_id).await?;
-                let threshold = match model.task_type {
+                let decisions = self.repo.get_task_decisions(&task_model.id).await?;
+                let acknowledgements = self.repo.get_task_acknowledgements(&task_model.id).await?;
+                let threshold = match task_model.task_type {
                     TaskType::Group => participants.iter().map(|p| p.shares).sum(),
-                    _ => model.threshold as u32,
+                    _ => task_model.threshold as u32,
                 };
 
                 entry.insert(Arc::new(RwLock::new(Communicator::new(
                     participants,
                     threshold,
-                    model.protocol_type.into(),
+                    task_model.protocol_type.into(),
                     decisions,
                     acknowledgements,
                 ))))
@@ -591,7 +591,7 @@ impl State {
         let mut tasks = Vec::new();
         for task in task_models {
             let participants = task_id_participants.remove(&task.id).unwrap();
-            let communicator = self.get_communicator(&task.id).await?;
+            let communicator = self.get_communicator(&task, participants.clone()).await?;
 
             let task = match task.task_type {
                 TaskType::Group => {
