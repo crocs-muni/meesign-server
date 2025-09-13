@@ -19,25 +19,6 @@ where
     Ok(device::table.load(connection).await?)
 }
 
-pub async fn get_devices_with_ids<Conn>(
-    connection: &mut Conn,
-    device_ids: &[&[u8]],
-) -> Result<Vec<Device>, PersistenceError>
-where
-    Conn: AsyncConnection<Backend = Pg>,
-{
-    let device_map: Vec<Device> = device::table
-        .filter(device::id.eq_any(device_ids))
-        .order_by(device::id)
-        .load(connection)
-        .await?;
-    let devices = device_ids
-        .iter()
-        .filter_map(|&id| device_map.iter().find(|dev| &dev.id == id).cloned())
-        .collect();
-    Ok(devices)
-}
-
 pub async fn get_group_participants<Conn>(
     connection: &mut Conn,
     group_id: &[u8],

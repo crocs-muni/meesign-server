@@ -247,14 +247,12 @@ impl MeeSign for MeeSignService {
 
         let state = self.state.lock().await;
 
-        let task_models = if let Some(device_id) = &device_id {
+        let tasks = if let Some(device_id) = &device_id {
             state.activate_device(device_id);
             state.get_active_device_tasks(device_id).await?
         } else {
             state.get_tasks().await?
         };
-
-        let tasks = state.tasks_from_task_models(task_models).await?;
 
         let mut formatted_tasks = Vec::new();
         for task in tasks {

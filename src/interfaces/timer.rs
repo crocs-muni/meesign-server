@@ -18,10 +18,7 @@ pub async fn run_timer(state: Arc<Mutex<State>>) -> Result<(), String> {
 }
 
 async fn check_tasks(state: &mut MutexGuard<'_, State>) -> Result<(), Error> {
-    for task_id in state.get_tasks_for_restart().await? {
-        state.restart_task(&task_id).await?;
-    }
-    Ok(())
+    state.restart_stale_tasks().await
 }
 
 async fn check_subscribers(state: &mut MutexGuard<'_, State>) {

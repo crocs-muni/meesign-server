@@ -7,7 +7,7 @@ use super::{
 };
 
 use self::{
-    device::{add_device, get_devices, get_devices_with_ids},
+    device::{add_device, get_devices},
     group::get_group,
     task::{
         get_active_device_tasks, get_task_acknowledgements, get_task_decisions, get_tasks,
@@ -101,14 +101,6 @@ impl Repository {
     pub async fn get_devices(&self) -> Result<Vec<Device>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         get_devices(connection).await
-    }
-
-    pub async fn get_devices_with_ids(
-        &self,
-        device_ids: &[&[u8]],
-    ) -> Result<Vec<Device>, PersistenceError> {
-        let connection = &mut self.get_async_connection().await?;
-        get_devices_with_ids(connection, device_ids).await
     }
 
     pub async fn get_group_participants(

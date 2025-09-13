@@ -312,8 +312,10 @@ impl State {
         Ok(task)
     }
 
-    pub async fn get_active_device_tasks(&self, device: &[u8]) -> Result<Vec<TaskModel>, Error> {
-        Ok(self.get_repo().get_active_device_tasks(device).await?)
+    pub async fn get_active_device_tasks(&self, device: &[u8]) -> Result<Vec<Task>, Error> {
+        let task_models = self.get_repo().get_active_device_tasks(device).await?;
+        let tasks = self.tasks_from_task_models(task_models).await?;
+        Ok(tasks)
     }
 
     pub fn activate_device(&self, device_id: &[u8]) {
@@ -353,8 +355,10 @@ impl State {
         Ok(self.get_repo().get_groups().await?)
     }
 
-    pub async fn get_tasks(&self) -> Result<Vec<TaskModel>, Error> {
-        Ok(self.repo.get_tasks().await?)
+    pub async fn get_tasks(&self) -> Result<Vec<Task>, Error> {
+        let task_models = self.repo.get_tasks().await?;
+        let tasks = self.tasks_from_task_models(task_models).await?;
+        Ok(tasks)
     }
 
     pub async fn get_task(&self, task_id: &Uuid) -> Result<Task, Error> {
@@ -514,11 +518,8 @@ impl State {
         Ok(())
     }
 
-    pub async fn restart_task(&mut self, task_id: &Uuid) -> Result<bool, Error> {
-        let Task::Running(mut task) = self.get_task(task_id).await? else {
-            // NOTE: Only running tasks can be restarted
-            return Ok(false);
-        };
+    async fn restart_task(&self, mut task: Box<dyn RunningTask>) -> Result<(), Error> {
+        let task_id = &task.task_info().id.clone();
         self.set_task_last_update(task_id);
 
         self.repo.increment_task_attempt_count(task_id).await?;
@@ -542,28 +543,27 @@ impl State {
                 self.send_updates(&Task::Failed(task)).await?;
             }
         }
-        Ok(true)
+        Ok(())
     }
 
-    pub async fn get_tasks_for_restart(&self) -> Result<Vec<Uuid>, Error> {
-        let task_models = self.get_tasks().await?;
-        let tasks = self.tasks_from_task_models(task_models.clone()).await?;
+    pub async fn restart_stale_tasks(&self) -> Result<(), Error> {
+        // TODO: Filter tasks in DB
+        let tasks = self.get_tasks().await?;
         let now = get_timestamp();
 
-        let mut restarts = Vec::new();
-        for (task_model, task) in task_models.into_iter().zip(tasks.into_iter()) {
-            let Task::Running(_) = task else {
+        for task in tasks {
+            let Task::Running(task) = task else {
                 // NOTE: Only running tasks can be restarted
                 continue;
             };
-            let task_id = &task_model.id;
+            let task_id = &task.task_info().id;
             let last_update = self.get_task_last_update(task_id);
             if now.saturating_sub(last_update) > 30 {
                 debug!("Stale task detected task_id={:?}", utils::hextrunc(task_id));
-                restarts.push(*task_id);
+                self.restart_task(task).await?;
             }
         }
-        Ok(restarts)
+        Ok(())
     }
 
     pub fn add_subscriber(
@@ -574,7 +574,7 @@ impl State {
         self.subscribers.insert(device_id, tx);
     }
 
-    pub fn remove_subscriber(&mut self, device_id: &Vec<u8>) {
+    pub fn remove_subscriber(&self, device_id: &Vec<u8>) {
         self.subscribers.remove(device_id);
         debug!(
             "Removing subscriber device_id={}",
@@ -586,7 +586,7 @@ impl State {
         &self.subscribers
     }
 
-    pub async fn send_updates(&mut self, task: &Task) -> Result<(), Error> {
+    pub async fn send_updates(&self, task: &Task) -> Result<(), Error> {
         let mut remove = Vec::new();
 
         for participant in &task.task_info().participants {
@@ -644,7 +644,7 @@ impl State {
         Ok(communicator)
     }
 
-    pub async fn tasks_from_task_models(
+    async fn tasks_from_task_models(
         &self,
         task_models: Vec<TaskModel>,
     ) -> Result<Vec<Task>, Error> {
