@@ -9,7 +9,7 @@ use openssl::x509::X509;
 use persistence::Repository;
 
 use crate::state::State;
-use tokio::{sync::Mutex, try_join};
+use tokio::try_join;
 use tonic::codegen::Arc;
 
 mod communicator;
@@ -267,7 +267,7 @@ async fn main() -> Result<(), String> {
         .await
         .expect("Couldn't initialize State");
     // TODO: remove mutex when DB done
-    let state = Arc::new(Mutex::new(state));
+    let state = Arc::new(state);
 
     let grpc = interfaces::grpc::run_grpc(state.clone(), &args.addr, args.port);
     let timer = interfaces::timer::run_timer(state);

@@ -1,6 +1,7 @@
 use dashmap::DashMap;
 use log::{debug, error, warn};
 use std::collections::HashMap;
+use std::future::Future;
 use uuid::Uuid;
 
 use crate::communicator::Communicator;
@@ -20,7 +21,7 @@ use crate::tasks::{
 };
 use crate::{get_timestamp, utils};
 use prost::Message as _;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::{mpsc::Sender, RwLock};
 use tonic::codegen::Arc;
 use tonic::Status;
 
@@ -28,8 +29,8 @@ pub struct State {
     devices: DashMap<Vec<u8>, Device>,
     subscribers: DashMap<Vec<u8>, Sender<Result<proto::Task, Status>>>,
     repo: Arc<Repository>,
-    // TODO: // NOTE: DashMap locking applies to its internal shards, we must protect Tasks by tokio's RwLock.
-    task_cache: DashMap<Uuid, Task>,
+    // NOTE: DashMap locking applies to its internal shards, we must protect Tasks across awaits using tokio's RwLock.
+    task_cache: DashMap<Uuid, Arc<RwLock<Task>>>,
     task_last_updates: DashMap<Uuid, u64>,
     device_last_activations: DashMap<Vec<u8>, u64>,
 }
@@ -148,7 +149,7 @@ impl State {
         let task = Task::Voting(task);
         let formatted = task.format(None, None);
         self.send_updates(&task).await?;
-        self.task_cache.insert(task_id, task);
+        self.task_cache.insert(task_id, Arc::new(RwLock::new(task)));
         Ok(formatted)
     }
 
@@ -313,7 +314,7 @@ impl State {
         let task = Task::Voting(task);
         let formatted = task.format(None, None);
         self.send_updates(&task).await?;
-        self.task_cache.insert(task_id, task);
+        self.task_cache.insert(task_id, Arc::new(RwLock::new(task)));
         Ok(formatted)
     }
 
@@ -322,11 +323,10 @@ impl State {
         device_id: &[u8],
     ) -> Result<Vec<proto::Task>, Error> {
         let task_ids = self.repo.get_active_device_tasks(device_id).await?;
-        let tasks = self
-            .get_tasks(task_ids)
-            .await?
-            .map(|task| task.format(Some(device_id), None))
-            .collect();
+        let mut tasks = Vec::new();
+        for task in self.get_tasks(task_ids).await? {
+            tasks.push(task.await.format(Some(device_id), None));
+        }
         Ok(tasks)
     }
 
@@ -369,11 +369,10 @@ impl State {
 
     pub async fn get_formatted_tasks(&self) -> Result<Vec<proto::Task>, Error> {
         let task_ids = self.repo.get_tasks().await?;
-        let tasks = self
-            .get_tasks(task_ids)
-            .await?
-            .map(|task| task.format(None, None))
-            .collect();
+        let mut tasks = Vec::new();
+        for task in self.get_tasks(task_ids).await? {
+            tasks.push(task.await.format(None, None));
+        }
         Ok(tasks)
     }
 
@@ -403,7 +402,7 @@ impl State {
             use dashmap::mapref::entry::Entry;
             let task_id = task.task_info().id.clone();
             if let Entry::Vacant(entry) = self.task_cache.entry(task_id) {
-                entry.insert(task);
+                entry.insert(Arc::new(RwLock::new(task)));
             }
         }
         Ok(())
@@ -412,47 +411,55 @@ impl State {
     async fn get_tasks(
         &self,
         task_ids: Vec<Uuid>,
-    ) -> Result<impl Iterator<Item = dashmap::mapref::multiple::RefMulti<'_, Uuid, Task>>, Error>
-    {
-        use std::collections::HashSet;
-        let task_ids: HashSet<Uuid> = task_ids.into_iter().collect();
-        self.ensure_cached_tasks(task_ids.iter().cloned()).await?;
+    ) -> Result<
+        impl Iterator<Item = impl Future<Output = tokio::sync::OwnedRwLockReadGuard<Task>>> + use<'_>,
+        Error,
+    > {
         let iterator = self
-            .task_cache
-            .iter()
-            .filter(move |kv| task_ids.contains(kv.key()));
+            .get_tasks_mut(task_ids)
+            .await?
+            .map(|write_guard| async { write_guard.await.downgrade() });
         Ok(iterator)
     }
 
     async fn get_tasks_mut(
         &self,
         task_ids: Vec<Uuid>,
-    ) -> Result<impl Iterator<Item = dashmap::mapref::multiple::RefMutMulti<'_, Uuid, Task>>, Error>
-    {
+    ) -> Result<
+        impl Iterator<Item = impl Future<Output = tokio::sync::OwnedRwLockWriteGuard<Task>>> + use<'_>,
+        Error,
+    > {
         use std::collections::HashSet;
         let task_ids: HashSet<Uuid> = task_ids.into_iter().collect();
         self.ensure_cached_tasks(task_ids.iter().cloned()).await?;
         let iterator = self
             .task_cache
-            .iter_mut()
-            .filter(move |kv| task_ids.contains(kv.key()));
+            .iter()
+            .filter(move |kv| task_ids.contains(kv.key()))
+            .map(|kv| kv.clone().write_owned());
         Ok(iterator)
     }
 
     async fn get_task_mut(
         &self,
         task_id: &Uuid,
-    ) -> Result<dashmap::mapref::one::RefMut<'_, Uuid, Task>, Error> {
+    ) -> Result<tokio::sync::OwnedRwLockWriteGuard<Task>, Error> {
         self.ensure_cached_tasks(vec![task_id.clone()].into_iter())
             .await?;
-        let task = self.task_cache.get_mut(task_id).unwrap();
+        let task = self
+            .task_cache
+            .get(task_id)
+            .unwrap()
+            .clone()
+            .write_owned()
+            .await;
         Ok(task)
     }
 
     async fn get_task(
         &self,
         task_id: &Uuid,
-    ) -> Result<dashmap::mapref::one::Ref<'_, Uuid, Task>, Error> {
+    ) -> Result<tokio::sync::OwnedRwLockReadGuard<Task>, Error> {
         let task = self.get_task_mut(task_id).await?.downgrade();
         Ok(task)
     }
@@ -611,8 +618,8 @@ impl State {
             })
             .collect();
         let tasks = self.get_tasks_mut(task_ids).await?;
-        for mut task_entry in tasks {
-            let task_entry = &mut *task_entry;
+        for task_entry in tasks {
+            let task_entry = &mut *task_entry.await;
             let Task::Running(task) = task_entry else {
                 return Err(PersistenceError::DataInconsistencyError(
                     "non-running task in candidates for restart".into(),

@@ -3,25 +3,23 @@ use crate::state::State;
 use crate::utils;
 
 use log::debug;
-use tokio::sync::MutexGuard;
-use tokio::{sync::Mutex, time};
+use tokio::time;
 use tonic::codegen::Arc;
 
-pub async fn run_timer(state: Arc<Mutex<State>>) -> Result<(), String> {
+pub async fn run_timer(state: Arc<State>) -> Result<(), String> {
     let mut interval = time::interval(time::Duration::from_secs(1));
     loop {
         interval.tick().await;
-        let mut state = state.lock().await;
-        check_tasks(&mut state).await.unwrap();
-        check_subscribers(&mut state).await;
+        check_tasks(&state).await.unwrap();
+        check_subscribers(&state).await;
     }
 }
 
-async fn check_tasks(state: &mut MutexGuard<'_, State>) -> Result<(), Error> {
+async fn check_tasks(state: &State) -> Result<(), Error> {
     state.restart_stale_tasks().await
 }
 
-async fn check_subscribers(state: &mut MutexGuard<'_, State>) {
+async fn check_subscribers(state: &State) {
     let mut remove = Vec::new();
     for subscriber in state.get_subscribers().iter() {
         let (device_id, tx) = subscriber.pair();
