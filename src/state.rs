@@ -146,7 +146,7 @@ impl State {
 
         let task_id = task.task_info.id.clone();
         let task = Task::Voting(task);
-        let formatted = self.format_task(&task, None, None);
+        let formatted = task.format(None, None);
         self.send_updates(&task).await?;
         self.task_cache.insert(task_id, task);
         Ok(formatted)
@@ -311,7 +311,7 @@ impl State {
 
         let task_id = task.task_info.id.clone();
         let task = Task::Voting(task);
-        let formatted = self.format_task(&task, None, None);
+        let formatted = task.format(None, None);
         self.send_updates(&task).await?;
         self.task_cache.insert(task_id, task);
         Ok(formatted)
@@ -325,7 +325,7 @@ impl State {
         let tasks = self
             .get_tasks(task_ids)
             .await?
-            .map(|task| self.format_task(&*task, Some(device_id), None))
+            .map(|task| task.format(Some(device_id), None))
             .collect();
         Ok(tasks)
     }
@@ -372,7 +372,7 @@ impl State {
         let tasks = self
             .get_tasks(task_ids)
             .await?
-            .map(|task| self.format_task(&*task, None, None))
+            .map(|task| task.format(None, None))
             .collect();
         Ok(tasks)
     }
@@ -390,7 +390,7 @@ impl State {
                 "Queried task is not in voting phase".into(),
             ));
         };
-        let task = self.format_task(task, device_id, Some(request));
+        let task = task.format(device_id, Some(request));
         Ok(task)
     }
 
@@ -675,7 +675,7 @@ impl State {
         for participant in &task.task_info().participants {
             let device_id = participant.device.identifier();
             if let Some(tx) = self.subscribers.get(device_id) {
-                let result = tx.try_send(Ok(self.format_task(&task, Some(device_id), None)));
+                let result = tx.try_send(Ok(task.format(Some(device_id), None)));
 
                 if result.is_err() {
                     debug!(
@@ -955,46 +955,5 @@ impl State {
             .task_last_updates
             .entry(task_id.clone())
             .or_insert(get_timestamp())
-    }
-
-    fn format_task(
-        &self,
-        task: &Task,
-        device_id: Option<&[u8]>,
-        request: Option<Vec<u8>>,
-    ) -> proto::Task {
-        let request = request.map(Vec::from);
-        let task_info = task.task_info();
-        let id = task_info.id.as_bytes().to_vec();
-        let r#type = task_info.task_type.clone().into();
-        let attempt = task_info.attempts;
-        match task {
-            Task::Voting(task) => {
-                let (accept, reject) = VotingTask::accepts_rejects(&task.decisions);
-                proto::Task::created(id, r#type, accept, reject, request, attempt)
-            }
-            Task::Running(task) => {
-                let round = task.get_round() as u32;
-                let data = if let Some(device_id) = device_id {
-                    task.get_work(device_id)
-                } else {
-                    Vec::new()
-                };
-                proto::Task::running(id, r#type, round, data, request, attempt)
-            }
-            Task::Finished(task) => proto::Task::finished(
-                id,
-                r#type,
-                task.result.as_bytes().to_vec(),
-                request,
-                attempt,
-            ),
-            Task::Failed(task) => {
-                proto::Task::failed(id, r#type, task.reason.clone(), request, attempt)
-            }
-            Task::Declined(task) => {
-                proto::Task::declined(id, r#type, task.accepts, task.rejects, request, attempt)
-            }
-        }
     }
 }

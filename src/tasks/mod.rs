@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::error::Error;
 use crate::group::Group;
 use crate::persistence::Participant;
-use crate::proto::{KeyType, ProtocolType, TaskType};
+use crate::proto::{self, KeyType, ProtocolType, TaskType};
 
 #[must_use = "updates must be persisted"]
 pub enum RoundUpdate {
@@ -156,6 +156,41 @@ impl Task {
             Task::Declined(task) => &task.task_info,
             Task::Finished(task) => &task.task_info,
             Task::Failed(task) => &task.task_info,
+        }
+    }
+    pub fn format(&self, device_id: Option<&[u8]>, request: Option<Vec<u8>>) -> proto::Task {
+        let request = request.map(Vec::from);
+        let task_info = self.task_info();
+        let id = task_info.id.as_bytes().to_vec();
+        let r#type = task_info.task_type.clone().into();
+        let attempt = task_info.attempts;
+        match self {
+            Task::Voting(task) => {
+                let (accept, reject) = VotingTask::accepts_rejects(&task.decisions);
+                proto::Task::created(id, r#type, accept, reject, request, attempt)
+            }
+            Task::Running(task) => {
+                let round = task.get_round() as u32;
+                let data = if let Some(device_id) = device_id {
+                    task.get_work(device_id)
+                } else {
+                    Vec::new()
+                };
+                proto::Task::running(id, r#type, round, data, request, attempt)
+            }
+            Task::Finished(task) => proto::Task::finished(
+                id,
+                r#type,
+                task.result.as_bytes().to_vec(),
+                request,
+                attempt,
+            ),
+            Task::Failed(task) => {
+                proto::Task::failed(id, r#type, task.reason.clone(), request, attempt)
+            }
+            Task::Declined(task) => {
+                proto::Task::declined(id, r#type, task.accepts, task.rejects, request, attempt)
+            }
         }
     }
 }
