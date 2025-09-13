@@ -4,15 +4,13 @@ use crate::group::Group;
 use crate::persistence::Task as TaskModel;
 use crate::tasks::sign::SignTask;
 use crate::tasks::{FailedTask, RoundUpdate, RunningTask, TaskInfo, TaskResult};
-use async_trait::async_trait;
 use lazy_static::lazy_static;
 use log::{error, info, warn};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use tempfile::NamedTempFile;
-use tokio::sync::RwLock;
 use uuid::Uuid;
 
 lazy_static! {
@@ -46,14 +44,14 @@ impl SignPDFTask {
     pub fn from_model(
         task_info: TaskInfo,
         model: TaskModel,
-        communicator: Arc<RwLock<Communicator>>,
+        communicator: Communicator,
         group: Group,
     ) -> Result<Self, Error> {
         let sign_task = SignTask::from_model(task_info, model, communicator, group)?;
         Ok(Self { sign_task })
     }
 
-    async fn start_task(&mut self) -> Result<RoundUpdate, Error> {
+    fn start_task(&mut self) -> Result<RoundUpdate, Error> {
         let file = NamedTempFile::new();
         if file.is_err() {
             error!("Could not create temporary file");
@@ -108,15 +106,15 @@ impl SignPDFTask {
             .unwrap()
             .insert(self.task_info().id.clone(), pdfhelper);
         self.sign_task.set_preprocessed(hash);
-        self.sign_task.start_task().await
+        self.sign_task.start_task()
     }
 
-    async fn advance_task(&mut self) -> Result<RoundUpdate, Error> {
-        self.sign_task.advance_task().await
+    fn advance_task(&mut self) -> Result<RoundUpdate, Error> {
+        self.sign_task.advance_task()
     }
 
-    async fn finalize_task(&mut self) -> Result<RoundUpdate, Error> {
-        let round_update = match self.sign_task.finalize_task().await? {
+    fn finalize_task(&mut self) -> Result<RoundUpdate, Error> {
+        let round_update = match self.sign_task.finalize_task()? {
             RoundUpdate::Finished(round, mut task) => {
                 let mut pdfhelper = PDF_HELPERS
                     .lock()
@@ -140,62 +138,53 @@ impl SignPDFTask {
         Ok(round_update)
     }
 
-    async fn next_round(&mut self) -> Result<RoundUpdate, Error> {
+    fn next_round(&mut self) -> Result<RoundUpdate, Error> {
         if self.sign_task.protocol.round() == 0 {
-            self.start_task().await
+            self.start_task()
         } else if self.sign_task.protocol.round() < self.sign_task.protocol.last_round() {
-            self.advance_task().await
+            self.advance_task()
         } else {
-            self.finalize_task().await
+            self.finalize_task()
         }
     }
 }
 
-#[async_trait]
 impl RunningTask for SignPDFTask {
     fn task_info(&self) -> &TaskInfo {
         &self.sign_task.task_info
     }
 
-    async fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>> {
-        self.sign_task.get_work(device_id).await
+    fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>> {
+        self.sign_task.get_work(device_id)
     }
 
     fn get_round(&self) -> u16 {
         self.sign_task.get_round()
     }
 
-    async fn initialize(&mut self) -> Result<RoundUpdate, Error> {
-        self.start_task().await
+    fn initialize(&mut self) -> Result<RoundUpdate, Error> {
+        self.start_task()
     }
 
-    async fn update(
-        &mut self,
-        device_id: &[u8],
-        data: &Vec<Vec<u8>>,
-    ) -> Result<RoundUpdate, Error> {
-        let round_update = if self.sign_task.update_internal(device_id, data).await? {
-            self.next_round().await?
+    fn update(&mut self, device_id: &[u8], data: &Vec<Vec<u8>>) -> Result<RoundUpdate, Error> {
+        let round_update = if self.sign_task.update_internal(device_id, data)? {
+            self.next_round()?
         } else {
             RoundUpdate::Listen
         };
         Ok(round_update)
     }
 
-    async fn restart(&mut self) -> Result<RoundUpdate, Error> {
+    fn restart(&mut self) -> Result<RoundUpdate, Error> {
         if let Some(mut pdfhelper) = PDF_HELPERS.lock().unwrap().remove(&self.task_info().id) {
             pdfhelper.kill().unwrap();
         }
         self.sign_task.increment_attempt_count();
-        self.start_task().await
+        self.start_task()
     }
 
-    async fn waiting_for(&self, device: &[u8]) -> bool {
-        self.sign_task.waiting_for(device).await
-    }
-
-    fn get_communicator(&self) -> Arc<RwLock<Communicator>> {
-        self.sign_task.get_communicator()
+    fn waiting_for(&self, device: &[u8]) -> bool {
+        self.sign_task.waiting_for(device)
     }
 }
 

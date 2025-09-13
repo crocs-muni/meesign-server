@@ -3,14 +3,9 @@ pub(crate) mod group;
 pub(crate) mod sign;
 pub(crate) mod sign_pdf;
 
-use std::sync::Arc;
-
-use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
-use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::group::Group;
 use crate::persistence::Participant;
@@ -27,12 +22,11 @@ pub enum RoundUpdate {
 
 #[must_use = "updates must be persisted"]
 pub enum DecisionUpdate {
-    Undecided(VotingTask),
+    Undecided,
     Accepted(Box<dyn RunningTask>),
     Declined(DeclinedTask),
 }
 
-#[derive(Clone)]
 pub enum TaskResult {
     GroupEstablished(Group),
     Signed(Vec<u8>),
@@ -51,6 +45,7 @@ impl TaskResult {
     }
 }
 
+#[must_use]
 pub struct VotingTask {
     pub task_info: TaskInfo,
     pub decisions: HashMap<Vec<u8>, i8>,
@@ -59,7 +54,11 @@ pub struct VotingTask {
     pub running_task_context: RunningTaskContext,
 }
 impl VotingTask {
-    pub async fn decide(mut self, device_id: &[u8], accept: bool) -> Result<DecisionUpdate, Error> {
+    pub async fn decide(
+        &mut self,
+        device_id: &[u8],
+        accept: bool,
+    ) -> Result<DecisionUpdate, Error> {
         let shares = self
             .task_info
             .participants
@@ -79,17 +78,17 @@ impl VotingTask {
         let decision_update = if accepts >= self.accept_threshold {
             let running_task = self
                 .running_task_context
-                .create_running_task(self.task_info, self.decisions)
-                .await?;
+                .clone()
+                .create_running_task(self.task_info.clone(), self.decisions.clone())?;
             DecisionUpdate::Accepted(running_task)
         } else if rejects >= self.reject_threshold() {
             DecisionUpdate::Declined(DeclinedTask {
-                task_info: self.task_info,
+                task_info: self.task_info.clone(),
                 accepts,
                 rejects,
             })
         } else {
-            DecisionUpdate::Undecided(self)
+            DecisionUpdate::Undecided
         };
         Ok(decision_update)
     }
@@ -110,11 +109,13 @@ impl VotingTask {
         self.task_info.total_shares() - self.accept_threshold + 1
     }
 }
+#[must_use]
 pub struct DeclinedTask {
     pub task_info: TaskInfo,
     pub accepts: u32,
     pub rejects: u32,
 }
+#[must_use]
 pub struct FinishedTask {
     pub task_info: TaskInfo,
     pub result: TaskResult,
@@ -133,11 +134,12 @@ impl FinishedTask {
         self.acknowledgements.insert(device_id.to_vec());
     }
 }
+#[must_use]
 pub struct FailedTask {
     pub task_info: TaskInfo,
     pub reason: String,
 }
-
+#[must_use]
 pub enum Task {
     Voting(VotingTask),
     Running(Box<dyn RunningTask + Send + Sync>),
@@ -174,28 +176,25 @@ impl TaskInfo {
     }
 }
 
-#[async_trait]
 pub trait RunningTask: Send + Sync {
     fn task_info(&self) -> &TaskInfo;
 
-    async fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>>;
+    fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>>;
 
     fn get_round(&self) -> u16;
 
-    async fn initialize(&mut self) -> Result<RoundUpdate, Error>;
+    fn initialize(&mut self) -> Result<RoundUpdate, Error>;
 
     /// Update protocol state with `data` from `device_id`
-    async fn update(&mut self, device_id: &[u8], data: &Vec<Vec<u8>>)
-        -> Result<RoundUpdate, Error>;
+    fn update(&mut self, device_id: &[u8], data: &Vec<Vec<u8>>) -> Result<RoundUpdate, Error>;
 
     /// Attempt to restart protocol in task
-    async fn restart(&mut self) -> Result<RoundUpdate, Error>;
+    fn restart(&mut self) -> Result<RoundUpdate, Error>;
 
-    async fn waiting_for(&self, device_id: &[u8]) -> bool;
-
-    fn get_communicator(&self) -> Arc<RwLock<Communicator>>;
+    fn waiting_for(&self, device_id: &[u8]) -> bool;
 }
 
+#[derive(Clone)]
 pub enum RunningTaskContext {
     Group {
         threshold: u32,
@@ -215,7 +214,7 @@ pub enum RunningTaskContext {
     },
 }
 impl RunningTaskContext {
-    async fn create_running_task(
+    fn create_running_task(
         self,
         task_info: TaskInfo,
         decisions: HashMap<Vec<u8>, i8>,

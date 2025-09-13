@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::group::Group;
@@ -8,16 +6,14 @@ use crate::protocols::elgamal::ElgamalDecrypt;
 use crate::protocols::{create_threshold_protocol, Protocol};
 use crate::tasks::{FailedTask, FinishedTask, RoundUpdate, RunningTask, TaskInfo, TaskResult};
 use crate::utils;
-use async_trait::async_trait;
 use log::info;
 use meesign_crypto::proto::{ClientMessage, Message as _};
 use std::collections::HashMap;
-use tokio::sync::RwLock;
 
 pub struct DecryptTask {
     task_info: TaskInfo,
     group: Group,
-    communicator: Arc<RwLock<Communicator>>,
+    communicator: Communicator,
     pub(super) data: Vec<u8>,
     pub(super) protocol: Box<dyn Protocol + Send + Sync>,
 }
@@ -32,12 +28,8 @@ impl DecryptTask {
         let mut participants: Vec<Participant> = group.participants().to_vec();
         participants.sort_by(|a, b| a.device.identifier().cmp(b.device.identifier()));
 
-        let communicator = Arc::new(RwLock::new(Communicator::new(
-            participants,
-            group.threshold(),
-            group.protocol(),
-            decisions,
-        )));
+        let communicator =
+            Communicator::new(participants, group.threshold(), group.protocol(), decisions);
 
         Ok(DecryptTask {
             task_info,
@@ -51,7 +43,7 @@ impl DecryptTask {
     pub fn from_model(
         task_info: TaskInfo,
         task_model: TaskModel,
-        communicator: Arc<RwLock<Communicator>>,
+        communicator: Communicator,
         group: Group,
     ) -> Result<Self, Error> {
         let protocol = create_threshold_protocol(
@@ -74,21 +66,18 @@ impl DecryptTask {
         Ok(task)
     }
 
-    pub(super) async fn start_task(&mut self) -> Result<RoundUpdate, Error> {
-        self.protocol
-            .initialize(&mut *self.communicator.write().await, &self.data);
+    pub(super) fn start_task(&mut self) -> Result<RoundUpdate, Error> {
+        self.protocol.initialize(&mut self.communicator, &self.data);
         Ok(RoundUpdate::NextRound(self.protocol.round()))
     }
 
-    pub(super) async fn advance_task(&mut self) -> Result<RoundUpdate, Error> {
-        self.protocol.advance(&mut *self.communicator.write().await);
+    pub(super) fn advance_task(&mut self) -> Result<RoundUpdate, Error> {
+        self.protocol.advance(&mut self.communicator);
         Ok(RoundUpdate::NextRound(self.protocol.round()))
     }
 
-    pub(super) async fn finalize_task(&mut self) -> Result<RoundUpdate, Error> {
-        let decrypted = self
-            .protocol
-            .finalize(&mut *self.communicator.write().await);
+    pub(super) fn finalize_task(&mut self) -> Result<RoundUpdate, Error> {
+        let decrypted = self.protocol.finalize(&mut self.communicator);
         if decrypted.is_none() {
             let reason = "Task failed (data not output)".to_string();
             return Ok(RoundUpdate::Failed(FailedTask {
@@ -103,29 +92,29 @@ impl DecryptTask {
             utils::hextrunc(self.group.identifier())
         );
 
-        self.communicator.write().await.clear_input();
+        self.communicator.clear_input();
         Ok(RoundUpdate::Finished(
             self.protocol.round(),
             FinishedTask::new(self.task_info.clone(), TaskResult::Decrypted(decrypted)),
         ))
     }
 
-    pub(super) async fn next_round(&mut self) -> Result<RoundUpdate, Error> {
+    pub(super) fn next_round(&mut self) -> Result<RoundUpdate, Error> {
         if self.protocol.round() == 0 {
-            self.start_task().await
+            self.start_task()
         } else if self.protocol.round() < self.protocol.last_round() {
-            self.advance_task().await
+            self.advance_task()
         } else {
-            self.finalize_task().await
+            self.finalize_task()
         }
     }
 
-    pub(super) async fn update_internal(
+    pub(super) fn update_internal(
         &mut self,
         device_id: &[u8],
         data: &Vec<Vec<u8>>,
     ) -> Result<bool, Error> {
-        if !self.waiting_for(device_id).await {
+        if !self.waiting_for(device_id) {
             return Err(Error::GeneralProtocolError(
                 "Wasn't waiting for a message from this ID.".into(),
             ));
@@ -137,13 +126,9 @@ impl DecryptTask {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| Error::GeneralProtocolError("Expected ClientMessage".into()))?;
 
-        self.communicator
-            .write()
-            .await
-            .receive_messages(device_id, messages);
+        self.communicator.receive_messages(device_id, messages);
 
-        if self.communicator.read().await.round_received()
-            && self.protocol.round() <= self.protocol.last_round()
+        if self.communicator.round_received() && self.protocol.round() <= self.protocol.last_round()
         {
             return Ok(true);
         }
@@ -155,51 +140,42 @@ impl DecryptTask {
     }
 }
 
-#[async_trait]
 impl RunningTask for DecryptTask {
     fn task_info(&self) -> &TaskInfo {
         &self.task_info
     }
 
-    async fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>> {
-        if !self.waiting_for(device_id).await {
+    fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>> {
+        if !self.waiting_for(device_id) {
             return Vec::new();
         }
 
-        self.communicator.read().await.get_messages(device_id)
+        self.communicator.get_messages(device_id)
     }
 
     fn get_round(&self) -> u16 {
         self.protocol.round()
     }
 
-    async fn initialize(&mut self) -> Result<RoundUpdate, Error> {
-        self.start_task().await
+    fn initialize(&mut self) -> Result<RoundUpdate, Error> {
+        self.start_task()
     }
 
-    async fn update(
-        &mut self,
-        device_id: &[u8],
-        data: &Vec<Vec<u8>>,
-    ) -> Result<RoundUpdate, Error> {
-        let round_update = if self.update_internal(device_id, data).await? {
-            self.next_round().await?
+    fn update(&mut self, device_id: &[u8], data: &Vec<Vec<u8>>) -> Result<RoundUpdate, Error> {
+        let round_update = if self.update_internal(device_id, data)? {
+            self.next_round()?
         } else {
             RoundUpdate::Listen
         };
         Ok(round_update)
     }
 
-    async fn restart(&mut self) -> Result<RoundUpdate, Error> {
+    fn restart(&mut self) -> Result<RoundUpdate, Error> {
         self.increment_attempt_count();
-        self.start_task().await
+        self.start_task()
     }
 
-    async fn waiting_for(&self, device: &[u8]) -> bool {
-        self.communicator.read().await.waiting_for(device)
-    }
-
-    fn get_communicator(&self) -> Arc<RwLock<Communicator>> {
-        self.communicator.clone()
+    fn waiting_for(&self, device: &[u8]) -> bool {
+        self.communicator.waiting_for(device)
     }
 }

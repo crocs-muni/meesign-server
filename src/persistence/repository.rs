@@ -6,22 +6,20 @@ use super::{
     models::{Device, Group, Participant, Task},
 };
 
+use self::group::{add_group, get_device_groups, get_groups};
 use self::{
     device::{add_device, get_devices},
     group::get_group,
     task::{
-        get_active_device_tasks, get_task_acknowledgements, get_task_decisions, get_tasks,
-        increment_task_attempt_count, set_task_acknowledgement, set_task_decision,
-        set_task_group_certificates_sent, set_task_result, set_task_round,
+        get_active_device_tasks, get_restart_candidates, get_task_acknowledgements,
+        get_task_decisions, get_task_models, get_tasks, increment_task_attempt_count,
+        set_task_acknowledgement, set_task_decision, set_task_group_certificates_sent,
+        set_task_result, set_task_round,
     },
 };
 use self::{
     device::{get_group_participants, get_tasks_participants},
     task::{create_group_task, create_task},
-};
-use self::{
-    group::{add_group, get_device_groups, get_groups},
-    task::get_task,
 };
 
 use diesel::{Connection, PgConnection};
@@ -252,26 +250,28 @@ impl Repository {
             .await
     }
 
-    pub async fn get_task(&self, task_id: &Uuid) -> Result<Option<Task>, PersistenceError> {
+    pub async fn get_task_models(&self, task_ids: &[Uuid]) -> Result<Vec<Task>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
-        let task = get_task(connection, task_id).await?;
-        Ok(task)
+        let task_models = get_task_models(connection, task_ids).await?;
+        Ok(task_models)
     }
 
-    pub async fn get_tasks(&self) -> Result<Vec<Task>, PersistenceError> {
+    pub async fn get_tasks(&self) -> Result<Vec<Uuid>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         let tasks = get_tasks(connection).await?;
         Ok(tasks)
     }
 
-    pub async fn get_tasks_for_restart(&self) -> Result<Vec<Task>, PersistenceError> {
-        todo!()
+    pub async fn get_restart_candidates(&self) -> Result<Vec<Uuid>, PersistenceError> {
+        let connection = &mut self.get_async_connection().await?;
+        let tasks = get_restart_candidates(connection).await?;
+        Ok(tasks)
     }
 
     pub async fn get_active_device_tasks(
         &self,
         identifier: &[u8],
-    ) -> Result<Vec<Task>, PersistenceError> {
+    ) -> Result<Vec<Uuid>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         get_active_device_tasks(connection, identifier).await
     }

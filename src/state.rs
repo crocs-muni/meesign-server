@@ -1,7 +1,6 @@
 use dashmap::DashMap;
 use log::{debug, error, warn};
 use std::collections::HashMap;
-use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::communicator::Communicator;
@@ -26,11 +25,11 @@ use tonic::codegen::Arc;
 use tonic::Status;
 
 pub struct State {
-    // tasks: HashMap<Uuid, Box<dyn Task + Send + Sync>>,
     devices: DashMap<Vec<u8>, Device>,
-    subscribers: DashMap<Vec<u8>, Sender<Result<crate::proto::Task, Status>>>,
+    subscribers: DashMap<Vec<u8>, Sender<Result<proto::Task, Status>>>,
     repo: Arc<Repository>,
-    communicators: DashMap<Uuid, Arc<RwLock<Communicator>>>,
+    // TODO: // NOTE: DashMap locking applies to its internal shards, we must protect Tasks by tokio's RwLock.
+    task_cache: DashMap<Uuid, Task>,
     task_last_updates: DashMap<Uuid, u64>,
     device_last_activations: DashMap<Vec<u8>, u64>,
 }
@@ -43,15 +42,15 @@ impl State {
             .into_iter()
             .map(|dev| (dev.id.clone(), dev))
             .collect();
-        Ok(State {
-            // tasks: HashMap::new(),
+        let state = State {
             devices,
             subscribers: DashMap::new(),
             repo,
-            communicators: DashMap::default(),
+            task_cache: DashMap::new(),
             task_last_updates: DashMap::new(),
             device_last_activations: DashMap::new(),
-        })
+        };
+        Ok(state)
     }
 
     pub async fn add_device(
@@ -69,14 +68,14 @@ impl State {
         Ok(device)
     }
     pub async fn add_group_task(
-        &mut self,
+        &self,
         name: &str,
         device_ids: &[&[u8]],
         threshold: u32,
         protocol_type: ProtocolType,
         key_type: KeyType,
         note: Option<String>,
-    ) -> Result<Task, Error> {
+    ) -> Result<proto::Task, Error> {
         if !name.is_name_valid() {
             error!("Group request with invalid group name {}", name);
             return Err(Error::GeneralProtocolError(format!(
@@ -145,17 +144,20 @@ impl State {
             )
             .await?;
 
+        let task_id = task.task_info.id.clone();
         let task = Task::Voting(task);
+        let formatted = self.format_task(&task, None, None);
         self.send_updates(&task).await?;
-        Ok(task)
+        self.task_cache.insert(task_id, task);
+        Ok(formatted)
     }
 
     pub async fn add_sign_task(
-        &mut self,
+        &self,
         group_id: &[u8],
         name: &str,
         data: &[u8],
-    ) -> Result<Task, Error> {
+    ) -> Result<proto::Task, Error> {
         let group = self.get_repo().get_group(group_id).await?;
         let Some(group) = group else {
             warn!(
@@ -217,12 +219,12 @@ impl State {
     }
 
     pub async fn add_decrypt_task(
-        &mut self,
+        &self,
         group_id: &[u8],
         name: &str,
         data: &[u8],
         data_type: &str,
-    ) -> Result<Task, Error> {
+    ) -> Result<proto::Task, Error> {
         let group: Option<Group> = self.get_repo().get_group(group_id).await?;
         let Some(group) = group else {
             warn!(
@@ -277,7 +279,7 @@ impl State {
         self.add_threshold_task(task).await
     }
 
-    async fn add_threshold_task(&mut self, task: VotingTask) -> Result<Task, Error> {
+    async fn add_threshold_task(&self, task: VotingTask) -> Result<proto::Task, Error> {
         let participant_ids_shares: Vec<(&[u8], u32)> = task
             .task_info
             .participants
@@ -307,14 +309,24 @@ impl State {
             )
             .await?;
 
+        let task_id = task.task_info.id.clone();
         let task = Task::Voting(task);
+        let formatted = self.format_task(&task, None, None);
         self.send_updates(&task).await?;
-        Ok(task)
+        self.task_cache.insert(task_id, task);
+        Ok(formatted)
     }
 
-    pub async fn get_active_device_tasks(&self, device: &[u8]) -> Result<Vec<Task>, Error> {
-        let task_models = self.get_repo().get_active_device_tasks(device).await?;
-        let tasks = self.tasks_from_task_models(task_models).await?;
+    pub async fn get_formatted_active_device_tasks(
+        &self,
+        device_id: &[u8],
+    ) -> Result<Vec<proto::Task>, Error> {
+        let task_ids = self.repo.get_active_device_tasks(device_id).await?;
+        let tasks = self
+            .get_tasks(task_ids)
+            .await?
+            .map(|task| self.format_task(&*task, Some(device_id), None))
+            .collect();
         Ok(tasks)
     }
 
@@ -355,32 +367,105 @@ impl State {
         Ok(self.get_repo().get_groups().await?)
     }
 
-    pub async fn get_tasks(&self) -> Result<Vec<Task>, Error> {
-        let task_models = self.repo.get_tasks().await?;
-        let tasks = self.tasks_from_task_models(task_models).await?;
+    pub async fn get_formatted_tasks(&self) -> Result<Vec<proto::Task>, Error> {
+        let task_ids = self.repo.get_tasks().await?;
+        let tasks = self
+            .get_tasks(task_ids)
+            .await?
+            .map(|task| self.format_task(&*task, None, None))
+            .collect();
         Ok(tasks)
     }
 
-    pub async fn get_task(&self, task_id: &Uuid) -> Result<Task, Error> {
-        let Some(task_model) = self.repo.get_task(task_id).await? else {
-            return Err(Error::GeneralProtocolError("Invalid task id".into()));
+    pub async fn get_formatted_voting_task(
+        &self,
+        task_id: &Uuid,
+        device_id: Option<&[u8]>,
+    ) -> Result<proto::Task, Error> {
+        let task = &*self.get_task(&task_id).await?;
+        let request = if let Task::Voting(task) = task {
+            task.request.clone()
+        } else {
+            return Err(Error::GeneralProtocolError(
+                "Queried task is not in voting phase".into(),
+            ));
         };
-        let task = self
-            .tasks_from_task_models(vec![task_model])
-            .await?
-            .pop()
-            .unwrap();
+        let task = self.format_task(task, device_id, Some(request));
+        Ok(task)
+    }
+
+    async fn ensure_cached_tasks(&self, task_ids: impl Iterator<Item = Uuid>) -> Result<(), Error> {
+        let uncached_task_ids: Vec<_> = task_ids
+            .filter(|task_id| !self.task_cache.contains_key(task_id))
+            .collect();
+        let tasks = self.hydrate_tasks(&uncached_task_ids).await?;
+        for task in tasks {
+            use dashmap::mapref::entry::Entry;
+            let task_id = task.task_info().id.clone();
+            if let Entry::Vacant(entry) = self.task_cache.entry(task_id) {
+                entry.insert(task);
+            }
+        }
+        Ok(())
+    }
+
+    async fn get_tasks(
+        &self,
+        task_ids: Vec<Uuid>,
+    ) -> Result<impl Iterator<Item = dashmap::mapref::multiple::RefMulti<'_, Uuid, Task>>, Error>
+    {
+        use std::collections::HashSet;
+        let task_ids: HashSet<Uuid> = task_ids.into_iter().collect();
+        self.ensure_cached_tasks(task_ids.iter().cloned()).await?;
+        let iterator = self
+            .task_cache
+            .iter()
+            .filter(move |kv| task_ids.contains(kv.key()));
+        Ok(iterator)
+    }
+
+    async fn get_tasks_mut(
+        &self,
+        task_ids: Vec<Uuid>,
+    ) -> Result<impl Iterator<Item = dashmap::mapref::multiple::RefMutMulti<'_, Uuid, Task>>, Error>
+    {
+        use std::collections::HashSet;
+        let task_ids: HashSet<Uuid> = task_ids.into_iter().collect();
+        self.ensure_cached_tasks(task_ids.iter().cloned()).await?;
+        let iterator = self
+            .task_cache
+            .iter_mut()
+            .filter(move |kv| task_ids.contains(kv.key()));
+        Ok(iterator)
+    }
+
+    async fn get_task_mut(
+        &self,
+        task_id: &Uuid,
+    ) -> Result<dashmap::mapref::one::RefMut<'_, Uuid, Task>, Error> {
+        self.ensure_cached_tasks(vec![task_id.clone()].into_iter())
+            .await?;
+        let task = self.task_cache.get_mut(task_id).unwrap();
+        Ok(task)
+    }
+
+    async fn get_task(
+        &self,
+        task_id: &Uuid,
+    ) -> Result<dashmap::mapref::one::Ref<'_, Uuid, Task>, Error> {
+        let task = self.get_task_mut(task_id).await?.downgrade();
         Ok(task)
     }
 
     pub async fn update_task(
-        &mut self,
+        &self,
         task_id: &Uuid,
         device: &[u8],
         data: &Vec<Vec<u8>>,
         attempt: u32,
     ) -> Result<(), Error> {
-        let Task::Running(mut task) = self.get_task(task_id).await? else {
+        let task_entry = &mut *self.get_task_mut(task_id).await?;
+        let Task::Running(task) = task_entry else {
             return Err(Error::GeneralProtocolError(
                 "Cannot update non-running task".into(),
             ));
@@ -396,18 +481,19 @@ impl State {
             return Err(Error::GeneralProtocolError("Stale update".to_string()));
         }
 
-        match task.update(device, data).await? {
+        match task.update(device, data)? {
             RoundUpdate::Listen => {}
             RoundUpdate::GroupCertificatesSent => unreachable!(),
             RoundUpdate::NextRound(round) => {
                 self.repo.set_task_round(task_id, round).await?;
-                self.send_updates(&Task::Running(task)).await?;
+                self.send_updates(task_entry).await?;
             }
             RoundUpdate::Failed(task) => {
                 self.repo
                     .set_task_result(task_id, &Err(task.reason.clone()))
                     .await?;
-                self.send_updates(&Task::Failed(task)).await?;
+                *task_entry = Task::Failed(task);
+                self.send_updates(task_entry).await?;
             }
             RoundUpdate::Finished(round, task) => {
                 self.repo.set_task_round(task_id, round).await?;
@@ -430,20 +516,21 @@ impl State {
                 self.repo
                     .set_task_result(task_id, &Ok(result_bytes))
                     .await?;
-                // NOTE: Updates must be sent after the group is persisted
-                self.send_updates(&Task::Finished(task)).await?;
+                *task_entry = Task::Finished(task);
+                self.send_updates(task_entry).await?;
             }
         }
         Ok(())
     }
 
     pub async fn decide_task(
-        &mut self,
+        &self,
         task_id: &Uuid,
         device_id: &[u8],
         accept: bool,
     ) -> Result<(), Error> {
-        let Task::Voting(task) = self.get_task(task_id).await? else {
+        let task_entry = &mut *self.get_task_mut(task_id).await?;
+        let Task::Voting(task) = task_entry else {
             return Err(Error::GeneralProtocolError(
                 "Cannot decide non-voting task".into(),
             ));
@@ -454,42 +541,34 @@ impl State {
             .set_task_decision(task_id, device_id, accept)
             .await?;
         match decision_update {
-            DecisionUpdate::Undecided(_) => {}
+            DecisionUpdate::Undecided => {}
             DecisionUpdate::Accepted(mut task) => {
                 log::info!(
                     "Task approved task_id={}",
                     utils::hextrunc(task_id.as_bytes())
                 );
 
-                if let Some(_communicator) = self
-                    .communicators
-                    .insert(task_id.clone(), task.get_communicator())
-                {
-                    error!(
-                        "A communicator for task with id {} already exists!",
-                        task_id
-                    );
-                    return Err(Error::GeneralProtocolError("Data inconsistency".into()));
-                };
-
-                match task.initialize().await? {
+                match task.initialize()? {
                     RoundUpdate::Listen => unreachable!(),
                     RoundUpdate::Finished(_, _) => unreachable!(),
                     RoundUpdate::GroupCertificatesSent => {
                         self.repo
                             .set_task_group_certificates_sent(task_id, Some(true))
                             .await?;
-                        self.send_updates(&Task::Running(task)).await?;
+                        *task_entry = Task::Running(task);
+                        self.send_updates(task_entry).await?;
                     }
                     RoundUpdate::NextRound(round) => {
                         self.repo.set_task_round(task_id, round).await?;
-                        self.send_updates(&Task::Running(task)).await?;
+                        *task_entry = Task::Running(task);
+                        self.send_updates(task_entry).await?;
                     }
                     RoundUpdate::Failed(task) => {
                         self.repo
                             .set_task_result(task_id, &Err(task.reason.clone()))
                             .await?;
-                        self.send_updates(&Task::Failed(task)).await?;
+                        *task_entry = Task::Failed(task);
+                        self.send_updates(task_entry).await?;
                     }
                 }
             }
@@ -501,14 +580,15 @@ impl State {
                 self.repo
                     .set_task_result(task_id, &Err("Task declined".into()))
                     .await?;
-                self.send_updates(&Task::Declined(task)).await?;
+                *task_entry = Task::Declined(task);
+                self.send_updates(task_entry).await?;
             }
-        }
+        };
         Ok(())
     }
 
-    pub async fn acknowledge_task(&mut self, task_id: &Uuid, device: &[u8]) -> Result<(), Error> {
-        let Task::Finished(mut task) = self.get_task(task_id).await? else {
+    pub async fn acknowledge_task(&self, task_id: &Uuid, device: &[u8]) -> Result<(), Error> {
+        let Task::Finished(task) = &mut *self.get_task_mut(task_id).await? else {
             return Err(Error::GeneralProtocolError(
                 "Cannot acknowledge unfinished task".into(),
             ));
@@ -518,56 +598,59 @@ impl State {
         Ok(())
     }
 
-    async fn restart_task(&self, mut task: Box<dyn RunningTask>) -> Result<(), Error> {
-        let task_id = &task.task_info().id.clone();
-        self.set_task_last_update(task_id);
-
-        self.repo.increment_task_attempt_count(task_id).await?;
-        match task.restart().await? {
-            RoundUpdate::Listen => unreachable!(),
-            RoundUpdate::Finished(_, _) => unreachable!(),
-            RoundUpdate::GroupCertificatesSent => {
-                self.repo
-                    .set_task_group_certificates_sent(task_id, Some(true))
-                    .await?;
-                self.send_updates(&Task::Running(task)).await?;
-            }
-            RoundUpdate::NextRound(round) => {
-                self.repo.set_task_round(task_id, round).await?;
-                self.send_updates(&Task::Running(task)).await?;
-            }
-            RoundUpdate::Failed(task) => {
-                self.repo
-                    .set_task_result(task_id, &Err(task.reason.clone()))
-                    .await?;
-                self.send_updates(&Task::Failed(task)).await?;
-            }
-        }
-        Ok(())
-    }
-
     pub async fn restart_stale_tasks(&self) -> Result<(), Error> {
-        // TODO: Filter tasks in DB
-        let tasks = self.get_tasks().await?;
         let now = get_timestamp();
-
-        for task in tasks {
-            let Task::Running(task) = task else {
-                // NOTE: Only running tasks can be restarted
-                continue;
+        let task_ids = self
+            .repo
+            .get_restart_candidates()
+            .await?
+            .into_iter()
+            .filter(|task_id| {
+                let last_update = self.get_task_last_update(task_id);
+                now.saturating_sub(last_update) > 30
+            })
+            .collect();
+        let tasks = self.get_tasks_mut(task_ids).await?;
+        for mut task_entry in tasks {
+            let task_entry = &mut *task_entry;
+            let Task::Running(task) = task_entry else {
+                return Err(PersistenceError::DataInconsistencyError(
+                    "non-running task in candidates for restart".into(),
+                )
+                .into());
             };
-            let task_id = &task.task_info().id;
-            let last_update = self.get_task_last_update(task_id);
-            if now.saturating_sub(last_update) > 30 {
-                debug!("Stale task detected task_id={:?}", utils::hextrunc(task_id));
-                self.restart_task(task).await?;
+            let task_id = &task.task_info().id.clone();
+            debug!("Stale task detected task_id={:?}", utils::hextrunc(task_id));
+            self.set_task_last_update(task_id);
+
+            self.repo.increment_task_attempt_count(task_id).await?;
+            match task.restart()? {
+                RoundUpdate::Listen => unreachable!(),
+                RoundUpdate::Finished(_, _) => unreachable!(),
+                RoundUpdate::GroupCertificatesSent => {
+                    self.repo
+                        .set_task_group_certificates_sent(task_id, Some(true))
+                        .await?;
+                    self.send_updates(task_entry).await?;
+                }
+                RoundUpdate::NextRound(round) => {
+                    self.repo.set_task_round(task_id, round).await?;
+                    self.send_updates(task_entry).await?;
+                }
+                RoundUpdate::Failed(task) => {
+                    self.repo
+                        .set_task_result(task_id, &Err(task.reason.clone()))
+                        .await?;
+                    *task_entry = Task::Failed(task);
+                    self.send_updates(task_entry).await?;
+                }
             }
         }
         Ok(())
     }
 
     pub fn add_subscriber(
-        &mut self,
+        &self,
         device_id: Vec<u8>,
         tx: Sender<Result<crate::proto::Task, Status>>,
     ) {
@@ -592,8 +675,7 @@ impl State {
         for participant in &task.task_info().participants {
             let device_id = participant.device.identifier();
             if let Some(tx) = self.subscribers.get(device_id) {
-                let result =
-                    tx.try_send(Ok(self.format_task(&task, Some(device_id), None).await?));
+                let result = tx.try_send(Ok(self.format_task(&task, Some(device_id), None)));
 
                 if result.is_err() {
                     debug!(
@@ -620,40 +702,28 @@ impl State {
         &self,
         task_model: &TaskModel,
         mut participants: Vec<Participant>,
-    ) -> Result<Arc<RwLock<Communicator>>, Error> {
-        use dashmap::mapref::entry::Entry;
-        let communicator = match self.communicators.entry(task_model.id.clone()) {
-            Entry::Occupied(entry) => entry.into_ref(),
-            Entry::Vacant(entry) => {
-                participants.sort_by(|a, b| a.device.identifier().cmp(b.device.identifier()));
-                let decisions = self.repo.get_task_decisions(&task_model.id).await?;
-                let threshold = match task_model.task_type {
-                    TaskType::Group => participants.iter().map(|p| p.shares).sum(),
-                    _ => task_model.threshold as u32,
-                };
+    ) -> Result<Communicator, Error> {
+        participants.sort_by(|a, b| a.device.identifier().cmp(b.device.identifier()));
+        let decisions = self.repo.get_task_decisions(&task_model.id).await?;
+        let threshold = match task_model.task_type {
+            TaskType::Group => participants.iter().map(|p| p.shares).sum(),
+            _ => task_model.threshold as u32,
+        };
 
-                entry.insert(Arc::new(RwLock::new(Communicator::new(
-                    participants,
-                    threshold,
-                    task_model.protocol_type.into(),
-                    decisions,
-                ))))
-            }
-        }
-        .clone();
-        Ok(communicator)
+        Ok(Communicator::new(
+            participants,
+            threshold,
+            task_model.protocol_type.into(),
+            decisions,
+        ))
     }
 
-    async fn tasks_from_task_models(
-        &self,
-        task_models: Vec<TaskModel>,
-    ) -> Result<Vec<Task>, Error> {
-        // NOTE: Sorted and unique task models (strict inequality)
-        assert!(task_models.windows(2).all(|w| w[0].id < w[1].id));
-
-        let task_ids: Vec<_> = task_models.iter().map(|task| task.id.clone()).collect();
-
-        let task_id_participant_pairs = self.get_repo().get_tasks_participants(&task_ids).await?;
+    async fn hydrate_tasks(&self, task_ids: &[Uuid]) -> Result<Vec<Task>, Error> {
+        let task_models = self.repo.get_task_models(task_ids).await?;
+        if task_models.len() != task_ids.len() {
+            return Err(Error::GeneralProtocolError("Invalid task id(s)".into()));
+        }
+        let task_id_participant_pairs = self.repo.get_tasks_participants(task_ids).await?;
 
         let mut task_id_participants: HashMap<_, Vec<_>> = HashMap::new();
 
@@ -887,18 +957,18 @@ impl State {
             .or_insert(get_timestamp())
     }
 
-    pub async fn format_task(
+    fn format_task(
         &self,
         task: &Task,
         device_id: Option<&[u8]>,
         request: Option<Vec<u8>>,
-    ) -> Result<proto::Task, Error> {
+    ) -> proto::Task {
         let request = request.map(Vec::from);
         let task_info = task.task_info();
         let id = task_info.id.as_bytes().to_vec();
         let r#type = task_info.task_type.clone().into();
         let attempt = task_info.attempts;
-        let task = match task {
+        match task {
             Task::Voting(task) => {
                 let (accept, reject) = VotingTask::accepts_rejects(&task.decisions);
                 proto::Task::created(id, r#type, accept, reject, request, attempt)
@@ -906,7 +976,7 @@ impl State {
             Task::Running(task) => {
                 let round = task.get_round() as u32;
                 let data = if let Some(device_id) = device_id {
-                    task.get_work(device_id).await
+                    task.get_work(device_id)
                 } else {
                     Vec::new()
                 };
@@ -925,7 +995,6 @@ impl State {
             Task::Declined(task) => {
                 proto::Task::declined(id, r#type, task.accepts, task.rejects, request, attempt)
             }
-        };
-        Ok(task)
+        }
     }
 }

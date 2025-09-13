@@ -173,7 +173,7 @@ macro_rules! task_model_columns {
     };
 }
 
-pub async fn get_task<Conn>(
+async fn get_task<Conn>(
     connection: &mut Conn,
     task_id: &Uuid,
 ) -> Result<Option<Task>, PersistenceError>
@@ -194,13 +194,29 @@ where
     Ok(task)
 }
 
-pub async fn get_tasks<Conn>(connection: &mut Conn) -> Result<Vec<Task>, PersistenceError>
+pub async fn get_tasks<Conn>(connection: &mut Conn) -> Result<Vec<Uuid>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    let tasks = task::table
+        .select(task::id)
+        .order_by(task::id.asc())
+        .load(connection)
+        .await?;
+    Ok(tasks)
+}
+
+pub async fn get_task_models<Conn>(
+    connection: &mut Conn,
+    task_ids: &[Uuid],
+) -> Result<Vec<Task>, PersistenceError>
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
     let tasks = task::table
         .left_outer_join(task_result::table)
         .select(task_model_columns!())
+        .filter(task::id.eq_any(task_ids))
         .order_by(task::id.asc())
         .load(connection)
         .await?;
@@ -209,15 +225,15 @@ where
 
 pub async fn get_active_device_tasks<Conn>(
     connection: &mut Conn,
-    identifier: &[u8],
-) -> Result<Vec<Task>, PersistenceError>
+    device_id: &[u8],
+) -> Result<Vec<Uuid>, PersistenceError>
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
     let tasks = task::table
         .left_outer_join(task_result::table)
         .inner_join(task_participant::table)
-        .filter(task_participant::device_id.eq(identifier))
+        .filter(task_participant::device_id.eq(device_id))
         .filter(
             task_result::is_successful
                 .is_null()
@@ -225,7 +241,28 @@ where
                     .is_null()
                     .or(task_participant::acknowledgment.eq(false))),
         )
-        .select(task_model_columns!())
+        .select(task::id)
+        .order_by(task::id.asc())
+        .load(connection)
+        .await?;
+    Ok(tasks)
+}
+
+pub async fn get_restart_candidates<Conn>(
+    connection: &mut Conn,
+) -> Result<Vec<Uuid>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    let tasks = task::table
+        .left_outer_join(task_result::table)
+        .filter(task_result::is_successful.is_null())
+        .filter(
+            task::group_certificates_sent
+                .eq(Some(true))
+                .or(task::protocol_round.ge(1)),
+        )
+        .select(task::id)
         .order_by(task::id.asc())
         .load(connection)
         .await?;

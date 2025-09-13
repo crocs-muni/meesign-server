@@ -7,19 +7,16 @@ use crate::proto::ProtocolType;
 use crate::protocols::{create_keygen_protocol, Protocol};
 use crate::tasks::{FailedTask, FinishedTask, RoundUpdate, RunningTask, TaskInfo, TaskResult};
 use crate::utils;
-use async_trait::async_trait;
 use log::{info, warn};
 use meesign_crypto::proto::{ClientMessage, Message as _, ServerMessage};
 use std::collections::HashMap;
 use std::io::Read;
 use std::process::{Command, Stdio};
-use std::sync::Arc;
-use tokio::sync::RwLock;
 
 pub struct GroupTask {
     task_info: TaskInfo,
     threshold: u32,
-    communicator: Arc<RwLock<Communicator>>,
+    communicator: Communicator,
     protocol: Box<dyn Protocol + Send + Sync>,
     note: Option<String>,
     certificates_sent: bool, // TODO: remove the field completely
@@ -57,12 +54,12 @@ impl GroupTask {
 
         let group_task_threshold = total_shares;
 
-        let communicator = Arc::new(RwLock::new(Communicator::new(
+        let communicator = Communicator::new(
             task_info.participants.clone(),
             group_task_threshold,
             task_info.protocol_type,
             decisions,
-        )));
+        );
 
         Ok(GroupTask {
             task_info,
@@ -77,7 +74,7 @@ impl GroupTask {
     pub fn from_model(
         task_info: TaskInfo,
         model: TaskModel,
-        communicator: Arc<RwLock<Communicator>>,
+        communicator: Communicator,
     ) -> Result<Self, Error> {
         let protocol = create_keygen_protocol(
             model.protocol_type.into(),
@@ -107,21 +104,18 @@ impl GroupTask {
         self.task_info.attempts += 1;
     }
 
-    async fn start_task(&mut self) -> Result<RoundUpdate, Error> {
-        self.protocol
-            .initialize(&mut *self.communicator.write().await, &[]);
+    fn start_task(&mut self) -> Result<RoundUpdate, Error> {
+        self.protocol.initialize(&mut self.communicator, &[]);
         Ok(RoundUpdate::NextRound(self.protocol.round()))
     }
 
-    async fn advance_task(&mut self) -> Result<RoundUpdate, Error> {
-        self.protocol.advance(&mut *self.communicator.write().await);
+    fn advance_task(&mut self) -> Result<RoundUpdate, Error> {
+        self.protocol.advance(&mut self.communicator);
         Ok(RoundUpdate::NextRound(self.protocol.round()))
     }
 
-    async fn finalize_task(&mut self) -> Result<RoundUpdate, Error> {
-        let identifier = self
-            .protocol
-            .finalize(&mut *self.communicator.write().await);
+    fn finalize_task(&mut self) -> Result<RoundUpdate, Error> {
+        let identifier = self.protocol.finalize(&mut self.communicator);
         let Some(identifier) = identifier else {
             let reason = "Task failed (group key not output)".to_string();
             return Ok(RoundUpdate::Failed(FailedTask {
@@ -157,36 +151,35 @@ impl GroupTask {
             self.note.clone(),
         );
 
-        self.communicator.write().await.clear_input();
+        self.communicator.clear_input();
         Ok(RoundUpdate::Finished(
             self.protocol.round(),
             FinishedTask::new(self.task_info.clone(), TaskResult::GroupEstablished(group)),
         ))
     }
 
-    async fn next_round(&mut self) -> Result<RoundUpdate, Error> {
+    fn next_round(&mut self) -> Result<RoundUpdate, Error> {
         if !self.certificates_sent {
-            self.send_certificates().await
+            self.send_certificates()
         } else if self.protocol.round() == 0 {
-            self.start_task().await
+            self.start_task()
         } else if self.protocol.round() < self.protocol.last_round() {
-            self.advance_task().await
+            self.advance_task()
         } else {
-            self.finalize_task().await
+            self.finalize_task()
         }
     }
 
-    async fn send_certificates(&mut self) -> Result<RoundUpdate, Error> {
-        self.communicator.write().await.set_active_devices(None);
+    fn send_certificates(&mut self) -> Result<RoundUpdate, Error> {
+        self.communicator.set_active_devices(None);
 
         let certs: HashMap<u32, Vec<u8>> = {
-            let communicator_read = self.communicator.read().await;
             self.task_info
                 .participants
                 .iter()
                 .flat_map(|p| {
                     let cert = &p.device.certificate;
-                    communicator_read
+                    self.communicator
                         .identifier_to_indices(p.device.identifier())
                         .into_iter()
                         .zip(std::iter::repeat(cert).cloned())
@@ -200,24 +193,23 @@ impl GroupTask {
         }
         .encode_to_vec();
 
-        self.communicator.write().await.send_all(|_| certs.clone());
+        self.communicator.send_all(|_| certs.clone());
         self.certificates_sent = true;
         Ok(RoundUpdate::GroupCertificatesSent)
     }
 }
 
-#[async_trait]
 impl RunningTask for GroupTask {
     fn task_info(&self) -> &TaskInfo {
         &self.task_info
     }
 
-    async fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>> {
-        if !self.waiting_for(device_id).await {
+    fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>> {
+        if !self.waiting_for(device_id) {
             return Vec::new();
         }
 
-        self.communicator.read().await.get_messages(device_id)
+        self.communicator.get_messages(device_id)
     }
 
     fn get_round(&self) -> u16 {
@@ -228,16 +220,12 @@ impl RunningTask for GroupTask {
         }
     }
 
-    async fn initialize(&mut self) -> Result<RoundUpdate, Error> {
-        self.send_certificates().await
+    fn initialize(&mut self) -> Result<RoundUpdate, Error> {
+        self.send_certificates()
     }
 
-    async fn update(
-        &mut self,
-        device_id: &[u8],
-        data: &Vec<Vec<u8>>,
-    ) -> Result<RoundUpdate, Error> {
-        if !self.waiting_for(device_id).await {
+    fn update(&mut self, device_id: &[u8], data: &Vec<Vec<u8>>) -> Result<RoundUpdate, Error> {
+        if !self.waiting_for(device_id) {
             return Err(Error::GeneralProtocolError(
                 "Wasn't waiting for a message from this ID.".into(),
             ));
@@ -251,32 +239,24 @@ impl RunningTask for GroupTask {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| Error::GeneralProtocolError("Expected ClientMessage.".into()))?;
 
-        self.communicator
-            .write()
-            .await
-            .receive_messages(device_id, messages);
+        self.communicator.receive_messages(device_id, messages);
 
-        if self.communicator.read().await.round_received()
-            && self.protocol.round() <= self.protocol.last_round()
+        if self.communicator.round_received() && self.protocol.round() <= self.protocol.last_round()
         {
-            return self.next_round().await;
+            return self.next_round();
         }
 
         Ok(RoundUpdate::Listen)
     }
 
-    async fn restart(&mut self) -> Result<RoundUpdate, Error> {
+    fn restart(&mut self) -> Result<RoundUpdate, Error> {
         self.increment_attempt_count();
         // TODO: Should this instead be the certificate exchange round?
-        self.start_task().await
+        self.start_task()
     }
 
-    async fn waiting_for(&self, device: &[u8]) -> bool {
-        self.communicator.write().await.waiting_for(device)
-    }
-
-    fn get_communicator(&self) -> Arc<RwLock<Communicator>> {
-        self.communicator.clone()
+    fn waiting_for(&self, device: &[u8]) -> bool {
+        self.communicator.waiting_for(device)
     }
 }
 
