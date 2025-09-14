@@ -19,6 +19,7 @@ mod interfaces;
 mod persistence;
 mod protocols;
 mod state;
+mod task_store;
 mod tasks;
 mod utils;
 
