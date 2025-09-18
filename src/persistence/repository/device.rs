@@ -167,7 +167,10 @@ mod test {
     #[cfg_attr(not(feature = "db-tests"), ignore)]
     async fn test_insert_device() -> Result<(), PersistenceError> {
         let ctx = PersistencyUnitTestContext::new().await;
-        let mut connection = ctx.get_test_connection().await.expect("Could not connect to test database");
+        let mut connection = ctx
+            .get_test_connection()
+            .await
+            .expect("Could not connect to test database");
 
         let identifier = vec![1];
         let name = "Test User 123";
@@ -195,7 +198,10 @@ mod test {
     #[cfg_attr(not(feature = "db-tests"), ignore)]
     async fn test_identifier_unique_constraint() -> Result<(), PersistenceError> {
         let ctx = PersistencyUnitTestContext::new().await;
-        let mut connection = ctx.get_test_connection().await.expect("Could not connect to test database");
+        let mut connection = ctx
+            .get_test_connection()
+            .await
+            .expect("Could not connect to test database");
 
         let identifier = vec![1];
         let first_device_name = "user1";
@@ -227,7 +233,10 @@ mod test {
     #[cfg_attr(not(feature = "db-tests"), ignore)]
     async fn test_invalid_device() -> Result<(), PersistenceError> {
         let ctx = PersistencyUnitTestContext::new().await;
-        let mut connection = ctx.get_test_connection().await.expect("Could not connect to test database");
+        let mut connection = ctx
+            .get_test_connection()
+            .await
+            .expect("Could not connect to test database");
 
         let empty = vec![];
         let nonempty: Vec<u8> = vec![1];
