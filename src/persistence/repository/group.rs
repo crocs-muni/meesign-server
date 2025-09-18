@@ -247,8 +247,6 @@ where
 
 #[cfg(test)]
 mod test {
-    use diesel_async::AsyncPgConnection;
-
     use crate::persistence::{
         repository::{device::add_device, task::create_group_task},
         tests::persistency_unit_test_context::PersistencyUnitTestContext,
@@ -269,8 +267,9 @@ mod test {
 
     #[tokio::test]
     async fn given_valid_arguments_create_group() -> Result<(), PersistenceError> {
-        let ctx = PersistencyUnitTestContext::new();
-        let mut connection: AsyncPgConnection = ctx.get_test_connection().await?;
+        let ctx = PersistencyUnitTestContext::new().await;
+        // let mut connection = ctx.pool().get().await.expect("Could not connect to test database through pool");
+        let mut connection = ctx.get_test_connection().await.expect("reason");
 
         let participants = &vec![(&DEVICE_1_ID[..], 1), (&DEVICE_2_ID[..], 1)];
         let threshold = 2;
@@ -344,8 +343,9 @@ mod test {
     #[tokio::test]
     async fn given_valid_group_and_device_get_device_groups_returns_correct_group(
     ) -> Result<(), PersistenceError> {
-        let ctx = PersistencyUnitTestContext::new();
-        let mut connection: AsyncPgConnection = ctx.get_test_connection().await?;
+        let ctx = PersistencyUnitTestContext::new().await;
+        // let mut connection = ctx.pool().get().await.expect("Could not connect to test database through pool");
+        let mut connection = ctx.get_test_connection().await.expect("reason");
 
         let group_1_participants = &vec![(&DEVICE_1_ID[..], 1), (&DEVICE_2_ID[..], 1)];
         let group_2_participants = &vec![(&DEVICE_2_ID[..], 1), (&DEVICE_3_ID[..], 1)];

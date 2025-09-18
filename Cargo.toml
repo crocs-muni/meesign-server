@@ -26,7 +26,7 @@ sha2 = "0.10.6"
 meesign-crypto = { git = "https://github.com/crocs-muni/meesign-crypto", rev = "ccf6b1d", default-features = false, features = ["elgamal-encrypt"] }
 diesel = { version = "2.1.0", features = ["postgres", "chrono", "uuid"] }
 diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }
-diesel-async = { version = "0.4.1", features = ["postgres", "deadpool"] }
+diesel-async = { version = "0.4.1", features = ["postgres", "deadpool", "bb8"] }
 diesel_migrations = "2.1.0"
 deadpool = "0.11.1"
 dotenvy = "0.15"
@@ -36,6 +36,8 @@ dashmap = "5.5.3"
 futures = "0.3.31"
 async-trait = "0.1.80"
 serde = "1.0.200"
+testcontainers-modules = { version = "0.13.0", features = ["blocking", "postgres"] }
+testcontainers = { version = "0.25.0", features = ["reusable-containers"] }
 
 [build-dependencies]
 tonic-build = "0.11.0"
