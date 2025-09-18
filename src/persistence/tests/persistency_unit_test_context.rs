@@ -32,7 +32,6 @@ pub fn initialize_db(database_url: &str) {
 pub struct PersistencyUnitTestContext {
     _container: ContainerAsync<Postgres>,
     pub database_url: String,
-    pub pool: Pool<AsyncPgConnection>,
 }
 
 
@@ -40,14 +39,12 @@ impl PersistencyUnitTestContext {
     pub async fn new() -> Self {
         // check if TEST_DATABASE_URL exists and use that one
         let mut rng = rand::thread_rng();
-
         let password: String =  (0..20).map(|_| rng.sample(Alphanumeric) as char).collect();
         let db_name = "meesign";
         let user = "meesign";
         let default_postgres_port = 5432;
 
-        let container = Postgres::default()
-            .with_host_auth()
+        let _container = Postgres::default()
             .with_db_name(db_name)
             .with_user(user)
             .with_password(&password)
@@ -57,29 +54,16 @@ impl PersistencyUnitTestContext {
             );
 
         // Unwrapping on both host and host_port as there is not much we can do to recover.
-        let host = container.get_host().await.unwrap();
-        let host_port = container.get_host_port_ipv4(default_postgres_port).await.unwrap();
+        let host = _container.get_host().await.unwrap();
+        let host_port = _container.get_host_port_ipv4(default_postgres_port).await.unwrap();
 
         let database_url = format!("postgres://{user}:{password}@{host}:{host_port}/{db_name}");
         initialize_db(&database_url);
 
-        let manager = AsyncDieselConnectionManager::<AsyncPgConnection>::new(&database_url);
-        let pool = Pool::builder()
-            .max_size(20)
-            .build(manager)
-            .await
-            .expect("Failed to create test pool");
-
-
-        Self { _container:container, database_url, pool }
-    }
-
-    pub fn pool(&self) -> &Pool<AsyncPgConnection> {
-        &self.pool
+        Self { _container, database_url }
     }
 
     pub async fn get_test_connection(&self) -> Result<AsyncPgConnection, PersistenceError> {
-        // let mut connection = self.pool().get().await.expect("Could not connect to test database through pool");
         let mut connection = AsyncPgConnection::establish(&self.database_url).await?;
         connection.begin_test_transaction().await?;
         Ok(connection)

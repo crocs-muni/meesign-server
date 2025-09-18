@@ -168,11 +168,11 @@ mod test {
     #[tokio::test]
     async fn test_insert_device() -> Result<(), PersistenceError> {
         let ctx = PersistencyUnitTestContext::new().await;
+        let mut connection = ctx.get_test_connection().await.expect("Could not connect to test database");
+
         let identifier = vec![1];
         let name = "Test User 123";
         let certificate = vec![2];
-        // let mut connection = ctx.pool().get().await.expect("Could not connect to test database through pool");
-        let mut connection = ctx.get_test_connection().await.expect("reason");
 
         add_device(
             &mut connection,
@@ -195,11 +195,10 @@ mod test {
     #[tokio::test]
     async fn test_identifier_unique_constraint() -> Result<(), PersistenceError> {
         let ctx = PersistencyUnitTestContext::new().await;
+        let mut connection = ctx.get_test_connection().await.expect("Could not connect to test database");
 
         let identifier = vec![1];
         let first_device_name = "user1";
-        // let mut connection = ctx.pool().get().await.expect("Could not connect to test database through pool");
-        let mut connection = ctx.get_test_connection().await.expect("reason");
 
         add_device(
             &mut connection,
@@ -227,10 +226,10 @@ mod test {
     #[tokio::test]
     async fn test_invalid_device() -> Result<(), PersistenceError> {
         let ctx = PersistencyUnitTestContext::new().await;
+        let mut connection = ctx.get_test_connection().await.expect("Could not connect to test database");
+
         let empty = vec![];
         let nonempty: Vec<u8> = vec![1];
-        // let mut connection = ctx.pool().get().await.expect("Could not connect to test database through pool");
-        let mut connection = ctx.get_test_connection().await.expect("reason");
 
         assert!(add_device(
             &mut connection,
