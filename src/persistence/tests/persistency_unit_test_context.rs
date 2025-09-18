@@ -1,22 +1,14 @@
-use tokio::sync::Mutex;
-
 use diesel::{Connection, PgConnection};
-use diesel_async::{pooled_connection::AsyncDieselConnectionManager, AsyncConnection, AsyncPgConnection};
+use diesel_async::{AsyncConnection, AsyncPgConnection};
 use diesel_migrations::MigrationHarness;
 
 use testcontainers_modules::postgres::Postgres;
-use testcontainers_modules::{testcontainers::runners::AsyncRunner,};
-use testcontainers_modules::testcontainers::{ReuseDirective, ContainerAsync};
-use testcontainers_modules::testcontainers::ImageExt;
-use testcontainers_modules::testcontainers::core::IntoContainerPort;
-
-
-use diesel_async::pooled_connection::bb8::Pool;
+use testcontainers_modules::testcontainers::runners::AsyncRunner;
+use testcontainers_modules::testcontainers::ContainerAsync;
 
 use rand::Rng;
 use rand::distributions::Alphanumeric;
 use crate::persistence::{error::PersistenceError, repository::MIGRATIONS};
-use diesel_async::pooled_connection::bb8::PooledConnection;
 
 
 

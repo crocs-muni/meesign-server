@@ -156,8 +156,6 @@ where
 
 #[cfg(test)]
 mod test {
-    use diesel_async::AsyncPgConnection;
-
     use crate::persistence::{
         enums::DeviceKind,
         error::PersistenceError,
