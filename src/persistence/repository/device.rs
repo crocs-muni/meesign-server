@@ -166,6 +166,7 @@ mod test {
     };
 
     #[tokio::test]
+    #[cfg_attr(not(feature = "db-tests"), ignore)]
     async fn test_insert_device() -> Result<(), PersistenceError> {
         let ctx = PersistencyUnitTestContext::new().await;
         let mut connection = ctx.get_test_connection().await.expect("Could not connect to test database");
@@ -193,6 +194,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[cfg_attr(not(feature = "db-tests"), ignore)]
     async fn test_identifier_unique_constraint() -> Result<(), PersistenceError> {
         let ctx = PersistencyUnitTestContext::new().await;
         let mut connection = ctx.get_test_connection().await.expect("Could not connect to test database");
@@ -224,6 +226,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[cfg_attr(not(feature = "db-tests"), ignore)]
     async fn test_invalid_device() -> Result<(), PersistenceError> {
         let ctx = PersistencyUnitTestContext::new().await;
         let mut connection = ctx.get_test_connection().await.expect("Could not connect to test database");

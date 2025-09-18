@@ -266,6 +266,7 @@ mod test {
     const DEVICE_3_ID: [u8; 32] = [3; 32];
 
     #[tokio::test]
+    #[cfg_attr(not(feature = "db-tests"), ignore)]
     async fn given_valid_arguments_create_group() -> Result<(), PersistenceError> {
         let ctx = PersistencyUnitTestContext::new().await;
         let mut connection = ctx.get_test_connection().await.expect("Could not connect to test database");
@@ -340,6 +341,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[cfg_attr(not(feature = "db-tests"), ignore)]
     async fn given_valid_group_and_device_get_device_groups_returns_correct_group(
     ) -> Result<(), PersistenceError> {
         let ctx = PersistencyUnitTestContext::new().await;
