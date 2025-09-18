@@ -61,6 +61,7 @@ impl PersistencyUnitTestContext {
                     .with_db_name(db_name)
                     .with_user(user)
                     .with_password(&password)
+                    // TODO: use with_reuse(...) to speed up local testing?
                     .start()
                     .await
                     .expect(
