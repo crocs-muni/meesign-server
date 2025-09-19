@@ -1,12 +1,12 @@
 # Build meesign helper
-FROM maven:3-jdk-11 as java-builder
+FROM maven:3-jdk-11 AS java-builder
 WORKDIR /
 RUN git clone https://github.com/dufkan/meesign-helper.git meesign-helper
 RUN cd meesign-helper && mvn clean compile assembly:single
 
 
 # Build and statically link the meesign binary
-FROM nwtgck/rust-musl-builder:latest as rust-builder
+FROM nwtgck/rust-musl-builder:latest AS rust-builder
 WORKDIR /home/rust/src/
 ADD --chown=rust:rust . .
 # Install protobuf compiler
@@ -24,7 +24,7 @@ RUN cargo build --release --target x86_64-unknown-linux-musl
 
 # Use a clean container to run the binary
 # note it must be a JRE image for meesign helper
-FROM eclipse-temurin:11-jre-alpine as runner
+FROM eclipse-temurin:11-jre-alpine AS runner
 
 # Set specific UID and GID so the meesign user is compatible with the owner UID of the mapped key volume
 RUN addgroup -S meesign -g 1000 && adduser -u 1000 -S meesign -G meesign
