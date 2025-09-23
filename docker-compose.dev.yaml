@@ -1,16 +1,12 @@
-version: '3.1'
- 
 services:     
-  # db is intended for manual user testing
   db:
     image: postgres
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: meesign
-      POSTGRES_PASSWORD: mysecretpassword # WARNING: hardcoded secret, don't use in prod
-      POSTGRES_DB: meesign
+    env_file: ./.env
     volumes:
       - db-data:/var/lib/postgresql/data
+    networks:
+      - meesign-network
     ports:
       - 5432:5432
     healthcheck:
@@ -28,5 +24,39 @@ services:
       db:
         condition: service_healthy
 
+  meesign-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    image: meesign:latest
+    # image: crocsmuni/meesign
+    ports:
+      - 1337:1337
+    restart: unless-stopped
+    env_file: ./.env
+    environment:
+      # NOTE: The Postgres database hostname `db` is the name of the Postgres
+      # service above. It's visible to the meesign-server container due to the
+      # shared meesign-network.
+      DATABASE_URL: "postgres://${POSTGRES_DB}:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/${POSTGRES_DB}"
+    volumes:
+      - ./keys:/meesign/keys
+    networks:
+      - meesign-network
+    depends_on:
+      db:
+        condition: service_healthy
+    # FIXME add a health check
+    # healthcheck:
+    #   test: [ "CMD-SHELL", "meesign-server -- get-devices"]
+    #   interval: 1s
+    #   timeout: 5s
+    #   retries: 10
+
 volumes:
   db-data:
+
+networks:
+  meesign-network:
+    name: meesign-network
+    driver: bridge
