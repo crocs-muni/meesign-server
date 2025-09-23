@@ -2,6 +2,11 @@
 
 set -e
 
+if ! command -v openssl >/dev/null 2>&1; then
+    echo "The 'openssl' command is not available. Please, install OpenSSL utility."
+    exit 1
+fi
+
 KEY_FOLDER="keys"
 HOSTNAME=${1:-"meesign.local"}
 mkdir --parent "./${KEY_FOLDER}"
