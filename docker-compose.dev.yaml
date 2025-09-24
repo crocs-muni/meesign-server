@@ -40,7 +40,7 @@ services:
       # NOTE: The Postgres database hostname `db` is the name of the Postgres
       # service above. It's visible to the meesign-server container due to the
       # shared meesign-network.
-      DATABASE_URL: "postgres://${POSTGRES_DB}:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/${POSTGRES_DB}"
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/${POSTGRES_DB}"
     volumes:
       - ./keys:/meesign/keys
     networks:
