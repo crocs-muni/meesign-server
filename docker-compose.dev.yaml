@@ -42,7 +42,7 @@ services:
       # shared meesign-network.
       DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/${POSTGRES_DB}"
     volumes:
-      - ./keys:/meesign/keys
+      - ./keys:/meesign/keys:ro
     networks:
       - meesign-network
     depends_on:
