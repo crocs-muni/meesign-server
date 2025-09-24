@@ -48,12 +48,16 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    # FIXME add a health check
-    # healthcheck:
-    #   test: [ "CMD-SHELL", "meesign-server -- get-devices"]
-    #   interval: 1s
-    #   timeout: 5s
-    #   retries: 10
+    extra_hosts:
+      # Use extra hosts to allow the healthcheck to discover the server locally
+      - "meesign.local=127.0.0.1"
+    healthcheck:
+      # TODO The healthcheck performance is dependent on the lifetime of the application.
+      #       With more devices it could get slower.
+      test: [ "CMD-SHELL", "meesign-server get-devices"]
+      interval: 1s
+      timeout: 5s
+      retries: 10
 
 volumes:
   db-data:
