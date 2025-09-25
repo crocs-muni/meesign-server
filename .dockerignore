@@ -1,1 +1,7 @@
+# Ignore local build artifacts
 ./target/
+
+# Ignore runtime configuration files
+.env
+./keys
+./integration-tests/.env
