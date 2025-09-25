@@ -8,7 +8,6 @@ RUN cd meesign-helper && mvn clean compile assembly:single
 # Build and statically link the meesign binary
 FROM nwtgck/rust-musl-builder:latest AS rust-builder
 WORKDIR /home/rust/src/
-ADD --chown=rust:rust . .
 # Install protobuf compiler
 ENV PATH="${PATH}:/home/rust/.local/bin"
 ENV DEBIAN_FRONTEND=noninteractive
@@ -19,6 +18,7 @@ RUN curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v${P
     rm -rf ./protoc-${PROTOC_VERSION}-linux-x86_64.zip && \
     protoc --version
 RUN sudo ln -s /usr/bin/musl-gcc /usr/bin/x86_64-linux-musl-gcc
+ADD --chown=rust:rust . .
 RUN cargo build --release --target x86_64-unknown-linux-musl
 
 
