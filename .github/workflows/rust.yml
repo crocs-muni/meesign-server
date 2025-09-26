@@ -42,7 +42,7 @@ jobs:
         with:
           compose-file: |
             ./compose.base.yaml
-            ./integration-tests/copmose.yaml
+            ./integration-tests/compose.yaml
           compose-flags: --env-file ./integration-tests/.env
           up-flags: |
             --abort-on-container-exit
