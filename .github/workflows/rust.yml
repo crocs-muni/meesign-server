@@ -44,12 +44,8 @@ jobs:
             ./compose.base.yaml
             ./integration-tests/compose.yaml
           compose-flags: --env-file ./integration-tests/.env
-          up-flags: |
-            --abort-on-container-exit
-            --exit-code-from test-client
-          down-flags: |
-            --volumes
-            --remove-orphans
+          up-flags: "--abort-on-container-exit --exit-code-from test-client"
+          down-flags: "--volumes --remove-orphans"
           compose-version: 2.30.3
 
   build-n-release-docker-main:
