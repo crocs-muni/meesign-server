@@ -50,6 +50,7 @@ jobs:
           down-flags: |
             --volumes
             --remove-orphans
+          compose-version: 2.30.3
 
   build-n-release-docker-main:
     needs: build
