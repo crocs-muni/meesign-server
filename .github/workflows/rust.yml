@@ -8,21 +8,6 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        env:
-          POSTGRES_DB: meesign
-          POSTGRES_PASSWORD: password
-          POSTGRES_PORT: 5432
-          POSTGRES_USER: postgres
-        ports:
-          - 5432:5432
-        image: postgres
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - uses: actions/checkout@v3
       - name: Install latest stable
@@ -35,12 +20,15 @@ jobs:
         uses: arduino/setup-protoc@v1
         with:
           version: 3.x
+
       - name: Build
         run: cargo build --verbose
-      - name: Run tests
-        env:
-          TEST_DATABASE_URL: postgres://postgres:password@localhost:5432/meesign
+
+      - name: Run only unit tests
         run: cargo test --verbose
+
+      - name: Run also database tests
+        run: cargo test --verbose --features db-tests
 
   build-n-release-docker-main:
     needs: build
