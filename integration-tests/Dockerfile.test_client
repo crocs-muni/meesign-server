@@ -1,0 +1,40 @@
+# Specify the Dart SDK base image version using dart:<version> (ex: dart:2.12)
+FROM dart:3.9.3 AS build
+
+WORKDIR /
+RUN apt update --yes
+RUN apt install --yes \
+    sqlite3 \
+    poppler-utils \
+    protobuf-compiler \
+    cargo
+
+ARG MEESIGN_TEST_CLIENT_REPO_OWNER=quapka
+ARG MEESIGN_TEST_CLIENT_REPO_BRANCH=integration-test
+RUN git clone \
+    --recurse-submodules \
+    --depth 1 \
+    --branch "$MEESIGN_TEST_CLIENT_REPO_BRANCH" \
+    "https://github.com/$MEESIGN_TEST_CLIENT_REPO_OWNER/meesign-client.git"
+WORKDIR meesign-client
+# build meesign_native, aka meesign-crypto
+RUN cd meesign_native/native/meesign-crypto && cargo build --release --target x86_64-unknown-linux-gnu
+
+WORKDIR /meesign-client/meesign_core
+RUN dart pub get
+
+# TODO add test user account?
+ENV LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/:/meesign-client/meesign_native/native/meesign-crypto/target/x86_64-unknown-linux-gnu/release/"
+RUN ln -s /usr/lib/x86_64-linux-gnu/libsqlite3.so.0  /usr/lib/x86_64-linux-gnu/libsqlite3.so
+ENV MEESIGN_SERVER_DOMAIN=meesign-server
+ENV MEESIGN_SERVER_PORT=1337
+# While it is possible to compile tests and then run them, the CLI arguments
+# aren't propagated to the compiled test executable. Thus, this attempts to run
+# a (non-existing) test, to force build of the tests.
+RUN dart test --name "this intentionally refers to a non-existent" || true
+
+# RUN echo 'alias dart="dart --disable-analytics"' >> ~/.bashrc
+# RUN echo -e '#!/bin/sh\ndart "$@"' > /usr/bin/no-analytics-dart && chmod +x /usr/bin/no-analytics-dart
+# ENTRYPOINT ["no-analytics-dart"]
+ENTRYPOINT ["dart"]
+CMD ["--disable-analytics", "test", "--reporter=expanded"]

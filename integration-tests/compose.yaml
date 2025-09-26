@@ -1,0 +1,40 @@
+name: meesing-integration-tests
+
+services:
+  db:
+    env_file: ./integration-tests/.env
+    networks:
+      - test-meesign-network
+
+  meesign-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: ./integration-tests/.env
+    networks:
+      - test-meesign-network
+    volumes:
+      - ./integration-tests/keys:/meesign/keys:ro
+
+  test-client:
+    build:
+      args:
+        # By deafult test against `main` branch
+        MEESIGN_TEST_CLIENT_REPO_OWNER: quapka
+        MEESIGN_TEST_CLIENT_REPO_BRANCH: integration-test
+      dockerfile: ./integration-tests/Dockerfile.test_client
+    networks:
+      # This network is defined in the /docker-compose.dev.yaml
+      - test-meesign-network
+    volumes:
+      # This might not work - the failed tests output shall be saved to test/output/*.
+      # This attempts to make theses outputs then available for local inspection.
+      - ./integration-tests/output:/meesign-client/meesign-core/test/output
+    depends_on:
+      meesign-server:
+        condition: service_healthy
+
+networks:
+  test-meesign-network:
+    name: test-meesign-network
+    driver: bridge

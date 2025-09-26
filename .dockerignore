@@ -1,7 +1,13 @@
 # Ignore local build artifacts
 ./target/
 
+Dockerfile*
+.dockerignore
+
 # Ignore runtime configuration files
 .env
 ./keys
 ./integration-tests/.env
+
+# Ignore integration tests completely
+./integration-tests
