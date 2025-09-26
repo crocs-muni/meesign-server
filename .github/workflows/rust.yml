@@ -30,23 +30,8 @@ jobs:
       - name: Run also database tests
         run: cargo test --verbose --features db-tests
 
-  integration-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      # The following action should roughly match with the integration tests
-      # execution in `./run_integration_tests.sh`
-      - name: Docker Compose Action
-        uses: hoverkraft-tech/compose-action@v2.3.0
-        with:
-          compose-file: |
-            ./compose.base.yaml
-            ./integration-tests/compose.yaml
-          compose-flags: --env-file ./integration-tests/.env
-          up-flags: "--abort-on-container-exit --exit-code-from test-client"
-          down-flags: "--volumes --remove-orphans"
-          compose-version: 2.30.3
+      - name: Run integration tests
+        run: ./run_integration_tests.sh
 
   build-n-release-docker-main:
     needs: build
