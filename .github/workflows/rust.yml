@@ -47,9 +47,7 @@ jobs:
           up-flags: |
             --abort-on-container-exit
             --exit-code-from test-client
-          down-flags: |
-            --volumes
-            --remove-orphans
+          down-flags: --volumes --remove-orphans
 
   build-n-release-docker-main:
     needs: build
