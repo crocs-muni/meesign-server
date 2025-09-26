@@ -30,6 +30,9 @@ jobs:
       - name: Run also database tests
         run: cargo test --verbose --features db-tests
 
+      - name: Run integration tests
+        run: ./run_integration_tests.sh
+
   build-n-release-docker-main:
     needs: build
     name: Docker main
