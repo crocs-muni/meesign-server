@@ -56,12 +56,12 @@ Once up, the MeeSign should be available on `localhost` on port `1337`. The
 data stored in the database container should be accessible outside the
 containers. For example, on Linux look for (root privileges might be required):
 
-    ```bash
-    ls /var/lib/Docker/volumes/meesign-deploy_db-data/
-    base          pg_dynshmem    pg_logical    pg_replslot   pg_stat      pg_tblspc    pg_wal                postgresql.conf
-    global        pg_hba.conf    pg_multixact  pg_serial     pg_stat_tmp  pg_twophase  pg_xact               postmaster.opts
-    pg_commit_ts  pg_ident.conf  pg_notify     pg_snapshots  pg_subtrans  PG_VERSION   postgresql.auto.conf  postmaster.pid
-    ```
+```bash
+ls /var/lib/Docker/volumes/meesign-deploy_db-data/
+base          pg_dynshmem    pg_logical    pg_replslot   pg_stat      pg_tblspc    pg_wal                postgresql.conf
+global        pg_hba.conf    pg_multixact  pg_serial     pg_stat_tmp  pg_twophase  pg_xact               postmaster.opts
+pg_commit_ts  pg_ident.conf  pg_notify     pg_snapshots  pg_subtrans  PG_VERSION   postgresql.auto.conf  postmaster.pid
+```
 
 ### Build from source
 
@@ -89,9 +89,9 @@ the server, a Postgres database is required. If you want to use custom Postgres
 database, it's enough to set `DATABASE_URL` enviromental variable before
 starting the server. For example:
 
-    ```text
-    export DATABASE_URL="postgres://user:password@localhost:5432/database"
-    ```
+```bash
+export DATABASE_URL="postgres://user:password@localhost:5432/database"
+```
 
 Otherwise, you can start a Postgres database in a Docker cotainer.
 
@@ -136,16 +136,16 @@ Docker container. The database tests are _hidden_ behind a feature flag
 `db-tests`, that otherwise has no usage. Database tests cannot be executed
 without the other unit tests. Thus, to run all tests do:
 
-    ```bash
-    $ cargo run --features db-tests
-    ```
+```bash
+cargo run --features db-tests
+```
 
 In case you would like to test against another database in tests, you can set
 the enviromental variable `TEST_DATABASE_URL`, for example:
 
-    ```bash
-    export TEST_DATABASE_URL=postgres://meesign:mysecretpassword@localhost:5433/meesign
-    ```
+```bash
+export TEST_DATABASE_URL=postgres://meesign:mysecretpassword@localhost:5433/meesign
+```
 
 #### Integration tests
 
@@ -158,21 +158,21 @@ parameters, all of the [client
 tests](https://github.com/crocs-muni/meesign-client/blob/main/meesign_core/test/core_test.dart)
 are executed.
 
-    ```bash
-    ./run_integration_tests.sh
-    ```
+```bash
+./run_integration_tests.sh
+```
 
 In case the test containers don't boot up properly, for example with the following error
 
-    ```text
-    Error response from daemon: network {some-hash} not found
-    ```
+```text
+Error response from daemon: network {some-hash} not found
+```
 then you can try to bring all test containers down, and try again
 
-    ```bash
-    ./run_integration_tests.sh down
-    ./run_integration_tests.sh
-    ```
+```bash
+./run_integration_tests.sh down
+./run_integration_tests.sh
+```
 
 Integration tests filtering is possible with [Test Path
 Queries](https://pub.dev/packages/test#test-path-queries), similarly to when
@@ -185,9 +185,9 @@ and
 [FROST](https://github.com/crocs-muni/meesign-client/blob/main/meesign_core/test/core_test.dart#L240-L241)),
 run:
 
-    ```bash
-    $ ./run_integration_tests.sh --name "sign|challenge" --name "2-3"
-    ```
+```bash
+./run_integration_tests.sh --name "sign|challenge" --name "2-3"
+```
 
 The `run_integration_tests.sh` is just a thin wrapper around `docker compose`.
 Docker compose provides more options, which might be needed when running
