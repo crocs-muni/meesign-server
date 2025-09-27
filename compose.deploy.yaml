@@ -23,8 +23,11 @@ services:
       - meesign-network
 
   meesign-server:
-    # NOTE: The containers currently deployed DO NOT support peristance
-    image: crocsmuni/meesign:latest
+    # TODO: Default to published containers, once they support persistence
+    # image: crocsmuni/meesign:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     networks:
       - meesign-network
     ports:
