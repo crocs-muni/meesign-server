@@ -12,9 +12,9 @@ use self::{
     group::get_group,
     task::{
         get_active_device_tasks, get_restart_candidates, get_task_acknowledgements,
-        get_task_decisions, get_task_models, get_tasks, increment_task_attempt_count,
-        set_task_acknowledgement, set_task_decision, set_task_group_certificates_sent,
-        set_task_result, set_task_round,
+        get_task_active_shares, get_task_decisions, get_task_models, get_tasks,
+        increment_task_attempt_count, set_task_acknowledgement, set_task_active_shares,
+        set_task_decision, set_task_group_certificates_sent, set_task_result, set_task_round,
     },
 };
 use self::{
@@ -309,6 +309,23 @@ impl Repository {
     ) -> Result<HashSet<Vec<u8>>, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         get_task_acknowledgements(connection, task_id).await
+    }
+
+    pub async fn set_task_active_shares(
+        &self,
+        task_id: &Uuid,
+        active_shares: &HashMap<Vec<u8>, u32>,
+    ) -> Result<(), PersistenceError> {
+        let connection = &mut self.get_async_connection().await?;
+        set_task_active_shares(connection, task_id, active_shares).await
+    }
+
+    pub async fn get_task_active_shares(
+        &self,
+        task_id: &Uuid,
+    ) -> Result<HashMap<Vec<u8>, u32>, PersistenceError> {
+        let connection = &mut self.get_async_connection().await?;
+        get_task_active_shares(connection, task_id).await
     }
 
     pub async fn set_task_round(

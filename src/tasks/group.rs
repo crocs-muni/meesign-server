@@ -27,7 +27,7 @@ impl GroupTask {
         mut task_info: TaskInfo,
         threshold: u32,
         note: Option<String>,
-        decisions: HashMap<Vec<u8>, i8>,
+        communicator: Communicator,
     ) -> Result<Self, String> {
         let total_shares = task_info.total_shares();
 
@@ -51,15 +51,6 @@ impl GroupTask {
         task_info
             .participants
             .sort_by(|a, b| a.device.identifier().cmp(b.device.identifier()));
-
-        let group_task_threshold = total_shares;
-
-        let communicator = Communicator::new(
-            task_info.participants.clone(),
-            group_task_threshold,
-            task_info.protocol_type,
-            decisions,
-        );
 
         Ok(GroupTask {
             task_info,
@@ -144,7 +135,6 @@ impl GroupTask {
             identifier.clone(),
             self.task_info.name.clone(),
             self.threshold,
-            self.task_info.participants.clone(),
             self.protocol.get_type(),
             self.task_info.key_type,
             certificate,
@@ -171,8 +161,6 @@ impl GroupTask {
     }
 
     fn send_certificates(&mut self) -> Result<RoundUpdate, Error> {
-        self.communicator.set_active_devices(None);
-
         let certs: HashMap<u32, Vec<u8>> = {
             self.task_info
                 .participants

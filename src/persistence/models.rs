@@ -102,6 +102,14 @@ pub struct NewTaskParticipant<'a> {
     pub acknowledgment: Option<bool>,
 }
 
+#[derive(Queryable, Selectable, Insertable)]
+#[diesel(table_name=active_task_participant)]
+pub struct ActiveTaskParticipant {
+    pub task_id: Uuid,
+    pub device_id: Vec<u8>,
+    pub active_shares: i32,
+}
+
 #[derive(Queryable, Serialize, Clone, Eq, PartialEq)]
 pub struct Task {
     pub id: Uuid,

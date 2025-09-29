@@ -6,9 +6,10 @@ pub(crate) mod sign_pdf;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
+use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::group::Group;
-use crate::persistence::Participant;
+use crate::persistence::{Device, Participant};
 use crate::proto::{self, KeyType, ProtocolType, TaskType};
 
 #[must_use = "updates must be persisted"]
@@ -23,7 +24,7 @@ pub enum RoundUpdate {
 #[must_use = "updates must be persisted"]
 pub enum DecisionUpdate {
     Undecided,
-    Accepted(Box<dyn RunningTask>),
+    Accepted,
     Declined(DeclinedTask),
 }
 
@@ -76,11 +77,7 @@ impl VotingTask {
         let (accepts, rejects) = Self::accepts_rejects(&self.decisions);
 
         let decision_update = if accepts >= self.accept_threshold {
-            let running_task = self
-                .running_task_context
-                .clone()
-                .create_running_task(self.task_info.clone(), self.decisions.clone())?;
-            DecisionUpdate::Accepted(running_task)
+            DecisionUpdate::Accepted
         } else if rejects >= self.reject_threshold() {
             DecisionUpdate::Declined(DeclinedTask {
                 task_info: self.task_info.clone(),
@@ -107,6 +104,9 @@ impl VotingTask {
     }
     pub fn reject_threshold(&self) -> u32 {
         self.task_info.total_shares() - self.accept_threshold + 1
+    }
+    pub fn device_accepted(&self, device_id: &[u8]) -> bool {
+        self.decisions.get(device_id) > Some(&0)
     }
 }
 #[must_use]
@@ -249,24 +249,42 @@ pub enum RunningTaskContext {
     },
 }
 impl RunningTaskContext {
-    fn create_running_task(
+    pub fn create_running_task(
         self,
-        task_info: TaskInfo,
-        decisions: HashMap<Vec<u8>, i8>,
+        voting_task: &VotingTask,
+        active_shares: HashMap<u32, Device>,
     ) -> Result<Box<dyn RunningTask>, Error> {
+        let task_info = voting_task.task_info.clone();
+        let communicator = Communicator::new(
+            voting_task.accept_threshold,
+            task_info.protocol_type,
+            active_shares,
+        );
         let task: Box<dyn RunningTask> = match self {
             Self::Group { threshold, note } => Box::new(group::GroupTask::try_new(
-                task_info, threshold, note, decisions,
+                task_info,
+                threshold,
+                note,
+                communicator,
             )?),
-            Self::SignChallenge { group, data } => {
-                Box::new(sign::SignTask::try_new(task_info, group, data, decisions)?)
-            }
+            Self::SignChallenge { group, data } => Box::new(sign::SignTask::try_new(
+                task_info,
+                group,
+                data,
+                communicator,
+            )?),
             Self::SignPdf { group, data } => Box::new(sign_pdf::SignPDFTask::try_new(
-                task_info, group, data, decisions,
+                task_info,
+                group,
+                data,
+                communicator,
             )?),
-            Self::Decrypt { group, data } => Box::new(decrypt::DecryptTask::try_new(
-                task_info, group, data, decisions,
-            )?),
+            Self::Decrypt { group, data } => Box::new(decrypt::DecryptTask::new(
+                task_info,
+                group,
+                data,
+                communicator,
+            )),
         };
         Ok(task)
     }

@@ -26,7 +26,7 @@ impl SignPDFTask {
         task_info: TaskInfo,
         group: Group,
         data: Vec<u8>,
-        decisions: HashMap<Vec<u8>, i8>,
+        communicator: Communicator,
     ) -> Result<Self, String> {
         if data.len() > 8 * 1024 * 1024
             || task_info.name.len() > 256
@@ -36,7 +36,7 @@ impl SignPDFTask {
             return Err("Invalid input".to_string());
         }
 
-        let sign_task = SignTask::try_new(task_info, group, data, decisions)?;
+        let sign_task = SignTask::try_new(task_info, group, data, communicator)?;
 
         Ok(SignPDFTask { sign_task })
     }

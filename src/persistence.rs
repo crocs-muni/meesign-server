@@ -15,5 +15,4 @@ pub use models::Group;
 pub use models::Participant;
 pub use models::Task;
 pub use repository::utils::NameValidator;
-pub use repository::PgPool;
 pub use repository::Repository;

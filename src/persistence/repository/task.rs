@@ -7,11 +7,11 @@ use uuid::Uuid;
 
 use super::utils::NameValidator;
 use crate::persistence::models::{NewTaskResult, Task};
-use crate::persistence::schema::{task_participant, task_result};
+use crate::persistence::schema::{active_task_participant, task_participant, task_result};
 use crate::persistence::{
     enums::{KeyType, ProtocolType, TaskState, TaskType},
     error::PersistenceError,
-    models::{NewTask, NewTaskParticipant},
+    models::{ActiveTaskParticipant, NewTask, NewTaskParticipant},
     schema::task,
 };
 
@@ -359,6 +359,55 @@ where
         })
         .collect();
     Ok(acknowledgements)
+}
+
+pub async fn get_task_active_shares<Conn>(
+    connection: &mut Conn,
+    task_id: &Uuid,
+) -> Result<HashMap<Vec<u8>, u32>, PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    let active_shares = active_task_participant::table
+        .select((
+            active_task_participant::device_id,
+            active_task_participant::active_shares,
+        ))
+        .filter(active_task_participant::task_id.eq(task_id))
+        .load::<(Vec<u8>, i32)>(connection)
+        .await?
+        .into_iter()
+        .map(|(device_id, active_shares)| (device_id, active_shares as u32))
+        .collect();
+    Ok(active_shares)
+}
+
+pub async fn set_task_active_shares<Conn>(
+    connection: &mut Conn,
+    task_id: &Uuid,
+    active_shares: &HashMap<Vec<u8>, u32>,
+) -> Result<(), PersistenceError>
+where
+    Conn: AsyncConnection<Backend = Pg>,
+{
+    let active_task_participants: Vec<_> = active_shares
+        .iter()
+        .map(|(device_id, shares)| ActiveTaskParticipant {
+            task_id: task_id.clone(),
+            device_id: device_id.clone(),
+            active_shares: *shares as i32,
+        })
+        .collect();
+    diesel::insert_into(active_task_participant::table)
+        .values(&active_task_participants)
+        .on_conflict((
+            active_task_participant::task_id,
+            active_task_participant::device_id,
+        ))
+        .do_nothing()
+        .execute(connection)
+        .await?;
+    Ok(())
 }
 
 pub async fn set_task_result<Conn>(

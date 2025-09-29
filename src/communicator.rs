@@ -1,23 +1,15 @@
-use crate::persistence::PgPool;
-use crate::persistence::{Device, Participant};
+use crate::persistence::Device;
 use crate::proto::ProtocolType;
 use meesign_crypto::auth::verify_broadcast;
 use meesign_crypto::proto::{ClientMessage, Message, ServerMessage};
-use rand::prelude::SliceRandom;
-use rand::thread_rng;
 use std::collections::HashMap;
-use tonic::codegen::Arc;
 
 /// Communication state of a Task
 pub struct Communicator {
     /// The minimal number of parties needed to successfully complete the task
     threshold: u32,
-    /// Ordered list of devices
-    device_list: Vec<Device>,
-    /// Ordered list of active devices (participating in the protocol)
-    active_devices: Option<Vec<Vec<u8>>>,
-    /// A mapping of device identifiers to their Task decision weight (0 - no decision, positive - accept, negative - reject)
-    decisions: HashMap<Vec<u8>, i8>,
+    /// A mapping of protocol indices to the active shares' devices
+    active_shares: HashMap<u32, Device>,
     /// A mapping of protocol indices to incoming messages
     input: HashMap<u32, ClientMessage>,
     /// A mapping of protocol indices to outgoing messages
@@ -27,38 +19,29 @@ pub struct Communicator {
 }
 
 impl Communicator {
-    /// Constructs a new Communicator instance with given Participants, threshold, ProtocolType, decisions and acknowledgements
+    /// Constructs a new Communicator instance.
     ///
     /// # Arguments
-    /// * `participants` - List of distinct participants sorted by device id
-    /// * `threshold` - The minimal number of devices to successfully complete the task
+    /// * `threshold` - The minimal number of devices to successfully complete the task.
+    /// * `protocol_type` - The protocol type of the task.
+    /// * `active_shares` - A mapping of protocol indices to the active shares' devices.
     pub fn new(
-        participants: Vec<Participant>,
         threshold: u32,
         protocol_type: ProtocolType,
-        decisions: HashMap<Vec<u8>, i8>,
+        active_shares: HashMap<u32, Device>,
     ) -> Self {
-        let device_list: Vec<Device> = participants
-            .into_iter()
-            .flat_map(|p| std::iter::repeat(p.device).take(p.shares as usize))
-            .collect();
-
-        assert!(device_list.len() > 1);
-        assert!(threshold <= device_list.len() as u32);
+        assert!(active_shares.len() > 1);
+        assert!(threshold <= active_shares.len() as u32);
         // TODO uncomment once is_sorted is stabilized
         // assert!(devices.is_sorted());
 
-        let mut communicator = Communicator {
+        Communicator {
             threshold,
-            device_list,
-            active_devices: None,
-            decisions,
+            active_shares,
             input: HashMap::new(),
             output: HashMap::new(),
             protocol_type,
-        };
-        communicator.clear_input();
-        communicator
+        }
     }
 
     /// Clears incoming message buffers
@@ -70,15 +53,11 @@ impl Communicator {
     ///
     /// # Arguments
     ///
-    /// * `from_identifier` - identifier of the sender device
+    /// * `sender_id` - identifier of the sender device
     /// * `messages` - vector containing messages from each of the sender device's shares
-    pub fn receive_messages(
-        &mut self,
-        from_identifier: &[u8],
-        messages: Vec<ClientMessage>,
-    ) -> bool {
-        let from_indices = self.identifier_to_indices(from_identifier);
-        if messages.is_empty() || from_indices.len() != messages.len() {
+    pub fn receive_messages(&mut self, sender_id: &[u8], messages: Vec<ClientMessage>) -> bool {
+        let sender_indices = self.identifier_to_indices(sender_id);
+        if messages.is_empty() || sender_indices.len() != messages.len() {
             return false;
         }
 
@@ -86,7 +65,7 @@ impl Communicator {
             assert!(msg.broadcast.is_some() || msg.unicasts.len() == self.threshold as usize - 1);
         }
 
-        self.input.extend(from_indices.into_iter().zip(messages));
+        self.input.extend(sender_indices.into_iter().zip(messages));
 
         true
     }
@@ -149,11 +128,7 @@ impl Communicator {
 
     /// Check whether incoming buffers contain messages from all active devices
     pub fn round_received(&self) -> bool {
-        if self.active_devices.is_none() {
-            return false;
-        }
-
-        self.input.len() == self.active_devices.as_ref().unwrap().len()
+        self.input.len() == self.active_shares.len()
     }
 
     /// Get all messages for a given device
@@ -170,22 +145,10 @@ impl Communicator {
             return None;
         }
 
-        let active_devices = self.get_active_devices()?;
-        let protocol_indices = self.get_protocol_indices();
-
         let mut final_message = None;
-        for (&sender, msg) in &self.input {
-            let device_index = protocol_indices
-                .iter()
-                .position(|&idx| idx == sender)
-                .unwrap();
-            let device = &active_devices[device_index];
-            let cert_der = &self
-                .device_list
-                .iter()
-                .find(|dev| dev.identifier() == device)
-                .unwrap()
-                .certificate;
+        for (sender, msg) in &self.input {
+            let sender_index = sender - self.protocol_type.index_offset();
+            let cert_der = &self.active_shares[&sender_index].certificate;
 
             // NOTE: Verify all signed broadcasts and check that the messages are all equal
             let msg = verify_broadcast(msg.broadcast.as_ref().unwrap(), cert_der).ok()?;
@@ -198,103 +161,26 @@ impl Communicator {
         final_message
     }
 
-    /// Sets the active devices
-    ///
-    /// Picks which devices shall participate in the protocol
-    /// Considers only those devices which accepted participation
-    /// If enough devices are available, additionaly filters by response latency
-    pub fn set_active_devices(&mut self, pg_pool: Option<Arc<PgPool>>) -> Vec<Vec<u8>> {
-        let agreeing_devices = self
-            .device_list
-            .iter()
-            .filter(|device| self.decisions.get(device.identifier()) > Some(&0))
-            .collect::<Vec<_>>();
-
-        let connected_devices: Vec<_> = match pg_pool {
-            Some(_pg_pool) => {
-                todo!();
-                //let latest_acceptable_time = Local::now() - Duration::seconds(5);
-                // agreeing_devices
-                //     .iter()
-                //     .filter(|device| device.last_active() > &latest_acceptable_time)
-                //     .map(Deref::deref)
-                //     .collect()
-            }
-            None => agreeing_devices.clone(),
-        };
-
-        let (devices, indices): (&Vec<&Device>, Vec<_>) =
-            if connected_devices.len() >= self.threshold as usize {
-                (&connected_devices, (0..connected_devices.len()).collect())
-            } else {
-                (&agreeing_devices, (0..agreeing_devices.len()).collect())
-            };
-        let mut indices = indices
-            .choose_multiple(&mut thread_rng(), self.threshold as usize)
-            .cloned()
-            .collect::<Vec<_>>();
-        indices.sort();
-
-        self.active_devices = Some(
-            devices
-                .iter()
-                .enumerate()
-                .filter(|(idx, _)| indices.contains(idx))
-                .map(|(_, device)| device.identifier().to_vec())
-                .collect(),
-        );
-        assert_eq!(
-            self.active_devices.as_ref().unwrap().len(),
-            self.threshold as usize
-        );
-
-        self.active_devices.as_ref().unwrap().clone()
-    }
-
-    /// Get the active devices
-    pub fn get_active_devices(&self) -> Option<Vec<Vec<u8>>> {
-        self.active_devices.clone()
-    }
-
     /// Get the protocol indices of active devices
     pub fn get_protocol_indices(&self) -> Vec<u32> {
-        assert!(self.active_devices.is_some());
-
-        let active_devices = self.get_active_devices().unwrap();
-        let mut devices_iter = self.device_list.iter().enumerate();
-        let mut indices: Vec<u32> = Vec::new();
-
-        for device in &active_devices {
-            while let Some((idx, dev)) = devices_iter.next() {
-                if dev.identifier() == device {
-                    indices.push(idx as u32 + self.protocol_type.index_offset());
-                    break;
-                }
-            }
-        }
-
+        let mut indices: Vec<u32> = self
+            .active_shares
+            .keys()
+            .map(|idx| *idx + self.protocol_type.index_offset())
+            .collect();
+        indices.sort();
         indices
     }
 
     /// Get the protocol indices of an active device
     pub fn identifier_to_indices(&self, device_id: &[u8]) -> Vec<u32> {
-        if self.active_devices.is_none() {
-            return Vec::new();
-        }
-
-        let mut devices_iter = self.device_list.iter().enumerate();
-        let mut indices = Vec::new();
-
-        for device in self.get_active_devices().unwrap() {
-            if device == device_id {
-                let (idx, _) = devices_iter
-                    .find(|(_, dev)| dev.identifier() == &device)
-                    .unwrap();
-
-                indices.push(idx as u32 + self.protocol_type.index_offset());
-            }
-        }
-
+        let mut indices: Vec<u32> = self
+            .active_shares
+            .iter()
+            .filter(|(_, device)| device.id == device_id)
+            .map(|(idx, _)| *idx + self.protocol_type.index_offset())
+            .collect();
+        indices.sort();
         indices
     }
 }
@@ -305,154 +191,26 @@ mod tests {
 
     use super::*;
 
-    impl Communicator {
-        /// Save a decision by the given device
-        ///
-        /// # Returns
-        /// `false` if the `device_id` is invalid or has already decided
-        /// `true` otherwise
-        pub fn decide(&mut self, device_id: &[u8], decision: bool) -> bool {
-            if !self.decisions.contains_key(device_id) || self.decisions[device_id] != 0 {
-                return false;
-            }
-            let votes = self
-                .device_list
-                .iter()
-                .filter(|x| x.identifier() == device_id)
-                .count() as i8;
-            self.decisions
-                .insert(device_id.to_vec(), if decision { votes } else { -votes });
-            true
-        }
-
-        /// Get the number of Task accepts
-        pub fn accept_count(&self) -> u32 {
-            self.decisions
-                .iter()
-                .filter(|x| *x.1 > 0)
-                .map(|x| *x.1 as i32)
-                .sum::<i32>()
-                .abs() as u32
-        }
-
-        /// Get the number of Task rejects
-        pub fn reject_count(&self) -> u32 {
-            self.decisions
-                .iter()
-                .filter(|x| *x.1 < 0)
-                .map(|x| *x.1 as i32)
-                .sum::<i32>()
-                .abs() as u32
-        }
-
-        /// Check whether a device submitted its decision
-        pub fn device_decided(&self, device_id: &[u8]) -> bool {
-            if let Some(d) = self.decisions.get(device_id) {
-                *d != 0
-            } else {
-                false
-            }
-        }
-    }
-
     #[test]
     #[should_panic]
     fn communicator_with_no_devices() {
-        new_communicator(vec![], 0, ProtocolType::Gg18);
+        new_communicator(&[], 0, ProtocolType::Gg18);
     }
 
     #[test]
     #[should_panic]
     fn communicator_too_large_threshold() {
-        new_communicator(prepare_participants(2), 3, ProtocolType::Gg18);
-    }
-
-    #[test]
-    fn empty_communicator() {
-        let participants = prepare_participants(5);
-        let d0 = participants[0].device.identifier().clone();
-        let communicator = new_communicator(participants, 3, ProtocolType::Gg18);
-        assert_eq!(communicator.accept_count(), 0);
-        assert_eq!(communicator.reject_count(), 0);
-        assert_eq!(communicator.round_received(), false);
-        assert_eq!(communicator.get_messages(&d0), Vec::<Vec<u8>>::new());
-        assert_eq!(
-            communicator.get_messages(&[0x00, 0x00]),
-            Vec::<Vec<u8>>::new()
-        );
-        assert_eq!(communicator.device_decided(&d0), false);
-        assert_eq!(communicator.device_decided(&[0x00, 0x00]), false);
-        assert_eq!(communicator.waiting_for(&d0), false);
-        assert_eq!(communicator.waiting_for(&[0x00, 0x00]), false);
-        assert_eq!(communicator.get_active_devices(), None);
-        assert_eq!(communicator.get_final_message(), None);
+        new_communicator(&[(true, 1), (true, 1)], 3, ProtocolType::Gg18);
     }
 
     #[test]
     fn valid_communicator() {
-        let participants = prepare_participants(5);
-        let mut communicator = new_communicator(participants.clone(), 3, ProtocolType::Gg18);
-        assert_eq!(
-            communicator.device_decided(participants[0].device.identifier()),
-            false
+        let mut communicator = new_communicator(
+            &[(true, 1), (true, 1), (false, 1), (false, 1), (true, 1)],
+            3,
+            ProtocolType::Gg18,
         );
-        communicator.decide(participants[0].device.identifier(), true);
-        assert_eq!(communicator.accept_count(), 1);
-        assert_eq!(communicator.reject_count(), 0);
-        assert_eq!(
-            communicator.device_decided(participants[0].device.identifier()),
-            true
-        );
-        assert_eq!(
-            communicator.device_decided(participants[2].device.identifier()),
-            false
-        );
-        communicator.decide(participants[2].device.identifier(), false);
-        assert_eq!(communicator.accept_count(), 1);
-        assert_eq!(communicator.reject_count(), 1);
-        assert_eq!(
-            communicator.device_decided(participants[2].device.identifier()),
-            true
-        );
-        assert_eq!(
-            communicator.device_decided(participants[4].device.identifier()),
-            false
-        );
-        communicator.decide(participants[4].device.identifier(), true);
-        assert_eq!(communicator.accept_count(), 2);
-        assert_eq!(communicator.reject_count(), 1);
-        assert_eq!(
-            communicator.device_decided(participants[4].device.identifier()),
-            true
-        );
-        assert_eq!(
-            communicator.device_decided(participants[1].device.identifier()),
-            false
-        );
-        communicator.decide(participants[1].device.identifier(), true);
-        assert_eq!(communicator.accept_count(), 3);
-        assert_eq!(communicator.reject_count(), 1);
-        assert_eq!(
-            communicator.device_decided(participants[1].device.identifier()),
-            true
-        );
-        assert_eq!(
-            communicator.device_decided(participants[3].device.identifier()),
-            false
-        );
-        assert_eq!(communicator.get_active_devices(), None);
-        communicator.set_active_devices(None);
         let active_indices = [0, 1, 4];
-        assert_eq!(
-            communicator.get_active_devices(),
-            Some(
-                active_indices
-                    .iter()
-                    .map(|idx| participants[*idx].device.identifier().to_vec())
-                    .collect()
-            )
-        );
-
         assert_eq!(
             &communicator
                 .get_protocol_indices()
@@ -461,18 +219,11 @@ mod tests {
                 .collect::<Vec<_>>(),
             &active_indices
         );
-
-        for idx in 0..participants.len() {
-            assert_eq!(
-                communicator.waiting_for(participants[idx].device.identifier()),
-                active_indices.contains(&idx)
-            );
-        }
         assert_eq!(communicator.round_received(), false);
-        for idx in 0..participants.len() {
+        for idx in 0..5 {
             assert_eq!(
                 communicator.receive_messages(
-                    participants[idx].device.identifier(),
+                    &[idx as u8],
                     vec![ClientMessage {
                         protocol_type: 0,
                         unicasts: active_indices
@@ -492,8 +243,8 @@ mod tests {
         }
         assert_eq!(communicator.round_received(), true);
 
-        for idx in 0..participants.len() {
-            let msgs = communicator.get_messages(participants[idx].device.identifier());
+        for idx in 0..5 {
+            let msgs = communicator.get_messages(&[idx as u8]);
             let expected: Vec<Vec<u8>> = if active_indices.contains(&idx) {
                 vec![vec![]]
             } else {
@@ -502,11 +253,9 @@ mod tests {
             assert_eq!(msgs, expected);
         }
         communicator.relay();
-        for idx in 0..participants.len() {
+        for idx in 0..5 {
             assert_eq!(
-                !communicator
-                    .get_messages(participants[idx].device.identifier())
-                    .is_empty(),
+                !communicator.get_messages(&[idx as u8]).is_empty(),
                 active_indices.contains(&idx)
             );
         }
@@ -514,57 +263,18 @@ mod tests {
     }
 
     #[test]
-    fn unknown_device_decide() {
-        let participants = prepare_participants(3);
-        let mut communicator = new_communicator(
-            participants.iter().cloned().take(2).collect(),
-            2,
-            ProtocolType::Gg18,
-        );
-        assert_eq!(
-            communicator.decide(participants[2].device.identifier(), true),
-            false
-        );
-    }
-
-    #[test]
-    fn repeated_device_decide() {
-        let participants = prepare_participants(2);
-        let mut communicator = new_communicator(participants.clone(), 2, ProtocolType::Gg18);
-        assert_eq!(
-            communicator.decide(participants[0].device.identifier(), true),
-            true
-        );
-        assert_eq!(
-            communicator.decide(participants[0].device.identifier(), true),
-            false
-        );
-    }
-
-    #[test]
     fn repeated_devices() {
-        let participants = prepare_participants(1);
-        let participants = vec![participants[0].clone(), participants[0].clone()];
-        let mut communicator = new_communicator(participants.clone(), 2, ProtocolType::Gg18);
-        assert_eq!(
-            communicator.decide(participants[0].device.identifier(), true),
-            true
-        );
-        communicator.set_active_devices(None);
+        let communicator = new_communicator(&[(true, 2)], 2, ProtocolType::Gg18);
         assert_eq!(communicator.get_protocol_indices(), vec![0, 1]);
     }
 
     #[test]
     #[should_panic]
     fn not_enough_messages() {
-        let participants = prepare_participants(3);
-        let mut communicator = new_communicator(participants.clone(), 3, ProtocolType::Gg18);
-        communicator.decide(participants[0].device.identifier(), true);
-        communicator.decide(participants[1].device.identifier(), true);
-        communicator.decide(participants[2].device.identifier(), true);
-        communicator.set_active_devices(None);
+        let mut communicator =
+            new_communicator(&[(true, 1), (true, 1), (true, 1)], 3, ProtocolType::Gg18);
         communicator.receive_messages(
-            participants[0].device.identifier(),
+            &[0],
             vec![ClientMessage {
                 protocol_type: 0,
                 unicasts: HashMap::new(),
@@ -576,14 +286,10 @@ mod tests {
     #[test]
     #[should_panic]
     fn too_many_messages() {
-        let participants = prepare_participants(3);
-        let mut communicator = new_communicator(participants.clone(), 3, ProtocolType::Gg18);
-        communicator.decide(participants[0].device.identifier(), true);
-        communicator.decide(participants[1].device.identifier(), true);
-        communicator.decide(participants[2].device.identifier(), true);
-        communicator.set_active_devices(None);
+        let mut communicator =
+            new_communicator(&[(true, 1), (true, 1), (true, 1)], 3, ProtocolType::Gg18);
         communicator.receive_messages(
-            participants[0].device.identifier(),
+            &[0],
             vec![ClientMessage {
                 protocol_type: 0,
                 unicasts: (0..6 as u32).map(|i| (i, vec![])).collect(),
@@ -593,76 +299,20 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn not_enough_accepts() {
-        let participants = prepare_participants(5);
-        let mut communicator = new_communicator(participants.clone(), 3, ProtocolType::Gg18);
-        communicator.decide(participants[0].device.identifier(), true);
-        communicator.decide(participants[2].device.identifier(), false);
-        communicator.decide(participants[4].device.identifier(), true);
-        communicator.set_active_devices(None);
-    }
-
-    #[test]
-    fn more_than_threshold_accepts() {
-        let threshold = 3;
-        let participants = prepare_participants(5);
-        let mut communicator =
-            new_communicator(participants.clone(), threshold, ProtocolType::Gg18);
-        for participant in participants {
-            communicator.decide(participant.device.identifier(), true);
-        }
-        communicator.set_active_devices(None);
-        assert_eq!(
-            communicator.get_active_devices().as_ref().map(Vec::len),
-            Some(threshold as usize)
-        );
-    }
-
-    #[test]
     fn send_all() {
-        let participants = prepare_participants(3);
-        let mut communicator = new_communicator(participants.clone(), 2, ProtocolType::Gg18);
-        communicator.decide(participants[0].device.identifier(), true);
-        communicator.decide(participants[2].device.identifier(), true);
-        communicator.set_active_devices(None);
-        assert_eq!(
-            communicator.get_active_devices(),
-            Some(vec![
-                participants[0].device.identifier().to_vec(),
-                participants[2].device.identifier().to_vec()
-            ])
-        );
+        let mut communicator =
+            new_communicator(&[(true, 1), (false, 1), (true, 1)], 2, ProtocolType::Gg18);
         communicator.send_all(|idx| vec![idx as u8]);
-        assert_eq!(
-            communicator.get_messages(participants[0].device.identifier()),
-            vec![vec![0]]
-        );
-        assert_eq!(
-            communicator.get_messages(participants[1].device.identifier()),
-            Vec::<Vec<u8>>::new()
-        );
-        assert_eq!(
-            communicator.get_messages(participants[2].device.identifier()),
-            vec![vec![2]]
-        );
+        assert_eq!(communicator.get_messages(&[0]), vec![vec![0]]);
+        assert_eq!(communicator.get_messages(&[1]), Vec::<Vec<u8>>::new());
+        assert_eq!(communicator.get_messages(&[2]), vec![vec![2]]);
     }
 
     #[test]
     fn protocol_init() {
         use meesign_crypto::proto::ProtocolInit;
-        let participants = prepare_participants(3);
-        let mut communicator = new_communicator(participants.clone(), 2, ProtocolType::Frost);
-        communicator.decide(participants[0].device.identifier(), true);
-        communicator.decide(participants[2].device.identifier(), true);
-        communicator.set_active_devices(None);
-        assert_eq!(
-            communicator.get_active_devices(),
-            Some(vec![
-                participants[0].device.identifier().to_vec(),
-                participants[2].device.identifier().to_vec()
-            ])
-        );
+        let mut communicator =
+            new_communicator(&[(true, 1), (false, 1), (true, 1)], 2, ProtocolType::Frost);
         communicator.send_all(|idx| {
             ProtocolInit {
                 protocol_type: ProtocolType::Frost as i32,
@@ -673,7 +323,7 @@ mod tests {
             .encode_to_vec()
         });
         assert_eq!(
-            communicator.get_messages(participants[0].device.identifier()),
+            communicator.get_messages(&[0]),
             vec![ProtocolInit {
                 protocol_type: ProtocolType::Frost as i32,
                 indices: Vec::new(),
@@ -682,12 +332,9 @@ mod tests {
             }
             .encode_to_vec()]
         );
+        assert_eq!(communicator.get_messages(&[1]), Vec::new() as Vec<Vec<u8>>);
         assert_eq!(
-            communicator.get_messages(participants[1].device.identifier()),
-            Vec::new() as Vec<Vec<u8>>
-        );
-        assert_eq!(
-            communicator.get_messages(participants[2].device.identifier()),
+            communicator.get_messages(&[2]),
             vec![ProtocolInit {
                 protocol_type: ProtocolType::Frost as i32,
                 indices: Vec::new(),
@@ -700,20 +347,15 @@ mod tests {
 
     #[test]
     fn broadcast_messages() {
-        let participants = prepare_participants(3);
-        let mut communicator = new_communicator(participants.clone(), 2, ProtocolType::Frost);
-
-        communicator.decide(participants[0].device.identifier(), true);
-        communicator.decide(participants[1].device.identifier(), true);
-        communicator.decide(participants[2].device.identifier(), false);
-        communicator.set_active_devices(None);
+        let mut communicator =
+            new_communicator(&[(true, 1), (true, 1), (false, 1)], 2, ProtocolType::Frost);
 
         assert_eq!(communicator.get_protocol_indices(), vec![1, 2]);
 
         for i in 0..2 {
             assert_eq!(
                 communicator.receive_messages(
-                    participants[i].device.identifier(),
+                    &[i as u8],
                     vec![ClientMessage {
                         protocol_type: ProtocolType::Frost.into(),
                         unicasts: HashMap::new(),
@@ -725,12 +367,10 @@ mod tests {
         }
 
         assert_eq!(communicator.round_received(), true);
-        eprintln!("input: {:?}", communicator.input);
         communicator.relay();
-        eprintln!("output: {:?}", communicator.output);
 
         assert_eq!(
-            communicator.get_messages(participants[0].device.identifier()),
+            communicator.get_messages(&[0]),
             vec![ServerMessage {
                 protocol_type: ProtocolType::Frost.into(),
                 unicasts: HashMap::new(),
@@ -739,7 +379,7 @@ mod tests {
             .encode_to_vec()],
         );
         assert_eq!(
-            communicator.get_messages(participants[1].device.identifier()),
+            communicator.get_messages(&[1]),
             vec![ServerMessage {
                 protocol_type: ProtocolType::Frost.into(),
                 unicasts: HashMap::new(),
@@ -750,29 +390,26 @@ mod tests {
     }
 
     fn new_communicator(
-        participants: Vec<Participant>,
+        decisions_shares: &[(bool, u32)],
         threshold: u32,
         protocol_type: ProtocolType,
     ) -> Communicator {
-        let decisions = participants
-            .iter()
-            .map(|p| (p.device.identifier().clone(), 0))
-            .collect();
-        Communicator::new(participants, threshold, protocol_type, decisions)
-    }
-
-    fn prepare_participants(n: usize) -> Vec<Participant> {
-        assert!(n < u8::MAX as usize);
-        (0..n)
-            .map(|i| {
+        let active_shares = decisions_shares
+            .into_iter()
+            .enumerate()
+            .flat_map(|(idx, &(accept, shares))| {
                 let device = Device::new(
-                    vec![i as u8],
-                    format!("d{}", i),
+                    vec![idx as u8],
+                    format!("d{}", idx),
                     DeviceKind::User,
-                    vec![0xf0 | i as u8],
+                    vec![0xf0 | idx as u8],
                 );
-                Participant { device, shares: 1 }
+                std::iter::repeat_n((accept, device), shares as usize)
             })
-            .collect()
+            .enumerate()
+            .filter(|(_, (accept, _))| *accept)
+            .map(|(idx, (_, device))| (idx as u32, device))
+            .collect();
+        Communicator::new(threshold, protocol_type, active_shares)
     }
 }

@@ -1,14 +1,13 @@
 use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::group::Group;
-use crate::persistence::{Participant, PersistenceError, Task as TaskModel};
+use crate::persistence::{PersistenceError, Task as TaskModel};
 use crate::protocols::elgamal::ElgamalDecrypt;
 use crate::protocols::{create_threshold_protocol, Protocol};
 use crate::tasks::{FailedTask, FinishedTask, RoundUpdate, RunningTask, TaskInfo, TaskResult};
 use crate::utils;
 use log::info;
 use meesign_crypto::proto::{ClientMessage, Message as _};
-use std::collections::HashMap;
 
 pub struct DecryptTask {
     task_info: TaskInfo,
@@ -19,25 +18,19 @@ pub struct DecryptTask {
 }
 
 impl DecryptTask {
-    pub fn try_new(
+    pub fn new(
         task_info: TaskInfo,
         group: Group,
         data: Vec<u8>,
-        decisions: HashMap<Vec<u8>, i8>,
-    ) -> Result<Self, String> {
-        let mut participants: Vec<Participant> = group.participants().to_vec();
-        participants.sort_by(|a, b| a.device.identifier().cmp(b.device.identifier()));
-
-        let communicator =
-            Communicator::new(participants, group.threshold(), group.protocol(), decisions);
-
-        Ok(DecryptTask {
+        communicator: Communicator,
+    ) -> Self {
+        DecryptTask {
             task_info,
             group,
             communicator,
             data,
             protocol: Box::new(ElgamalDecrypt::new()),
-        })
+        }
     }
 
     pub fn from_model(

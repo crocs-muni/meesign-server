@@ -295,10 +295,7 @@ impl TaskStore {
                             ),
                         ));
                     };
-                    let group = crate::group::Group::from_model(
-                        group_model,
-                        task_info.participants.clone(),
-                    );
+                    let group = crate::group::Group::from_model(group_model);
                     let result = TaskResult::GroupEstablished(group);
                     let acknowledgements =
                         self.repo.get_task_acknowledgements(&task_model.id).await?;
@@ -404,8 +401,7 @@ impl TaskStore {
                     ),
                 ));
             };
-            let group =
-                crate::group::Group::from_model(group_model, task_info.participants.clone());
+            let group = crate::group::Group::from_model(group_model);
 
             let decisions = self.repo.get_task_decisions(&task_model.id).await?;
             let (accepts, _) = VotingTask::accepts_rejects(&decisions);
@@ -464,20 +460,39 @@ impl TaskStore {
     async fn hydrate_communicator(
         &self,
         task_model: &TaskModel,
-        mut participants: Vec<Participant>,
+        mut all_participants: Vec<Participant>,
     ) -> Result<Communicator, Error> {
-        participants.sort_by(|a, b| a.device.identifier().cmp(b.device.identifier()));
-        let decisions = self.repo.get_task_decisions(&task_model.id).await?;
         let threshold = match task_model.task_type {
-            TaskType::Group => participants.iter().map(|p| p.shares).sum(),
+            TaskType::Group => all_participants.iter().map(|p| p.shares).sum(),
             _ => task_model.threshold as u32,
         };
 
+        let active_shares = self.repo.get_task_active_shares(&task_model.id).await?;
+
+        all_participants.sort_by(|a, b| a.device.id.cmp(&b.device.id));
+        let first_share_indices: HashMap<Vec<u8>, u32> = all_participants
+            .iter()
+            .scan(0, |idx, p| {
+                let first_share = *idx;
+                *idx += p.shares;
+                Some((p.device.id.clone(), first_share))
+            })
+            .collect();
+        let active_shares = all_participants
+            .iter()
+            .filter_map(|p| active_shares.get(&p.device.id).map(|shares| (p, shares)))
+            .flat_map(|(p, shares)| std::iter::repeat_n(&p.device, *shares as usize))
+            .scan(first_share_indices, |share_indices, device| {
+                let share_index = share_indices[&device.id];
+                *share_indices.get_mut(&device.id).unwrap() += 1;
+                Some((share_index, device.clone()))
+            })
+            .collect();
+
         Ok(Communicator::new(
-            participants,
             threshold,
             task_model.protocol_type.into(),
-            decisions,
+            active_shares,
         ))
     }
 }

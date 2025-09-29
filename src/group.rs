@@ -1,10 +1,9 @@
-use crate::persistence::{Group as GroupModel, Participant};
+use crate::persistence::Group as GroupModel;
 use crate::proto::{KeyType, ProtocolType};
 #[derive(Clone)]
 pub struct Group {
     identifier: Vec<u8>,
     name: String,
-    participants: Vec<Participant>,
     threshold: u32,
     protocol: ProtocolType,
     key_type: KeyType,
@@ -17,7 +16,6 @@ impl Group {
         identifier: Vec<u8>,
         name: String,
         threshold: u32,
-        participants: Vec<Participant>,
         protocol: ProtocolType,
         key_type: KeyType,
         certificate: Option<Vec<u8>>,
@@ -28,7 +26,6 @@ impl Group {
         Group {
             identifier,
             name,
-            participants,
             threshold,
             protocol,
             key_type,
@@ -43,9 +40,6 @@ impl Group {
 
     pub fn name(&self) -> &str {
         &self.name
-    }
-    pub fn participants(&self) -> &Vec<Participant> {
-        &self.participants
     }
     pub fn threshold(&self) -> u32 {
         self.threshold
@@ -68,12 +62,11 @@ impl Group {
     }
 
     // TODO: consider merging Group with GroupModel
-    pub fn from_model(value: GroupModel, participants: Vec<Participant>) -> Self {
+    pub fn from_model(value: GroupModel) -> Self {
         Self {
             identifier: value.id,
             name: value.name,
             threshold: value.threshold as u32,
-            participants,
             protocol: value.protocol.into(),
             key_type: value.key_type.into(),
             certificate: value.certificate,
@@ -103,7 +96,6 @@ impl Group {
 
 #[cfg(test)]
 mod tests {
-    use crate::persistence::{Device, DeviceKind};
     use std::vec;
 
     use super::*;
@@ -115,7 +107,6 @@ mod tests {
             vec![],
             String::from("Sample Group"),
             2,
-            vec![],
             ProtocolType::Gg18,
             KeyType::SignPdf,
             None,
@@ -156,8 +147,6 @@ mod tests {
     fn sample_group() {
         let identifier = vec![0x01, 0x02, 0x03, 0x04];
         let name = String::from("Sample Group");
-        let mut participants = prepare_participants(6);
-        let extra_participant = participants.pop().unwrap();
         let threshold = 3;
         let protocol_type = ProtocolType::Gg18;
         let key_type = KeyType::SignPdf;
@@ -165,7 +154,6 @@ mod tests {
             identifier.clone(),
             name.clone(),
             threshold,
-            participants.clone(),
             protocol_type,
             key_type,
             None,
@@ -174,30 +162,8 @@ mod tests {
         assert_eq!(group.identifier(), &identifier);
         assert_eq!(group.name(), &name);
         assert_eq!(group.threshold(), threshold);
-        for (a, b) in group.participants().iter().zip(participants.iter()) {
-            assert_eq!(a.device.identifier(), b.device.identifier());
-        }
-        assert!(!group
-            .participants()
-            .iter()
-            .any(|p| p.device.identifier() == extra_participant.device.identifier()));
         assert_eq!(group.protocol(), protocol_type.into());
         assert_eq!(group.key_type(), key_type.into());
         assert_eq!(group.certificate(), None);
-    }
-
-    fn prepare_participants(n: usize) -> Vec<Participant> {
-        assert!(n < u8::MAX as usize);
-        (0..n)
-            .map(|i| {
-                let device = Device::new(
-                    vec![i as u8],
-                    format!("d{}", i),
-                    DeviceKind::User,
-                    vec![0xf0 | i as u8],
-                );
-                Participant { device, shares: 1 }
-            })
-            .collect()
     }
 }

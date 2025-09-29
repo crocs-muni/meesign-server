@@ -1,7 +1,7 @@
 use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::group::Group;
-use crate::persistence::{Participant, PersistenceError, Task as TaskModel};
+use crate::persistence::{PersistenceError, Task as TaskModel};
 use crate::proto::ProtocolType;
 use crate::protocols::frost::FROSTSign;
 use crate::protocols::gg18::GG18Sign;
@@ -11,7 +11,6 @@ use crate::tasks::{FailedTask, FinishedTask, RoundUpdate, RunningTask, TaskInfo,
 use crate::utils;
 use log::{info, warn};
 use meesign_crypto::proto::{ClientMessage, Message as _};
-use std::collections::HashMap;
 
 pub struct SignTask {
     pub(super) task_info: TaskInfo,
@@ -27,15 +26,9 @@ impl SignTask {
         task_info: TaskInfo,
         group: Group,
         data: Vec<u8>,
-        decisions: HashMap<Vec<u8>, i8>,
+        communicator: Communicator,
     ) -> Result<Self, String> {
-        let mut participants: Vec<Participant> = group.participants().to_vec();
-        participants.sort_by(|a, b| a.device.identifier().cmp(b.device.identifier()));
         let protocol_type = group.protocol();
-
-        let communicator =
-            Communicator::new(participants, group.threshold(), protocol_type, decisions);
-
         Ok(SignTask {
             task_info,
             group,
@@ -46,8 +39,8 @@ impl SignTask {
                 ProtocolType::Gg18 => Box::new(GG18Sign::new()),
                 ProtocolType::Frost => Box::new(FROSTSign::new()),
                 ProtocolType::Musig2 => Box::new(MuSig2Sign::new()),
-                _ => {
-                    warn!("Protocol type {:?} does not support signing", protocol_type);
+                other => {
+                    warn!("Protocol type {:?} does not support signing", other);
                     return Err("Unsupported protocol type for signing".into());
                 }
             },
