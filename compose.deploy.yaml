@@ -1,4 +1,3 @@
-# FIXME rename file to: compose.deploy.yaml
 name: meesign-deploy
 
 services:     
