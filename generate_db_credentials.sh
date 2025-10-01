@@ -2,6 +2,11 @@
 
 set -e
 
+if ! command -v openssl >/dev/null 2>&1; then
+    echo "The 'openssl' command is not available. Please, install OpenSSL utility."
+    exit 1
+fi
+
 ENV_FILE='./.env'
 ENV_FILE_BACKUP="$ENV_FILE.bak"
 FORCE_FLAG='--force'
@@ -10,11 +15,6 @@ if test -f "$ENV_FILE" && test "$1" != "$FORCE_FLAG"; then
     echo "The '$ENV_FILE' file exists and the '$FORCE_FLAG' command line flag was not used."
     echo "Doing nothing."
     exit 0
-fi
-
-if ! command -v openssl >/dev/null 2>&1; then
-    echo "The 'openssl' command is not available. Please, install OpenSSL utility."
-    exit 1
 fi
 
 echo "Archiving previous '$ENV_FILE' in '$ENV_FILE_BACKUP'."
