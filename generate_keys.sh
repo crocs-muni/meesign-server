@@ -9,12 +9,12 @@ fi
 
 KEY_FOLDER="keys"
 HOSTNAME=${1:-"meesign.local"}
-mkdir --parent "./${KEY_FOLDER}"
 
 if test -d "$KEY_FOLDER"; then
     echo "The './$KEY_FOLDER' already exists. Backing it up to ./keys.bak"
     cp --recursive "./$KEY_FOLDER" "./$KEY_FOLDER.bak"
 fi
+mkdir --parent "./${KEY_FOLDER}"
 
 # MeeSign CA certificate configuration
 cat > ca-cert.conf << EOT
