@@ -36,7 +36,7 @@ PostgreSQL database as Docker containers using Docker Compose.
     ```
     The Docker image for MeeSign Server is pulled from the [Docker
     hub](https://hub.docker.com/r/crocsmuni/meesign). In `compose.deploy.yaml` you can
-    specify whether to use `latest` (or other stable version), or `nighlty`
+    specify whether to use `latest` (or other stable version), or `nightly`
     (the bleeding edge, but unstable) version of the `crocsmuni/meesign` Docker
     image. If you wish to start the MeeSign server from the local sources, you
     need to update the `meesign-server` service in `compose.deploy.yaml` with:
@@ -131,7 +131,7 @@ Database tests require an instance of PostgresSQL database. To simplify the
 database tests setup and achieve isolation of individual tests, we are using
 [Testcontainers](https://testcontainers.com/), in particular, the Rust
 [modules](https://github.com/testcontainers/testcontainers-rs-modules-community/).
-Each `db-tests` has access to a ephemeral PostgresSQL database in an ephemeral
+Each `db-tests` has access to an ephemeral PostgresSQL database in an ephemeral
 Docker container. The database tests are _hidden_ behind a feature flag
 `db-tests`, that otherwise has no usage. Database tests cannot be executed
 without the other unit tests. Thus, to run all tests do:
@@ -192,7 +192,7 @@ run:
 The `run_integration_tests.sh` is just a thin wrapper around `docker compose`.
 Docker compose provides more options, which might be needed when running
 integration tests. In particular, the `docker compose config` sub-command is
-handy when debugging the overriding the `./compose.base.yam` with
+handy when debugging the overriding the `./compose.base.yaml` with
 `./integration-tests/compose.yaml`. Especially, be aware of the [enviromental
 variables
 precedence](https://docs.docker.com/compose/how-tos/environment-variables/envvars-precedence/)
