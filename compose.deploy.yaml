@@ -22,11 +22,12 @@ services:
       - meesign-network
 
   meesign-server:
-    # TODO: Default to published containers, once they support persistence
-    # image: crocsmuni/meesign:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: crocsmuni/meesign:latest
+    # NOTE Uncomment the following lines and comment the `image: ...` to build the
+    # meesign-server Docker image from local source
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
     networks:
       - meesign-network
     ports:
