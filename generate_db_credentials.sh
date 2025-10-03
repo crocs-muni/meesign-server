@@ -31,5 +31,6 @@ cat <<EOF > "$ENV_FILE"
 POSTGRES_USER="meesign"
 POSTGRES_PASSWORD="$(openssl rand -hex 32)"
 POSTGRES_DB="meesign"
+POSTGRES_PORT="5432"
 DATABASE_URL="postgres://\${POSTGRES_USER}:\${POSTGRES_PASSWORD}@localhost:\${POSTGRES_PORT}/\${POSTGRES_DB}"
 EOF
