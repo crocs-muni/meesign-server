@@ -1,6 +1,8 @@
 # MeeSign Server
 
-Server-side implementation for the MeeSign system.
+Server-side implementation for the MeeSign system. You can find more
+information about this project on its
+[homepage](https://meesign.crocs.fi.muni.cz/).
 
 ## Usage
 
