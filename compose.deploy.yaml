@@ -1,0 +1,50 @@
+name: meesign-deploy
+
+services:     
+  db:
+    env_file: ./.env
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - meesign-network
+    ports:
+      # Exposing the database port allows using locally build meesign-server
+      # utility
+      - 5432:5432
+
+  adminer:
+    image: adminer
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - meesign-network
+
+  meesign-server:
+    # TODO: Default to published containers, once they support persistence
+    # image: crocsmuni/meesign:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    networks:
+      - meesign-network
+    ports:
+      - 1337:1337
+    restart: unless-stopped
+    env_file: ./.env
+    environment:
+      # NOTE: The Postgres database hostname `db` is the name of the Postgres
+      # service above. It's visible to the meesign-server container due to the
+      # shared meesign-network.
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}"
+    volumes:
+      - ./keys:/meesign/keys:ro
+
+volumes:
+  db-data:
+
+networks:
+  meesign-network:
+    name: meesign-network
+    driver: bridge

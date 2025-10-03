@@ -10,14 +10,22 @@ pub struct MuSig2Group {
 }
 
 impl MuSig2Group {
-    pub fn new(parties: u32) -> Self {
-        Self { parties, round: 0 }
+    pub fn from_model(parties: u32, round: u16) -> Self {
+        Self { parties, round }
+    }
+
+    fn set_round(&mut self, round: u16) {
+        self.round = round;
+    }
+
+    fn increment_round(&mut self) {
+        self.round += 1;
     }
 }
 
 impl Protocol for MuSig2Group {
     fn initialize(&mut self, communicator: &mut Communicator, _: &[u8]) {
-        communicator.set_active_devices();
+        communicator.set_active_devices(None);
         let parties = self.parties;
         communicator.send_all(|idx| {
             (ProtocolGroupInit {
@@ -29,19 +37,19 @@ impl Protocol for MuSig2Group {
             .encode_to_vec()
         });
 
-        self.round = 1;
+        self.set_round(1);
     }
 
     fn advance(&mut self, communicator: &mut Communicator) {
         assert!((0..self.last_round()).contains(&self.round));
 
         communicator.relay();
-        self.round += 1;
+        self.increment_round();
     }
 
     fn finalize(&mut self, communicator: &mut Communicator) -> Option<Vec<u8>> {
         assert_eq!(self.last_round(), self.round);
-        self.round += 1;
+        self.increment_round();
         communicator.get_final_message()
     }
 
@@ -66,11 +74,23 @@ impl MuSig2Sign {
     pub fn new() -> Self {
         Self { round: 0 }
     }
+
+    pub fn from_model(round: u16) -> Self {
+        Self { round }
+    }
+
+    fn set_round(&mut self, round: u16) {
+        self.round = round;
+    }
+
+    fn increment_round(&mut self) {
+        self.round += 1;
+    }
 }
 
 impl Protocol for MuSig2Sign {
     fn initialize(&mut self, communicator: &mut Communicator, data: &[u8]) {
-        communicator.set_active_devices();
+        communicator.set_active_devices(None);
         let participant_indices = communicator.get_protocol_indices();
         communicator.send_all(|idx| {
             (ProtocolInit {
@@ -82,19 +102,19 @@ impl Protocol for MuSig2Sign {
             .encode_to_vec()
         });
 
-        self.round = 1;
+        self.set_round(1);
     }
 
     fn advance(&mut self, communicator: &mut Communicator) {
         assert!((0..self.last_round()).contains(&self.round));
 
         communicator.relay();
-        self.round += 1;
+        self.increment_round();
     }
 
     fn finalize(&mut self, communicator: &mut Communicator) -> Option<Vec<u8>> {
         assert_eq!(self.last_round(), self.round);
-        self.round += 1;
+        self.increment_round();
         communicator.get_final_message()
     }
 

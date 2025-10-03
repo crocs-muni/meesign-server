@@ -1,16 +1,21 @@
 [package]
 name = "meesign-server"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 
 [dependencies]
-tonic = { version = "0.10", features = ["transport", "tls"] }
+tonic = { version = "0.11", features = ["transport", "tls"] }
 prost = "0.12"
-tokio = { version = "1.33", features = ["macros", "rt-multi-thread", "time", "fs"] }
+tokio = { version = "1.33", features = [
+    "macros",
+    "rt-multi-thread",
+    "time",
+    "fs",
+] }
 tokio-stream = "0.1.14"
-uuid = { version = "1.4.1", features = ["v4", "fast-rng"] }
+uuid = { version = "1.4.1", features = ["v4", "fast-rng", "serde"] }
 log = "0.4.16"
-env_logger = "0.9.0"
+env_logger = "0.11.3"
 hex = "0.4.3"
 clap = { version = "3.1.8", features = ["derive"] }
 rand = "0.8.5"
@@ -19,10 +24,27 @@ lazy_static = "1.4.0"
 openssl = "0.10.60"
 sha2 = "0.10.6"
 meesign-crypto = { git = "https://github.com/crocs-muni/meesign-crypto", rev = "ccf6b1d", default-features = false, features = ["elgamal-encrypt"] }
+diesel = { version = "2.1.0", features = ["postgres", "chrono", "uuid"] }
+diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }
+diesel-async = { version = "0.4.1", features = ["postgres", "deadpool", "bb8"] }
+diesel_migrations = "2.1.0"
+deadpool = "0.11.1"
+dotenvy = "0.15"
+chrono = { version = "0.4.30", features = ["serde"] }
+thiserror = "1.0.58"
+dashmap = "5.5.3"
+futures = "0.3.31"
+async-trait = "0.1.80"
+serde = "1.0.200"
+testcontainers-modules = { version = "0.13.0", features = ["blocking", "postgres"] }
+testcontainers = { version = "0.25.0", features = ["reusable-containers"] }
 
 [build-dependencies]
-tonic-build = "0.10"
+tonic-build = "0.11.0"
 
 [features]
 default = ["cli"]
 cli = []
+# Hacky feature to allow ignoring slower integrations tests
+# that are running against a database, see https://stackoverflow.com/a/48585979
+db-tests = []

@@ -1,0 +1,101 @@
+@startuml meesign-erd
+
+entity "device" as device {
+    * id: integer <<generated>>
+    --
+    identifier: bytea
+    name: varchar
+    certificate bytea
+    last_active: timestamptz
+}
+
+entity "group_participant" as group_participant {
+    * id: integer <<generated>>
+    --
+    device_id: bytea
+    group_id: bytea
+}
+
+entity "group" as group {
+    * id: integer<<generated>>
+    --
+    identifier: bytea
+    name: varchar
+    threshold: integer
+    round: integer
+
+}
+
+enum "protocol_type" as protocol_type {
+    Gg18
+    ElGamal
+    Frost
+}
+
+enum "key_type" as key_type {
+    SignPdf
+    SignChallenge
+    Decrypt
+}
+
+
+entity "task" as task {
+    * id: uuid <<generated>>
+    --
+    round: integer
+    attempts: integer
+    error_message: varchar
+    threshold: integer
+    last_update: timestamptz
+    data: bytea
+    preprocessed: bytea
+    request: bytea
+}
+
+entity "task_participant" as task_participant{
+    * id: integer <<generated>>
+    --
+    is_active: boolean
+    decision: boolean
+    acknowledgement: boolean
+}
+
+
+enum "task_type" as task_type {
+    Group
+    SignPdf
+    SignChallenge
+    Decrypt
+}
+
+enum "task_state" as stask_state {
+    Created
+    Running
+    Finished
+    Failed
+}
+
+entity "task_result" as task_result {
+    * id: integer <<generated>>
+    --
+    data: bytea
+}
+
+enum "task_result_type" as task_result_type {
+    GroupEstablished
+    Signed
+    SignedPdf
+    Decrypted
+}
+
+group ||..o{ group_participant: < participates in
+group }o..|| key_type: is using >
+group_participant }o..|| device: < is a
+group }o..|| protocol_type: > is of type
+task }o..|| task_type: > is of type
+group ||..o{ task: > contains
+task }o..|| stask_state: > is in state
+task_result }o..|| task_result_type: > is of type
+task ||..|{ task_participant
+device ||..o{ task_participant
+@enduml

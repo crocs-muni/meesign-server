@@ -1,18 +1,22 @@
+use std::env;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
+use dotenvy::dotenv;
 use lazy_static::lazy_static;
 use openssl::pkey::{PKey, Private};
 use openssl::x509::X509;
+use persistence::Repository;
 
 use crate::state::State;
 use tokio::{sync::Mutex, try_join};
 use tonic::codegen::Arc;
 
 mod communicator;
-mod device;
+mod error;
 mod group;
 mod interfaces;
+mod persistence;
 mod protocols;
 mod state;
 mod tasks;
@@ -21,6 +25,7 @@ mod utils;
 mod proto {
     #![allow(clippy::derive_partial_eq_without_eq)]
     tonic::include_proto!("meesign");
+    use crate::persistence::Group as GroupModel;
     pub(crate) use mee_sign_client::MeeSignClient;
     pub(crate) use mee_sign_server::MeeSign;
     pub(crate) use mee_sign_server::MeeSignServer;
@@ -52,6 +57,142 @@ mod proto {
             match self {
                 ProtocolType::Gg18 | ProtocolType::Elgamal | ProtocolType::Musig2 => 0,
                 ProtocolType::Frost => 1,
+            }
+        }
+    }
+
+    impl From<TaskType> for crate::persistence::TaskType {
+        fn from(task_type: TaskType) -> Self {
+            match task_type {
+                TaskType::Group => Self::Group,
+                TaskType::SignChallenge => Self::SignChallenge,
+                TaskType::SignPdf => Self::SignPdf,
+                TaskType::Decrypt => Self::Decrypt,
+            }
+        }
+    }
+
+    impl Into<TaskType> for crate::persistence::TaskType {
+        fn into(self) -> TaskType {
+            match self {
+                Self::Group => TaskType::Group,
+                Self::SignChallenge => TaskType::SignChallenge,
+                Self::SignPdf => TaskType::SignPdf,
+                Self::Decrypt => TaskType::Decrypt,
+            }
+        }
+    }
+
+    impl Into<DeviceKind> for crate::persistence::DeviceKind {
+        fn into(self) -> DeviceKind {
+            match self {
+                Self::User => DeviceKind::User,
+                Self::Bot => DeviceKind::Bot,
+            }
+        }
+    }
+
+    impl Task {
+        pub fn created(
+            id: Vec<u8>,
+            r#type: i32,
+            accept: u32,
+            reject: u32,
+            request: Option<Vec<u8>>,
+            attempt: u32,
+        ) -> Self {
+            Self {
+                id,
+                r#type,
+                state: task::TaskState::Created.into(),
+                round: 0,
+                accept,
+                reject,
+                data: Vec::new(),
+                request,
+                attempt,
+            }
+        }
+        pub fn running(
+            id: Vec<u8>,
+            r#type: i32,
+            round: u32,
+            data: Vec<Vec<u8>>,
+            request: Option<Vec<u8>>,
+            attempt: u32,
+        ) -> Self {
+            Self {
+                id,
+                r#type,
+                state: task::TaskState::Running.into(),
+                round,
+                accept: u16::MAX as u32,
+                reject: u16::MAX as u32,
+                data,
+                request,
+                attempt,
+            }
+        }
+        pub fn finished(
+            id: Vec<u8>,
+            r#type: i32,
+            result: Vec<u8>,
+            request: Option<Vec<u8>>,
+            attempt: u32,
+        ) -> Self {
+            Self {
+                id,
+                r#type,
+                state: task::TaskState::Finished.into(),
+                round: u16::MAX as u32,
+                accept: u16::MAX as u32,
+                reject: u16::MAX as u32,
+                data: vec![result],
+                request,
+                attempt,
+            }
+        }
+        pub fn failed(
+            id: Vec<u8>,
+            r#type: i32,
+            round: u32,
+            accept: u32,
+            reject: u32,
+            reason: String,
+            request: Option<Vec<u8>>,
+            attempt: u32,
+        ) -> Self {
+            Self {
+                id,
+                r#type,
+                state: task::TaskState::Failed.into(),
+                round,
+                accept,
+                reject,
+                data: vec![reason.into_bytes()],
+                request,
+                attempt,
+            }
+        }
+    }
+
+    impl Group {
+        pub fn from_model(model: GroupModel) -> Self {
+            let protocol: crate::proto::ProtocolType = model.protocol.into();
+            let key_type: crate::proto::KeyType = model.key_type.into();
+            let device_ids = model
+                .participant_ids_shares
+                .into_iter()
+                .map(|(device_id, _)| device_id)
+                .collect();
+            Self {
+                identifier: model.id,
+                name: model.name,
+                threshold: model.threshold as u32,
+                protocol: protocol.into(),
+                key_type: key_type.into(),
+                note: model.note,
+                device_ids,
             }
         }
     }
@@ -99,8 +240,14 @@ async fn main() -> Result<(), String> {
     if args.command.is_some() {
         return cli::handle_command(args).await;
     }
-
-    let state = Arc::new(Mutex::new(State::new()));
+    let _ = dotenv();
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let repo = Repository::from_url(&database_url)
+        .await
+        .expect("Coudln't init postgres repo");
+    repo.apply_migrations().expect("Couldn't apply migrations");
+    // TODO: remove mutex when DB done
+    let state = Arc::new(Mutex::new(State::new(Arc::new(repo))));
 
     let grpc = interfaces::grpc::run_grpc(state.clone(), &args.addr, args.port);
     let timer = interfaces::timer::run_timer(state);

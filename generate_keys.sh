@@ -2,8 +2,18 @@
 
 set -e
 
+if ! command -v openssl >/dev/null 2>&1; then
+    echo "The 'openssl' command is not available. Please, install OpenSSL utility."
+    exit 1
+fi
+
 KEY_FOLDER="keys"
 HOSTNAME=${1:-"meesign.local"}
+
+if test -d "$KEY_FOLDER"; then
+    echo "The './$KEY_FOLDER' already exists. Backing it up to ./keys.bak"
+    cp --recursive "./$KEY_FOLDER" "./$KEY_FOLDER.bak"
+fi
 mkdir --parent "./${KEY_FOLDER}"
 
 # MeeSign CA certificate configuration

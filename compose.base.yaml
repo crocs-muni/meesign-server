@@ -1,0 +1,26 @@
+services:     
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+
+  meesign-server:
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    extra_hosts:
+      # Use extra hosts to allow the healthcheck to discover the MeeSign Server
+      # locally
+      - "meesign.local=127.0.0.1"
+    healthcheck:
+      # TODO The healthcheck performance is dependent on the lifetime of the
+      #      application. With more devices it could get slower.
+      test: [ "CMD-SHELL", "meesign-server get-devices"]
+      interval: 1s
+      timeout: 5s
+      retries: 10

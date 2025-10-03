@@ -1,6 +1,6 @@
+use crate::error::Error;
 use crate::state::State;
-use crate::tasks::TaskStatus;
-use crate::{get_timestamp, utils};
+use crate::utils;
 
 use log::debug;
 use tokio::sync::MutexGuard;
@@ -12,31 +12,22 @@ pub async fn run_timer(state: Arc<Mutex<State>>) -> Result<(), String> {
     loop {
         interval.tick().await;
         let mut state = state.lock().await;
-        check_tasks(&mut state);
-        check_subscribers(&mut state);
+        check_tasks(&mut state).await.unwrap();
+        check_subscribers(&mut state).await;
     }
 }
 
-fn check_tasks(state: &mut MutexGuard<State>) {
-    let mut restarts = Vec::new();
-    let timestamp = get_timestamp();
-    for (task_id, task) in state.get_tasks() {
-        if task.get_status() != TaskStatus::Finished
-            && task.is_approved()
-            && timestamp - task.last_update() > 30
-        {
-            debug!("Stale task detected task_id={:?}", utils::hextrunc(task_id));
-            restarts.push(*task_id);
-        }
+async fn check_tasks(state: &mut MutexGuard<'_, State>) -> Result<(), Error> {
+    for task_id in state.get_tasks_for_restart().await? {
+        state.restart_task(&task_id).await?;
     }
-    for task_id in restarts {
-        state.restart_task(&task_id);
-    }
+    Ok(())
 }
 
-fn check_subscribers(state: &mut MutexGuard<State>) {
+async fn check_subscribers(state: &mut MutexGuard<'_, State>) {
     let mut remove = Vec::new();
-    for (device_id, tx) in state.get_subscribers() {
+    for subscriber in state.get_subscribers().iter() {
+        let (device_id, tx) = subscriber.pair();
         if tx.is_closed() {
             debug!(
                 "Closed channel detected device_id={:?}",
@@ -44,7 +35,7 @@ fn check_subscribers(state: &mut MutexGuard<State>) {
             );
             remove.push(device_id.clone());
         } else {
-            state.device_activated(device_id);
+            state.activate_device(&device_id);
         }
     }
     for device_id in remove {
