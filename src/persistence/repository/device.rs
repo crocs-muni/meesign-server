@@ -81,21 +81,21 @@ where
     Conn: AsyncConnection<Backend = Pg>,
 {
     if !name.is_name_valid() {
-        return Err(PersistenceError::InvalidArgumentError(format!(
-            "Invalid device name: {name}"
-        )));
+        return Err(PersistenceError::InvalidArgumentError(
+            "Invalid device name: {name}".to_string(),
+        ));
     }
 
     if identifier.is_empty() {
-        return Err(PersistenceError::InvalidArgumentError(format!(
-            "Empty identifier"
-        )));
+        return Err(PersistenceError::InvalidArgumentError(
+            "Empty identifier".to_string(),
+        ));
     }
 
     if certificate.is_empty() {
-        return Err(PersistenceError::InvalidArgumentError(format!(
-            "Empty certificate"
-        )));
+        return Err(PersistenceError::InvalidArgumentError(
+            "Empty certificate".to_string(),
+        ));
     }
 
     let new_device = NewDevice {

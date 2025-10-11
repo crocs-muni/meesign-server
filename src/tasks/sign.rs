@@ -10,7 +10,7 @@ use crate::protocols::{create_threshold_protocol, Protocol};
 use crate::tasks::{FailedTask, FinishedTask, RoundUpdate, RunningTask, TaskInfo, TaskResult};
 use crate::utils;
 use log::{info, warn};
-use meesign_crypto::proto::{ClientMessage, Message as _};
+use meesign_crypto::proto::ClientMessage;
 
 pub struct SignTask {
     pub(super) task_info: TaskInfo,
@@ -133,19 +133,13 @@ impl SignTask {
     pub(super) fn update_internal(
         &mut self,
         device_id: &[u8],
-        data: &Vec<Vec<u8>>,
+        messages: Vec<ClientMessage>,
     ) -> Result<bool, Error> {
         if !self.waiting_for(device_id) {
             return Err(Error::GeneralProtocolError(
                 "Wasn't waiting for a message from this ID.".into(),
             ));
         }
-
-        let messages = data
-            .iter()
-            .map(|d| ClientMessage::decode(d.as_slice()))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| Error::GeneralProtocolError("Expected ClientMessage.".into()))?;
 
         self.communicator.receive_messages(device_id, messages);
 
@@ -182,8 +176,12 @@ impl RunningTask for SignTask {
         self.start_task()
     }
 
-    fn update(&mut self, device_id: &[u8], data: &Vec<Vec<u8>>) -> Result<RoundUpdate, Error> {
-        let round_update = if self.update_internal(device_id, data)? {
+    fn update(
+        &mut self,
+        device_id: &[u8],
+        messages: Vec<ClientMessage>,
+    ) -> Result<RoundUpdate, Error> {
+        let round_update = if self.update_internal(device_id, messages)? {
             self.next_round()?
         } else {
             RoundUpdate::Listen

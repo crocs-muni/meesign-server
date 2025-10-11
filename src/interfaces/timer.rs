@@ -30,7 +30,7 @@ async fn check_subscribers(state: &State) {
             );
             remove.push(device_id.clone());
         } else {
-            state.activate_device(&device_id);
+            state.activate_device(device_id);
         }
     }
     for device_id in remove {

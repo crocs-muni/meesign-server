@@ -61,7 +61,7 @@ where
         .await?;
 
     let new_task_participants: Vec<NewTaskParticipant> = participants
-        .into_iter()
+        .iter()
         .map(|(device_id, shares)| NewTaskParticipant {
             device_id,
             task_id: &task_id,
@@ -129,7 +129,7 @@ where
         .await?;
 
     let new_task_participants: Vec<NewTaskParticipant> = participants
-        .into_iter()
+        .iter()
         .map(|(device_id, shares)| NewTaskParticipant {
             device_id,
             task_id: &task_id,
@@ -393,7 +393,7 @@ where
     let active_task_participants: Vec<_> = active_shares
         .iter()
         .map(|(device_id, shares)| ActiveTaskParticipant {
-            task_id: task_id.clone(),
+            task_id: *task_id,
             device_id: device_id.clone(),
             active_shares: *shares as i32,
         })

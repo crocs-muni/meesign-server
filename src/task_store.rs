@@ -90,10 +90,7 @@ impl TaskStore {
 
         let evicted_task = self
             .task_cache
-            .insert(
-                task.task_info.id.clone(),
-                Arc::new(RwLock::new(Task::Voting(task))),
-            )
+            .insert(task.task_info.id, Arc::new(RwLock::new(Task::Voting(task))))
             .map(|evicted_task| Arc::into_inner(evicted_task).unwrap().into_inner());
         Ok(evicted_task)
     }
@@ -136,7 +133,7 @@ impl TaskStore {
         task_id: &Uuid,
     ) -> Result<impl DerefMut<Target = Task>, Error> {
         let task = self
-            .get_tasks_write_guards(vec![task_id.clone()])
+            .get_tasks_write_guards(vec![*task_id])
             .await?
             .next()
             .unwrap()
@@ -149,7 +146,7 @@ impl TaskStore {
     /// does not reference an existing `Task`.
     pub async fn get_task(&self, task_id: &Uuid) -> Result<impl Deref<Target = Task>, Error> {
         let task = self
-            .get_tasks_write_guards(vec![task_id.clone()])
+            .get_tasks_write_guards(vec![*task_id])
             .await?
             .next()
             .unwrap()
@@ -168,7 +165,7 @@ impl TaskStore {
         self.repo
             .create_group_task(
                 Some(&task.task_info.id),
-                &participant_ids_shares,
+                participant_ids_shares,
                 threshold,
                 task.task_info.protocol_type.into(),
                 task.task_info.key_type.into(),
@@ -190,12 +187,12 @@ impl TaskStore {
             .create_threshold_task(
                 Some(&task.task_info.id),
                 group.identifier(),
-                &participant_ids_shares,
+                participant_ids_shares,
                 group.threshold(),
                 "name", // TODO: Fix name checks
-                &data,
+                data,
                 &task.request,
-                task_type.into(),
+                task_type,
                 task.task_info.key_type.into(),
                 task.task_info.protocol_type.into(),
             )
@@ -209,7 +206,7 @@ impl TaskStore {
             .collect();
         let tasks = self.hydrate_tasks(&uncached_task_ids).await?;
         for task in tasks {
-            let task_id = task.task_info().id.clone();
+            let task_id = task.task_info().id;
             if let Entry::Vacant(entry) = self.task_cache.entry(task_id) {
                 entry.insert(Arc::new(RwLock::new(task)));
             }
@@ -256,7 +253,7 @@ impl TaskStore {
         for task_model in task_models {
             let participants = task_id_participants.remove(&task_model.id).unwrap();
             let task_info = TaskInfo {
-                id: task_model.id.clone(),
+                id: task_model.id,
                 name: "".into(), // TODO: Persist "name" in TaskModel
                 task_type: task_model.task_type.clone().into(),
                 protocol_type: task_model.protocol_type.into(),
@@ -289,11 +286,10 @@ impl TaskStore {
             match task_result.try_into_result()? {
                 Ok(group_id) => {
                     let Some(group_model) = self.repo.get_group(&group_id).await? else {
-                        return Err(Error::PersistenceError(
-                            PersistenceError::DataInconsistencyError(
-                                "Group task result references nonexistent group".into(),
-                            ),
-                        ));
+                        return Err(PersistenceError::DataInconsistencyError(
+                            "Group task result references nonexistent group".into(),
+                        )
+                        .into());
                     };
                     let group = crate::group::Group::from_model(group_model);
                     let result = TaskResult::GroupEstablished(group);
@@ -388,18 +384,16 @@ impl TaskStore {
             }
         } else {
             let Some(group_id) = &task_model.group_id else {
-                return Err(Error::PersistenceError(
-                    PersistenceError::DataInconsistencyError(
-                        "Threshold task is missing a group".into(),
-                    ),
-                ));
+                return Err(PersistenceError::DataInconsistencyError(
+                    "Threshold task is missing a group".into(),
+                )
+                .into());
             };
             let Some(group_model) = self.repo.get_group(group_id).await? else {
-                return Err(Error::PersistenceError(
-                    PersistenceError::DataInconsistencyError(
-                        "Threshold task references nonexistent group".into(),
-                    ),
-                ));
+                return Err(PersistenceError::DataInconsistencyError(
+                    "Threshold task references nonexistent group".into(),
+                )
+                .into());
             };
             let group = crate::group::Group::from_model(group_model);
 

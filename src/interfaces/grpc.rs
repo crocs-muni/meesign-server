@@ -21,6 +21,7 @@ use crate::proto::{Group, KeyType, MeeSign, MeeSignServer, ProtocolType};
 use crate::state::State;
 use crate::{proto as msg, utils, CA_CERT, CA_KEY};
 
+use meesign_crypto::proto::{ClientMessage, Message as _};
 use std::pin::Pin;
 
 pub struct MeeSignService {
@@ -38,7 +39,7 @@ impl MeeSignService {
         required: bool,
     ) -> Result<(), Status> {
         if let Some(certs) = certs {
-            let device_id = certs.get(0).map(cert_to_id).unwrap_or(vec![]);
+            let device_id = certs.first().map(cert_to_id).unwrap_or(vec![]);
             if !self.state.device_exists(&device_id) {
                 return Err(Status::unauthenticated("Unknown device certificate"));
             }
@@ -170,7 +171,7 @@ impl MeeSign for MeeSignService {
 
         let device_id = request
             .peer_certs()
-            .and_then(|certs| certs.get(0).map(cert_to_id))
+            .and_then(|certs| certs.first().map(cert_to_id))
             .unwrap();
 
         let request = request.into_inner();
@@ -193,10 +194,16 @@ impl MeeSign for MeeSignService {
             attempt
         );
 
+        let messages = data
+            .into_iter()
+            .map(|bytes| ClientMessage::decode(bytes.as_slice()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| Status::invalid_argument("Invalid ClientMessage data."))?;
+
         self.state.activate_device(&device_id);
         let result = self
             .state
-            .update_task(&task_id, &device_id, &data, attempt)
+            .update_task(&task_id, &device_id, messages, attempt)
             .await;
 
         match result {
@@ -309,8 +316,8 @@ impl MeeSign for MeeSignService {
                 &name,
                 &device_id_references,
                 threshold,
-                protocol.into(),
-                key_type.into(),
+                protocol,
+                key_type,
                 note,
             )
             .await
@@ -353,7 +360,7 @@ impl MeeSign for MeeSignService {
 
         let device_id = request
             .peer_certs()
-            .and_then(|certs| certs.get(0).map(cert_to_id));
+            .and_then(|certs| certs.first().map(cert_to_id));
 
         let device_str = device_id
             .as_ref()
@@ -379,7 +386,7 @@ impl MeeSign for MeeSignService {
 
         let device_id = request
             .peer_certs()
-            .and_then(|certs| certs.get(0).map(cert_to_id))
+            .and_then(|certs| certs.first().map(cert_to_id))
             .unwrap();
 
         let request = request.into_inner();
@@ -416,7 +423,7 @@ impl MeeSign for MeeSignService {
 
         let device_id = request
             .peer_certs()
-            .and_then(|certs| certs.get(0).map(cert_to_id))
+            .and_then(|certs| certs.first().map(cert_to_id))
             .unwrap();
 
         let task_id = request.into_inner().task_id;
@@ -452,7 +459,7 @@ impl MeeSign for MeeSignService {
 
         let device_id = request
             .peer_certs()
-            .and_then(|certs| certs.get(0).map(cert_to_id))
+            .and_then(|certs| certs.first().map(cert_to_id))
             .unwrap();
 
         let (tx, rx) = mpsc::channel(8);

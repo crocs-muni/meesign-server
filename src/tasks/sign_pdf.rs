@@ -6,6 +6,7 @@ use crate::tasks::sign::SignTask;
 use crate::tasks::{FailedTask, RoundUpdate, RunningTask, TaskInfo, TaskResult};
 use lazy_static::lazy_static;
 use log::{error, info, warn};
+use meesign_crypto::proto::ClientMessage;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};
@@ -104,7 +105,7 @@ impl SignPDFTask {
         PDF_HELPERS
             .lock()
             .unwrap()
-            .insert(self.task_info().id.clone(), pdfhelper);
+            .insert(self.task_info().id, pdfhelper);
         self.sign_task.set_preprocessed(hash);
         self.sign_task.start_task()
     }
@@ -166,8 +167,12 @@ impl RunningTask for SignPDFTask {
         self.start_task()
     }
 
-    fn update(&mut self, device_id: &[u8], data: &Vec<Vec<u8>>) -> Result<RoundUpdate, Error> {
-        let round_update = if self.sign_task.update_internal(device_id, data)? {
+    fn update(
+        &mut self,
+        device_id: &[u8],
+        messages: Vec<ClientMessage>,
+    ) -> Result<RoundUpdate, Error> {
+        let round_update = if self.sign_task.update_internal(device_id, messages)? {
             self.next_round()?
         } else {
             RoundUpdate::Listen

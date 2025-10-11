@@ -13,6 +13,7 @@ use crate::tasks::{
     DecisionUpdate, RoundUpdate, RunningTaskContext, Task, TaskInfo, TaskResult, VotingTask,
 };
 use crate::{get_timestamp, utils};
+use meesign_crypto::proto::ClientMessage;
 use prost::Message as _;
 use rand::{prelude::IteratorRandom, thread_rng};
 use tokio::sync::mpsc::Sender;
@@ -251,7 +252,7 @@ impl State {
     }
 
     async fn add_task(&self, task: VotingTask) -> Result<proto::Task, Error> {
-        let task_id = task.task_info.id.clone();
+        let task_id = task.task_info.id;
         self.task_store.persist_task(task).await?;
         let task = self.task_store.get_task(&task_id).await?;
         self.send_updates(&task).await?;
@@ -299,7 +300,7 @@ impl State {
 
     fn get_devices_with_ids(&self, device_ids: &[&[u8]]) -> Vec<Device> {
         device_ids
-            .into_iter()
+            .iter()
             .filter_map(|device_id| self.devices.get(*device_id).map(|dev| dev.clone()))
             .collect()
     }
@@ -326,7 +327,7 @@ impl State {
         task_id: &Uuid,
         device_id: Option<&[u8]>,
     ) -> Result<proto::Task, Error> {
-        let task = &*self.task_store.get_task(&task_id).await?;
+        let task = &*self.task_store.get_task(task_id).await?;
         let request = if let Task::Voting(task) = task {
             task.request.clone()
         } else {
@@ -342,7 +343,7 @@ impl State {
         &self,
         task_id: &Uuid,
         device: &[u8],
-        data: &Vec<Vec<u8>>,
+        data: Vec<ClientMessage>,
         attempt: u32,
     ) -> Result<(), Error> {
         let task_entry = &mut *self.task_store.get_task_mut(task_id).await?;
@@ -657,14 +658,13 @@ impl State {
     }
 
     pub fn set_task_last_update(&self, task_id: &Uuid) {
-        self.task_last_updates
-            .insert(task_id.clone(), get_timestamp());
+        self.task_last_updates.insert(*task_id, get_timestamp());
     }
 
     pub fn get_task_last_update(&self, task_id: &Uuid) -> u64 {
         *self
             .task_last_updates
-            .entry(task_id.clone())
+            .entry(*task_id)
             .or_insert(get_timestamp())
     }
 }

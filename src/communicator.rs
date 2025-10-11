@@ -54,7 +54,7 @@ impl Communicator {
     /// # Arguments
     ///
     /// * `sender_id` - identifier of the sender device
-    /// * `messages` - vector containing messages from each of the sender device's shares
+    /// * `messages` - a message from each of the sender device's shares
     pub fn receive_messages(&mut self, sender_id: &[u8], messages: Vec<ClientMessage>) -> bool {
         let sender_indices = self.identifier_to_indices(sender_id);
         if messages.is_empty() || sender_indices.len() != messages.len() {
@@ -135,13 +135,13 @@ impl Communicator {
     pub fn get_messages(&self, device_id: &[u8]) -> Vec<Vec<u8>> {
         self.identifier_to_indices(device_id)
             .iter()
-            .map(|idx| self.output.get(idx).map(Vec::clone).unwrap_or_default())
+            .map(|idx| self.output.get(idx).cloned().unwrap_or_default())
             .collect()
     }
 
     /// Get the final message
     pub fn get_final_message(&self) -> Option<Vec<u8>> {
-        if self.input.len() == 0 {
+        if self.input.is_empty() {
             return None;
         }
 

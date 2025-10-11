@@ -75,11 +75,10 @@ impl GroupTask {
             model.protocol_round as u16,
         )?;
         let Some(certificates_sent) = model.group_certificates_sent else {
-            return Err(Error::PersistenceError(
-                PersistenceError::DataInconsistencyError(
-                    "certificates_sent flag missing in group task".into(),
-                ),
-            ));
+            return Err(PersistenceError::DataInconsistencyError(
+                "certificates_sent flag missing in group task".into(),
+            )
+            .into());
         };
         Ok(Self {
             task_info,
@@ -212,20 +211,18 @@ impl RunningTask for GroupTask {
         self.send_certificates()
     }
 
-    fn update(&mut self, device_id: &[u8], data: &Vec<Vec<u8>>) -> Result<RoundUpdate, Error> {
+    fn update(
+        &mut self,
+        device_id: &[u8],
+        messages: Vec<ClientMessage>,
+    ) -> Result<RoundUpdate, Error> {
         if !self.waiting_for(device_id) {
             return Err(Error::GeneralProtocolError(
                 "Wasn't waiting for a message from this ID.".into(),
             ));
         }
 
-        assert_eq!(self.certificates_sent, true);
-
-        let messages = data
-            .iter()
-            .map(|d| ClientMessage::decode(d.as_slice()))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| Error::GeneralProtocolError("Expected ClientMessage.".into()))?;
+        assert!(self.certificates_sent);
 
         self.communicator.receive_messages(device_id, messages);
 

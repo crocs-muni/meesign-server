@@ -73,22 +73,22 @@ mod proto {
         }
     }
 
-    impl Into<TaskType> for crate::persistence::TaskType {
-        fn into(self) -> TaskType {
-            match self {
-                Self::Group => TaskType::Group,
-                Self::SignChallenge => TaskType::SignChallenge,
-                Self::SignPdf => TaskType::SignPdf,
-                Self::Decrypt => TaskType::Decrypt,
+    impl From<crate::persistence::TaskType> for TaskType {
+        fn from(task_type: crate::persistence::TaskType) -> Self {
+            match task_type {
+                crate::persistence::TaskType::Group => Self::Group,
+                crate::persistence::TaskType::SignChallenge => Self::SignChallenge,
+                crate::persistence::TaskType::SignPdf => Self::SignPdf,
+                crate::persistence::TaskType::Decrypt => Self::Decrypt,
             }
         }
     }
 
-    impl Into<DeviceKind> for crate::persistence::DeviceKind {
-        fn into(self) -> DeviceKind {
-            match self {
-                Self::User => DeviceKind::User,
-                Self::Bot => DeviceKind::Bot,
+    impl From<crate::persistence::DeviceKind> for DeviceKind {
+        fn from(device_kind: crate::persistence::DeviceKind) -> Self {
+            match device_kind {
+                crate::persistence::DeviceKind::User => Self::User,
+                crate::persistence::DeviceKind::Bot => Self::Bot,
             }
         }
     }
@@ -282,7 +282,6 @@ mod cli {
     use crate::proto::MeeSignClient;
     use crate::{Args, CA_CERT};
     use clap::Subcommand;
-    use meesign_crypto;
     use std::str::FromStr;
     use std::time::SystemTime;
     use tonic::transport::{Certificate, Channel, ClientTlsConfig, Uri};

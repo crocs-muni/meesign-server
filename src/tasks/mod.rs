@@ -3,6 +3,7 @@ pub(crate) mod group;
 pub(crate) mod sign;
 pub(crate) mod sign_pdf;
 
+use meesign_crypto::proto::ClientMessage;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
@@ -92,12 +93,12 @@ impl VotingTask {
     pub fn accepts_rejects(decisions: &HashMap<Vec<u8>, i8>) -> (u32, u32) {
         let mut accepts = 0;
         let mut rejects = 0;
-        for vote in decisions.values() {
-            if *vote > 0 {
-                accepts += vote.abs() as u32;
+        for &vote in decisions.values() {
+            if vote > 0 {
+                accepts += (vote as i32).unsigned_abs();
             }
-            if *vote < 0 {
-                rejects += vote.abs() as u32;
+            if vote < 0 {
+                rejects += (vote as i32).unsigned_abs();
             }
         }
         (accepts, rejects)
@@ -159,10 +160,9 @@ impl Task {
         }
     }
     pub fn format(&self, device_id: Option<&[u8]>, request: Option<Vec<u8>>) -> proto::Task {
-        let request = request.map(Vec::from);
         let task_info = self.task_info();
         let id = task_info.id.as_bytes().to_vec();
-        let r#type = task_info.task_type.clone().into();
+        let r#type = task_info.task_type.into();
         let attempt = task_info.attempts;
         match self {
             Task::Voting(task) => {
@@ -220,8 +220,12 @@ pub trait RunningTask: Send + Sync {
 
     fn initialize(&mut self) -> Result<RoundUpdate, Error>;
 
-    /// Update protocol state with `data` from `device_id`
-    fn update(&mut self, device_id: &[u8], data: &Vec<Vec<u8>>) -> Result<RoundUpdate, Error>;
+    /// Update protocol state with `messages` from `device_id`
+    fn update(
+        &mut self,
+        device_id: &[u8],
+        messages: Vec<ClientMessage>,
+    ) -> Result<RoundUpdate, Error>;
 
     /// Attempt to restart protocol in task
     fn restart(&mut self) -> Result<RoundUpdate, Error>;

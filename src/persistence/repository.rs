@@ -172,17 +172,8 @@ impl Repository {
         get_device_groups(connection, identifier).await
     }
 
-    #[allow(unused_variables)]
-    pub async fn does_group_contain_device(
-        &self,
-        group_id: &[u8],
-        device_id: &[u8],
-    ) -> Result<bool, PersistenceError> {
-        todo!()
-    }
-
     /* Tasks */
-    pub async fn create_group_task<'a>(
+    pub async fn create_group_task(
         &self,
         id: Option<&Uuid>,
         participants: &[(&[u8], u32)],
@@ -213,7 +204,7 @@ impl Repository {
             .await
     }
 
-    pub async fn create_threshold_task<'a>(
+    pub async fn create_threshold_task(
         &self,
         id: Option<&Uuid>,
         group_id: &[u8],
