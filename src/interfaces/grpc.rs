@@ -316,8 +316,8 @@ impl MeeSign for MeeSignService {
                 &name,
                 &device_id_references,
                 threshold,
-                protocol,
-                key_type,
+                protocol.into(),
+                key_type.into(),
                 note,
             )
             .await

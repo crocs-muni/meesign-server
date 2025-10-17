@@ -1,7 +1,6 @@
 use crate::communicator::Communicator;
 use crate::error::Error;
-use crate::group::Group;
-use crate::persistence::{PersistenceError, Task as TaskModel};
+use crate::persistence::{Group, PersistenceError, Task as TaskModel};
 use crate::protocols::elgamal::ElgamalDecrypt;
 use crate::protocols::{create_threshold_protocol, Protocol};
 use crate::tasks::{FailedTask, FinishedTask, RoundUpdate, RunningTask, TaskInfo, TaskResult};
@@ -40,8 +39,8 @@ impl DecryptTask {
         group: Group,
     ) -> Result<Self, Error> {
         let protocol = create_threshold_protocol(
-            group.protocol(),
-            group.key_type(),
+            group.protocol.into(),
+            group.key_type.into(),
             task_model.protocol_round as u16,
         )?;
         let data = task_model
@@ -82,7 +81,7 @@ impl DecryptTask {
 
         info!(
             "Data decrypted by group_id={}",
-            utils::hextrunc(self.group.identifier())
+            utils::hextrunc(&self.group.id)
         );
 
         self.communicator.clear_input();

@@ -1,7 +1,6 @@
 use crate::communicator::Communicator;
 use crate::error::Error;
-use crate::group::Group;
-use crate::persistence::Task as TaskModel;
+use crate::persistence::{Group, Task as TaskModel};
 use crate::tasks::sign::SignTask;
 use crate::tasks::{FailedTask, RoundUpdate, RunningTask, TaskInfo, TaskResult};
 use lazy_static::lazy_static;
@@ -93,7 +92,7 @@ impl SignPDFTask {
 
         let hash = request_hash(
             &mut pdfhelper,
-            self.sign_task.get_group().certificate().unwrap(),
+            self.sign_task.get_group().certificate.as_ref().unwrap(),
         );
         if hash.is_empty() {
             let reason = "Task failed (invalid PDF)".to_string();
@@ -129,7 +128,7 @@ impl SignPDFTask {
 
                 info!(
                     "PDF signed by group_id={}",
-                    hex::encode(self.sign_task.get_group().identifier())
+                    hex::encode(&self.sign_task.get_group().id)
                 );
                 task.result = TaskResult::SignedPdf(signed);
                 RoundUpdate::Finished(round, task)

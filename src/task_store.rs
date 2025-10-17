@@ -9,8 +9,9 @@ use uuid::Uuid;
 
 use crate::communicator::Communicator;
 use crate::error::Error;
-use crate::group::Group;
-use crate::persistence::{Participant, PersistenceError, Repository, Task as TaskModel, TaskType};
+use crate::persistence::{
+    Group, Participant, PersistenceError, Repository, Task as TaskModel, TaskType,
+};
 use crate::tasks::{
     decrypt::DecryptTask, group::GroupTask, sign::SignTask, sign_pdf::SignPDFTask, DeclinedTask,
     FailedTask, FinishedTask, RunningTask, RunningTaskContext, Task, TaskInfo, TaskResult,
@@ -167,8 +168,8 @@ impl TaskStore {
                 Some(&task.task_info.id),
                 participant_ids_shares,
                 threshold,
-                task.task_info.protocol_type.into(),
-                task.task_info.key_type.into(),
+                task.task_info.protocol_type,
+                task.task_info.key_type,
                 &task.request,
                 note,
             )
@@ -186,15 +187,15 @@ impl TaskStore {
         self.repo
             .create_threshold_task(
                 Some(&task.task_info.id),
-                group.identifier(),
+                &group.id,
                 participant_ids_shares,
-                group.threshold(),
+                group.threshold as u32,
                 "name", // TODO: Fix name checks
                 data,
                 &task.request,
                 task_type,
-                task.task_info.key_type.into(),
-                task.task_info.protocol_type.into(),
+                task.task_info.key_type,
+                task.task_info.protocol_type,
             )
             .await?;
         Ok(())
@@ -255,9 +256,9 @@ impl TaskStore {
             let task_info = TaskInfo {
                 id: task_model.id,
                 name: "".into(), // TODO: Persist "name" in TaskModel
-                task_type: task_model.task_type.clone().into(),
-                protocol_type: task_model.protocol_type.into(),
-                key_type: task_model.key_type.clone().into(),
+                task_type: task_model.task_type,
+                protocol_type: task_model.protocol_type,
+                key_type: task_model.key_type,
                 participants,
                 attempts: task_model.attempt_count as u32,
             };
@@ -285,13 +286,12 @@ impl TaskStore {
         let task = if let Some(task_result) = task_result {
             match task_result.try_into_result()? {
                 Ok(group_id) => {
-                    let Some(group_model) = self.repo.get_group(&group_id).await? else {
+                    let Some(group) = self.repo.get_group(&group_id).await? else {
                         return Err(PersistenceError::DataInconsistencyError(
                             "Group task result references nonexistent group".into(),
                         )
                         .into());
                     };
-                    let group = crate::group::Group::from_model(group_model);
                     let result = TaskResult::GroupEstablished(group);
                     let acknowledgements =
                         self.repo.get_task_acknowledgements(&task_model.id).await?;
@@ -389,17 +389,16 @@ impl TaskStore {
                 )
                 .into());
             };
-            let Some(group_model) = self.repo.get_group(group_id).await? else {
+            let Some(group) = self.repo.get_group(group_id).await? else {
                 return Err(PersistenceError::DataInconsistencyError(
                     "Threshold task references nonexistent group".into(),
                 )
                 .into());
             };
-            let group = crate::group::Group::from_model(group_model);
 
             let decisions = self.repo.get_task_decisions(&task_model.id).await?;
             let (accepts, _) = VotingTask::accepts_rejects(&decisions);
-            let accept_threshold = group.threshold();
+            let accept_threshold = group.threshold as u32;
             if accepts < accept_threshold {
                 let data = task_model
                     .task_data

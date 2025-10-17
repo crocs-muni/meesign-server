@@ -5,9 +5,10 @@ use uuid::Uuid;
 
 use crate::error::Error;
 use crate::persistence::{
-    Device, DeviceKind, Group, NameValidator, Participant, PersistenceError, Repository, TaskType,
+    Device, DeviceKind, Group, KeyType, NameValidator, Participant, PersistenceError, ProtocolType,
+    Repository, TaskType,
 };
-use crate::proto::{self, KeyType, ProtocolType};
+use crate::proto;
 use crate::task_store::TaskStore;
 use crate::tasks::{
     DecisionUpdate, RoundUpdate, RunningTaskContext, Task, TaskInfo, TaskResult, VotingTask,
@@ -93,7 +94,7 @@ impl State {
         let task_info = TaskInfo {
             id: Uuid::new_v4(),
             name: name.to_string(),
-            task_type: TaskType::Group.into(),
+            task_type: TaskType::Group,
             protocol_type,
             key_type,
             participants,
@@ -139,11 +140,10 @@ impl State {
             return Err(Error::GeneralProtocolError("Invalid group_id".into()));
         };
         let participants = self.repo.get_group_participants(group_id).await?;
-        let group = crate::group::Group::from_model(group);
-        let group_id = group.identifier().to_vec();
-        let key_type = group.key_type();
-        let protocol_type = group.protocol();
-        let accept_threshold = group.threshold();
+        let group_id = group.id.clone();
+        let key_type = group.key_type;
+        let protocol_type = group.protocol;
+        let accept_threshold = group.threshold as u32;
         let data = data.to_vec();
         let request = proto::SignRequest {
             group_id: group_id.clone(),
@@ -173,7 +173,7 @@ impl State {
         let task_info = TaskInfo {
             id: Uuid::new_v4(),
             name: name.to_string(),
-            task_type: task_type.into(),
+            task_type,
             protocol_type,
             key_type,
             participants,
@@ -206,11 +206,10 @@ impl State {
             return Err(Error::GeneralProtocolError("Invalid group_id".into()));
         };
         let participants = self.repo.get_group_participants(group_id).await?;
-        let group = crate::group::Group::from_model(group);
-        let group_id = group.identifier().to_vec();
-        let key_type = group.key_type();
-        let protocol_type = group.protocol();
-        let accept_threshold = group.threshold();
+        let group_id = group.id.clone();
+        let key_type = group.key_type;
+        let protocol_type = group.protocol;
+        let accept_threshold = group.threshold as u32;
         let data = data.to_vec();
         let request = proto::DecryptRequest {
             group_id: group_id.clone(),
@@ -234,7 +233,7 @@ impl State {
         let task_info = TaskInfo {
             id: Uuid::new_v4(),
             name: name.to_string(),
-            task_type: TaskType::Decrypt.into(),
+            task_type: TaskType::Decrypt,
             protocol_type,
             key_type,
             participants,
@@ -384,14 +383,14 @@ impl State {
                 if let TaskResult::GroupEstablished(group) = result {
                     self.repo
                         .add_group(
-                            group.identifier(),
+                            &group.id,
                             task_id,
-                            group.name(),
-                            group.threshold(),
-                            group.protocol().into(),
-                            group.key_type().into(),
-                            group.certificate().map(|v| v.as_ref()),
-                            group.note(),
+                            &group.name,
+                            group.threshold as u32,
+                            group.protocol,
+                            group.key_type,
+                            group.certificate.as_deref(),
+                            group.note.as_deref(),
                         )
                         .await?;
                 }

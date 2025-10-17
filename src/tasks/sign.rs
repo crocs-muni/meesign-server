@@ -1,8 +1,6 @@
 use crate::communicator::Communicator;
 use crate::error::Error;
-use crate::group::Group;
-use crate::persistence::{PersistenceError, Task as TaskModel};
-use crate::proto::ProtocolType;
+use crate::persistence::{Group, PersistenceError, ProtocolType, Task as TaskModel};
 use crate::protocols::frost::FROSTSign;
 use crate::protocols::gg18::GG18Sign;
 use crate::protocols::musig2::MuSig2Sign;
@@ -28,7 +26,7 @@ impl SignTask {
         data: Vec<u8>,
         communicator: Communicator,
     ) -> Result<Self, String> {
-        let protocol_type = group.protocol();
+        let protocol_type = group.protocol;
         Ok(SignTask {
             task_info,
             group,
@@ -54,8 +52,8 @@ impl SignTask {
         group: Group,
     ) -> Result<Self, Error> {
         let protocol = create_threshold_protocol(
-            group.protocol(),
-            group.key_type(),
+            group.protocol.into(),
+            group.key_type.into(),
             task_model.protocol_round as u16,
         )?;
 
@@ -110,7 +108,7 @@ impl SignTask {
 
         info!(
             "Signature created by group_id={}",
-            utils::hextrunc(self.group.identifier())
+            utils::hextrunc(&self.group.id)
         );
 
         self.communicator.clear_input();

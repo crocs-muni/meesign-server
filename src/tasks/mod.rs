@@ -9,9 +9,8 @@ use uuid::Uuid;
 
 use crate::communicator::Communicator;
 use crate::error::Error;
-use crate::group::Group;
-use crate::persistence::{Device, Participant};
-use crate::proto::{self, KeyType, ProtocolType, TaskType};
+use crate::persistence::{Device, Group, KeyType, Participant, ProtocolType, TaskType};
+use crate::proto;
 
 #[must_use = "updates must be persisted"]
 pub enum RoundUpdate {
@@ -39,7 +38,7 @@ pub enum TaskResult {
 impl TaskResult {
     pub fn as_bytes(&self) -> &[u8] {
         match self {
-            TaskResult::GroupEstablished(group) => group.identifier(),
+            TaskResult::GroupEstablished(group) => &group.id,
             TaskResult::Signed(data) => data,
             TaskResult::SignedPdf(data) => data,
             TaskResult::Decrypted(data) => data,
@@ -162,7 +161,8 @@ impl Task {
     pub fn format(&self, device_id: Option<&[u8]>, request: Option<Vec<u8>>) -> proto::Task {
         let task_info = self.task_info();
         let id = task_info.id.as_bytes().to_vec();
-        let r#type = task_info.task_type.into();
+        let r#type: proto::TaskType = task_info.task_type.into();
+        let r#type = r#type.into();
         let attempt = task_info.attempts;
         match self {
             Task::Voting(task) => {
@@ -261,7 +261,7 @@ impl RunningTaskContext {
         let task_info = voting_task.task_info.clone();
         let communicator = Communicator::new(
             voting_task.accept_threshold,
-            task_info.protocol_type,
+            task_info.protocol_type.into(),
             active_shares,
         );
         let task: Box<dyn RunningTask> = match self {

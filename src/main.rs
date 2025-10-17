@@ -14,7 +14,6 @@ use tonic::codegen::Arc;
 
 mod communicator;
 mod error;
-mod group;
 mod interfaces;
 mod persistence;
 mod protocols;
@@ -58,37 +57,6 @@ mod proto {
             match self {
                 ProtocolType::Gg18 | ProtocolType::Elgamal | ProtocolType::Musig2 => 0,
                 ProtocolType::Frost => 1,
-            }
-        }
-    }
-
-    impl From<TaskType> for crate::persistence::TaskType {
-        fn from(task_type: TaskType) -> Self {
-            match task_type {
-                TaskType::Group => Self::Group,
-                TaskType::SignChallenge => Self::SignChallenge,
-                TaskType::SignPdf => Self::SignPdf,
-                TaskType::Decrypt => Self::Decrypt,
-            }
-        }
-    }
-
-    impl From<crate::persistence::TaskType> for TaskType {
-        fn from(task_type: crate::persistence::TaskType) -> Self {
-            match task_type {
-                crate::persistence::TaskType::Group => Self::Group,
-                crate::persistence::TaskType::SignChallenge => Self::SignChallenge,
-                crate::persistence::TaskType::SignPdf => Self::SignPdf,
-                crate::persistence::TaskType::Decrypt => Self::Decrypt,
-            }
-        }
-    }
-
-    impl From<crate::persistence::DeviceKind> for DeviceKind {
-        fn from(device_kind: crate::persistence::DeviceKind) -> Self {
-            match device_kind {
-                crate::persistence::DeviceKind::User => Self::User,
-                crate::persistence::DeviceKind::Bot => Self::Bot,
             }
         }
     }

@@ -1,8 +1,6 @@
 use crate::communicator::Communicator;
 use crate::error::Error;
-use crate::group::Group;
-use crate::persistence::PersistenceError;
-use crate::persistence::Task as TaskModel;
+use crate::persistence::{Group, PersistenceError, Task as TaskModel};
 use crate::proto::ProtocolType;
 use crate::protocols::{create_keygen_protocol, Protocol};
 use crate::tasks::{FailedTask, FinishedTask, RoundUpdate, RunningTask, TaskInfo, TaskResult};
@@ -32,8 +30,8 @@ impl GroupTask {
         let total_shares = task_info.total_shares();
 
         let protocol = create_keygen_protocol(
-            task_info.protocol_type,
-            task_info.key_type,
+            task_info.protocol_type.into(),
+            task_info.key_type.into(),
             total_shares,
             threshold,
             0,
@@ -69,7 +67,7 @@ impl GroupTask {
     ) -> Result<Self, Error> {
         let protocol = create_keygen_protocol(
             model.protocol_type.into(),
-            model.key_type.clone().into(),
+            model.key_type.into(),
             task_info.total_shares(),
             model.threshold as u32,
             model.protocol_round as u16,
@@ -130,15 +128,21 @@ impl GroupTask {
                 .collect::<Vec<_>>()
         );
 
-        let group = Group::new(
-            identifier.clone(),
-            self.task_info.name.clone(),
-            self.threshold,
-            self.protocol.get_type(),
-            self.task_info.key_type,
+        let group = Group {
+            id: identifier.clone(),
+            name: self.task_info.name.clone(),
+            threshold: self.threshold as i32,
+            protocol: self.protocol.get_type().into(),
+            key_type: self.task_info.key_type,
             certificate,
-            self.note.clone(),
-        );
+            note: self.note.clone(),
+            participant_ids_shares: self
+                .task_info
+                .participants
+                .iter()
+                .map(|p| (p.device.id.clone(), p.shares))
+                .collect(),
+        };
 
         self.communicator.clear_input();
         Ok(RoundUpdate::Finished(
