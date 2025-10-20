@@ -5,8 +5,10 @@ service MeeSign {
   rpc GetServerInfo(ServerInfoRequest) returns (ServerInfo);
   rpc Register(RegistrationRequest) returns (RegistrationResponse);
   rpc Sign(SignRequest) returns (Task);
+  rpc SignStream(stream SignRequestChunk) returns (Task); // streaming for large PDFs
   rpc Group(GroupRequest) returns (Task);
   rpc Decrypt(DecryptRequest) returns (Task);
+  rpc DecryptStream(stream DecryptRequestChunk) returns (Task); // streaming for large images
   rpc GetTask(TaskRequest) returns (Task);
   rpc UpdateTask(TaskUpdate) returns (Resp); // auth required
   rpc DecideTask(TaskDecision) returns (Resp); // auth required
@@ -101,11 +103,40 @@ message SignRequest {
   bytes data = 3;
 }
 
+// Streaming messages for large file uploads
+message SignRequestChunk {
+  oneof payload {
+    SignMetadata metadata = 1;  // First chunk contains metadata
+    bytes chunk = 2;             // Subsequent chunks contain data
+  }
+}
+
+message SignMetadata {
+  string name = 1;
+  bytes group_id = 2;
+  uint64 total_size = 3;  // Total size for progress tracking
+}
+
 message DecryptRequest {
   string name = 1;
   bytes group_id = 2;
   bytes data = 3;
   string data_type = 4; // MIME type of the encrypted data
+}
+
+// Streaming messages for large encrypted data
+message DecryptRequestChunk {
+  oneof payload {
+    DecryptMetadata metadata = 1;  // First chunk contains metadata
+    bytes chunk = 2;                // Subsequent chunks contain data
+  }
+}
+
+message DecryptMetadata {
+  string name = 1;
+  bytes group_id = 2;
+  string data_type = 3;  // MIME type of the encrypted data
+  uint64 total_size = 4;  // Total size for progress tracking
 }
 
 message TaskRequest {

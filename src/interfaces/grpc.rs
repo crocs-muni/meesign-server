@@ -122,6 +122,63 @@ impl MeeSign for MeeSignService {
         Ok(Response::new(task))
     }
 
+    async fn sign_stream(
+        &self,
+        request: Request<tonic::Streaming<msg::SignRequestChunk>>,
+    ) -> Result<Response<msg::Task>, Status> {
+        self.check_client_auth(&request.peer_certs(), false).await?;
+
+        let mut stream = request.into_inner();
+
+        let mut name: Option<String> = None;
+        let mut group_id: Option<Vec<u8>> = None;
+        let mut total_size: Option<u64> = None;
+        let mut data: Vec<u8> = Vec::new();
+
+        while let Some(chunk) = stream.message().await? {
+            match chunk.payload {
+                Some(msg::sign_request_chunk::Payload::Metadata(meta)) => {
+                    if name.is_some() || group_id.is_some() {
+                        return Err(Status::invalid_argument("Metadata sent more than once"));
+                    }
+                    name = Some(meta.name);
+                    group_id = Some(meta.group_id);
+                    total_size = Some(meta.total_size);
+                }
+                Some(msg::sign_request_chunk::Payload::Chunk(bytes)) => {
+                    if name.is_none() || group_id.is_none() {
+                        return Err(Status::invalid_argument("Data chunk received before metadata"));
+                    }
+                    if let Some(ts) = total_size {
+                        if data.is_empty() {
+                            // Reserve once based on declared size, best-effort (may overflow usize on 32-bit)
+                            let reserve = usize::try_from(ts).unwrap_or(0);
+                            if reserve > 0 {
+                                data.reserve(reserve);
+                            }
+                        }
+                    }
+                    data.extend_from_slice(&bytes);
+                }
+                None => return Err(Status::invalid_argument("Missing payload in chunk")),
+            }
+        }
+
+        let name = name.ok_or_else(|| Status::invalid_argument("Missing metadata: name"))?;
+        let group_id = group_id.ok_or_else(|| Status::invalid_argument("Missing metadata: group_id"))?;
+
+        info!(
+            "SignRequest(stream) group_id={}",
+            utils::hextrunc(&group_id)
+        );
+
+        let mut state = self.state.lock().await;
+        let task_id = state.add_sign_task(&group_id, &name, &data).await?;
+        let task_model = state.get_task(&task_id).await?;
+        let task = state.format_task(task_model, None, None).await?;
+        Ok(Response::new(task))
+    }
+
     async fn decrypt(
         &self,
         request: Request<msg::DecryptRequest>,
@@ -134,6 +191,67 @@ impl MeeSign for MeeSignService {
         let data = request.data;
         let data_type = request.data_type;
         info!("DecryptRequest group_id={}", utils::hextrunc(&group_id));
+
+        let mut state = self.state.lock().await;
+        let task_id = state
+            .add_decrypt_task(&group_id, &name, &data, &data_type)
+            .await?;
+        let task_model = state.get_task(&task_id).await?;
+        let task = state.format_task(task_model, None, None).await?;
+        Ok(Response::new(task))
+    }
+
+    async fn decrypt_stream(
+        &self,
+        request: Request<tonic::Streaming<msg::DecryptRequestChunk>>,
+    ) -> Result<Response<msg::Task>, Status> {
+        self.check_client_auth(&request.peer_certs(), false).await?;
+
+        let mut stream = request.into_inner();
+
+        let mut name: Option<String> = None;
+        let mut group_id: Option<Vec<u8>> = None;
+        let mut data_type: Option<String> = None;
+        let mut total_size: Option<u64> = None;
+        let mut data: Vec<u8> = Vec::new();
+
+        while let Some(chunk) = stream.message().await? {
+            match chunk.payload {
+                Some(msg::decrypt_request_chunk::Payload::Metadata(meta)) => {
+                    if name.is_some() || group_id.is_some() || data_type.is_some() {
+                        return Err(Status::invalid_argument("Metadata sent more than once"));
+                    }
+                    name = Some(meta.name);
+                    group_id = Some(meta.group_id);
+                    data_type = Some(meta.data_type);
+                    total_size = Some(meta.total_size);
+                }
+                Some(msg::decrypt_request_chunk::Payload::Chunk(bytes)) => {
+                    if name.is_none() || group_id.is_none() || data_type.is_none() {
+                        return Err(Status::invalid_argument("Data chunk received before metadata"));
+                    }
+                    if let Some(ts) = total_size {
+                        if data.is_empty() {
+                            let reserve = usize::try_from(ts).unwrap_or(0);
+                            if reserve > 0 {
+                                data.reserve(reserve);
+                            }
+                        }
+                    }
+                    data.extend_from_slice(&bytes);
+                }
+                None => return Err(Status::invalid_argument("Missing payload in chunk")),
+            }
+        }
+
+        let name = name.ok_or_else(|| Status::invalid_argument("Missing metadata: name"))?;
+        let group_id = group_id.ok_or_else(|| Status::invalid_argument("Missing metadata: group_id"))?;
+        let data_type = data_type.ok_or_else(|| Status::invalid_argument("Missing metadata: data_type"))?;
+
+        info!(
+            "DecryptRequest(stream) group_id={}",
+            utils::hextrunc(&group_id)
+        );
 
         let mut state = self.state.lock().await;
         let task_id = state
@@ -608,7 +726,12 @@ pub async fn run_grpc(state: Arc<Mutex<State>>, addr: &str, port: u16) -> Result
                 .client_auth_optional(true),
         )
         .map_err(|_| "Unable to setup TLS for gRPC server")?
-        .add_service(MeeSignServer::new(node))
+        .add_service(
+            MeeSignServer::new(node)
+                // Allow larger gRPC messages for big tasks (e.g., image decrypt requests)
+                .max_decoding_message_size(64 * 1024 * 1024)
+                .max_encoding_message_size(64 * 1024 * 1024),
+        )
         .serve(addr)
         .await
         .map_err(|_| String::from("Unable to run gRPC server"))?;
