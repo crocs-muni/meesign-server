@@ -15,8 +15,8 @@ RUN chown --recursive test-client:test-group /app
 
 USER test-client
 
-ARG MEESIGN_TEST_CLIENT_REPO_OWNER=quapka
-ARG MEESIGN_TEST_CLIENT_REPO_BRANCH=integration-test
+ARG MEESIGN_TEST_CLIENT_REPO_OWNER=crocs-muni
+ARG MEESIGN_TEST_CLIENT_REPO_BRANCH=devel
 RUN git clone \
     --recurse-submodules \
     --depth 1 \
