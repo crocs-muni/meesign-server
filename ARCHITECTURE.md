@@ -34,20 +34,18 @@ This repository contains a gRPC server which coordinates multi-party threshold p
 - `task` contains the logic for task computation
 - `protocol` contains the logic for protocol computation
 - `communicator` defines the communicator
-- `group` defines a created group
 - `error` contains definitions of error variants
 - `utils` contains a few helper functions
-
-## Protobuf API
-TODO
 
 ## Persistence
 Most of the server state is persisted throughout server restarts, but some state is deliberately ephemeral and kept only in the RAM. The ephemeral state is mostly data which changes "rapidly", namely activity timestamps and messages exchanged during protocol computation.
 
 Persistence is handled in the `state` module, with the exception of `task_store`, which is only used within `state`. This is to decouple the logic from bookkeeping.
 
+The `persistence` module is supposed to be a "dumb" interface for communicating with the DB. In particular, it shouldn't validate data, perform complex logic, etc...
+
 ## State machines and state changes
-Much of the actual logic can be easily modelled using state machines. We use typestates to enforce valid state transitions. For example, a running task cannot change into a voting task.
+Much of the actual logic can be easily modeled using state machines. We use typestates to enforce valid state transitions. For example, a running task cannot change into a voting task.
 
 Functions which update some state return a state change enum, which enforces handling of all possible situations and explicitly defines the logic. For example, saving a vote in a voting task can have three outcomes:
 - The task is accepted and transitions into a running task
@@ -77,12 +75,11 @@ Adding new protocols must be coordinated with the `meesign-crypto` repository.
 
 Protocols are defined throughout several places in the codebase:
 1. The `proto/meesign.proto` files in this and `meesign-crypto` repositories define a `ProtocolType` enumeration. Both must be extended.
-2. A few trait implementations for `ProtocolType` must be extended in `main.rs`.
-3. Another `ProtocolType` enum must be extended in `persistence/enums.rs`.
-4. The `protocol_type` enum must be extended in the DB migrations.
-5. A module should be added into `protocols`, similar to other protocols defined there.
-6. The module needs to create a type implementing the `Protocol` trait for each of its variants, for example `<protocol>Group`, `<protocol>Sign`, ...
-7. The module should use constants from `meesign_crypto::protocols::<protocol>`.
+2. A few trait implementations for `ProtocolType` must be extended in `persistence/enums.rs`.
+3. The `protocol_type` enum must be extended in the DB migrations.
+4. A module should be added into `protocols`, similar to other protocols defined there.
+5. The module needs to create a type implementing the `Protocol` trait for each of its variants, for example `<protocol>Group`, `<protocol>Sign`, ...
+6. The module should use constants from `meesign_crypto::protocols::<protocol>`.
 
 The overall structure should reflect the way other protocols are implemented. See the `protocols/frost.rs` module for example.
 
@@ -91,13 +88,12 @@ Adding new task types must be coordinated with the `meesign-client` repository.
 
 If the task follows the usual task phases (voting, declined, running, failed, finished), then it should follow the structure of other task types already established in this repo. Otherwise, it must be handled exceptionally.
 
-Protocols are defined throughout several places in the codebase:
-1. The `proto/meesign.proto` files in this and `meesign-crypto` repositories define a `ProtocolType` enumeration. Both must be extended.
-2. A few trait implementations for `ProtocolType` must be extended in `main.rs`.
-3. Another `ProtocolType` enum must be extended in `persistence/enums.rs`.
-4. The `protocol_type` enum must be extended in the DB migrations.
-5. A module should be added into `protocols`, similar to other protocols defined there.
-6. The module needs to create a type implementing the `Protocol` trait for each of its variants, for example `<protocol>Group`, `<protocol>Sign`, ...
-7. The module should use constants from `meesign_crypto::protocols::<protocol>`.
+Here is a general process for when the new task type follows the usual task phases:
+1. The `proto/meesign.proto` file defines a `TaskType` enumeration. It must be extended.
+2. A few trait implementations for `TaskType` must be extended in `persistence/enums.rs`.
+3. The `task_type` enum must be extended in the DB migrations.
+4. The `RunningTaskContext` enum in `tasks/mod.rs` must be extended.
+5. A module should be added into `tasks`, similar to other tasks defined there.
+6. The module needs to create a type implementing the `RunningTask` trait.
 
-The overall structure should reflect the way other protocols are implemented. See the `protocols/frost.rs` module for example.
+The overall structure should reflect the way other tasks are implemented. See the `tasks/sign.rs` module for example.
