@@ -14,9 +14,6 @@ if test "$1" == "down"; then
 fi
 
 if [ -z "$1" ]; then
-    # Call all tests by default
-    MEESIGN_TEST_CLIENT_REPO_OWNER=quapka \
-    MEESIGN_TEST_CLIENT_REPO_BRANCH=integration-test \
     docker compose \
         --file compose.base.yaml \
         --file integration-tests/compose.yaml \
@@ -28,8 +25,6 @@ if [ -z "$1" ]; then
 else
     # If any command line arguments are supplied, these are pass on to the
     # `test-client`, i.e. calling `dart test --reporter=expanded "$@"`
-    MEESIGN_TEST_CLIENT_REPO_OWNER=quapka \
-    MEESIGN_TEST_CLIENT_REPO_BRANCH=integration-test \
     docker compose \
         --file compose.base.yaml \
         --file integration-tests/compose.yaml \
