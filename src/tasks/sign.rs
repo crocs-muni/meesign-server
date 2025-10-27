@@ -53,6 +53,7 @@ impl SignTask {
             acknowledgements,
         )));
 
+        // Include original data in request so clients can reconstruct context
         let request = (SignRequest {
             group_id: group.identifier().to_vec(),
             name,
