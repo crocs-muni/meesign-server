@@ -1,53 +1,41 @@
 use crate::communicator::Communicator;
 use crate::error::Error;
-use crate::group::Group;
-use crate::persistence::Participant;
-use crate::persistence::PersistenceError;
-use crate::persistence::Task as TaskModel;
-use crate::proto::{KeyType, ProtocolType, TaskType};
+use crate::persistence::{Group, PersistenceError, Task as TaskModel};
+use crate::proto::ProtocolType;
 use crate::protocols::{create_keygen_protocol, Protocol};
-use crate::tasks::{DecisionUpdate, RestartUpdate, RoundUpdate, Task, TaskResult};
+use crate::tasks::{FailedTask, FinishedTask, RoundUpdate, RunningTask, TaskInfo, TaskResult};
 use crate::utils;
-use async_trait::async_trait;
 use log::{info, warn};
 use meesign_crypto::proto::{ClientMessage, Message as _, ServerMessage};
-use prost::Message as _;
 use std::collections::HashMap;
 use std::io::Read;
 use std::process::{Command, Stdio};
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use uuid::Uuid;
 
 pub struct GroupTask {
-    name: String,
-    id: Uuid,
+    task_info: TaskInfo,
     threshold: u32,
-    key_type: KeyType,
-    participants: Vec<Participant>,
-    communicator: Arc<RwLock<Communicator>>,
-    result: Option<Result<Group, String>>,
+    communicator: Communicator,
     protocol: Box<dyn Protocol + Send + Sync>,
-    request: Vec<u8>,
-    attempts: u32,
     note: Option<String>,
     certificates_sent: bool, // TODO: remove the field completely
 }
 
 impl GroupTask {
     pub fn try_new(
-        name: &str,
-        mut participants: Vec<Participant>,
+        mut task_info: TaskInfo,
         threshold: u32,
-        protocol_type: ProtocolType,
-        key_type: KeyType,
         note: Option<String>,
+        communicator: Communicator,
     ) -> Result<Self, String> {
-        let id = Uuid::new_v4();
+        let total_shares = task_info.total_shares();
 
-        let total_shares: u32 = participants.iter().map(|p| p.shares).sum();
-
-        let protocol = create_keygen_protocol(protocol_type, key_type, total_shares, threshold, 0)?;
+        let protocol = create_keygen_protocol(
+            task_info.protocol_type.into(),
+            task_info.key_type.into(),
+            total_shares,
+            threshold,
+            0,
+        )?;
 
         if total_shares < 1 {
             warn!("Invalid number of parties {}", total_shares);
@@ -58,149 +46,74 @@ impl GroupTask {
             return Err("Invalid input".into());
         }
 
-        participants.sort_by(|a, b| a.device.identifier().cmp(b.device.identifier()));
-
-        let group_task_threshold = total_shares;
-
-        let decisions = participants
-            .iter()
-            .map(|p| (p.device.identifier().clone(), 0))
-            .collect();
-        let acknowledgements = participants
-            .iter()
-            .map(|p| (p.device.identifier().clone(), false))
-            .collect();
-
-        let communicator = Arc::new(RwLock::new(Communicator::new(
-            participants.clone(),
-            group_task_threshold,
-            protocol.get_type(),
-            decisions,
-            acknowledgements,
-        )));
-
-        let device_ids = participants
-            .iter()
-            .flat_map(|p| std::iter::repeat(p.device.identifier().to_vec()).take(p.shares as usize))
-            .collect();
-        let request = (crate::proto::GroupRequest {
-            device_ids,
-            name: String::from(name),
-            threshold,
-            protocol: protocol.get_type() as i32,
-            key_type: key_type as i32,
-            note: note.to_owned(),
-        })
-        .encode_to_vec();
+        task_info
+            .participants
+            .sort_by(|a, b| a.device.identifier().cmp(b.device.identifier()));
 
         Ok(GroupTask {
-            name: name.into(),
-            id,
+            task_info,
             threshold,
-            participants: participants.to_vec(),
-            key_type,
             communicator,
-            result: None,
             protocol,
-            request,
-            attempts: 0,
             note,
             certificates_sent: false,
         })
     }
 
     pub fn from_model(
+        task_info: TaskInfo,
         model: TaskModel,
-        participants: Vec<Participant>,
-        communicator: Arc<RwLock<Communicator>>,
-        group: Option<Group>,
+        communicator: Communicator,
     ) -> Result<Self, Error> {
-        let total_shares = participants.iter().map(|p| p.shares).sum();
-
         let protocol = create_keygen_protocol(
             model.protocol_type.into(),
-            model.key_type.clone().into(),
-            total_shares,
+            model.key_type.into(),
+            task_info.total_shares(),
             model.threshold as u32,
             model.protocol_round as u16,
         )?;
-
-        // TODO: refactor
-        let result = model.result.map(|res| res.try_into_result()).transpose()?;
-        let result = match result {
-            Some(Ok(group_id)) => {
-                let Some(group) = group else {
-                    return Err(Error::PersistenceError(
-                        PersistenceError::DataInconsistencyError(
-                            "Established group is missing".into(),
-                        ),
-                    ));
-                };
-                assert_eq!(group_id, group.identifier());
-                Some(Ok(group))
-            }
-            Some(Err(err)) => Some(Err(err)),
-            None => None,
-        };
-        let name = if let Some(Ok(group)) = &result {
-            group.name().into()
-        } else {
-            "".into() // TODO add field to the task table
-        };
         let Some(certificates_sent) = model.group_certificates_sent else {
-            return Err(Error::PersistenceError(
-                PersistenceError::DataInconsistencyError(
-                    "certificates_sent flag missing in group task".into(),
-                ),
-            ));
+            return Err(PersistenceError::DataInconsistencyError(
+                "certificates_sent flag missing in group task".into(),
+            )
+            .into());
         };
         Ok(Self {
-            name,
-            id: model.id,
+            task_info,
             threshold: model.threshold as u32,
-            key_type: model.key_type.into(),
-            participants,
             communicator,
-            result,
             protocol,
-            request: model.request,
-            attempts: model.attempt_count as u32,
             note: model.note,
             certificates_sent, // TODO: remove the field completely
         })
     }
 
-    fn set_result(&mut self, result: Result<Group, String>) {
-        self.result = Some(result);
-    }
-
     fn increment_attempt_count(&mut self) {
-        self.attempts += 1;
+        self.task_info.attempts += 1;
     }
 
-    async fn start_task(&mut self) -> Result<RoundUpdate, Error> {
-        self.protocol
-            .initialize(&mut *self.communicator.write().await, &[]);
+    fn start_task(&mut self) -> Result<RoundUpdate, Error> {
+        self.protocol.initialize(&mut self.communicator, &[]);
         Ok(RoundUpdate::NextRound(self.protocol.round()))
     }
 
-    async fn advance_task(&mut self) -> Result<RoundUpdate, Error> {
-        self.protocol.advance(&mut *self.communicator.write().await);
+    fn advance_task(&mut self) -> Result<RoundUpdate, Error> {
+        self.protocol.advance(&mut self.communicator);
         Ok(RoundUpdate::NextRound(self.protocol.round()))
     }
 
-    async fn finalize_task(&mut self) -> Result<RoundUpdate, Error> {
-        let identifier = self
-            .protocol
-            .finalize(&mut *self.communicator.write().await);
+    fn finalize_task(&mut self) -> Result<RoundUpdate, Error> {
+        let identifier = self.protocol.finalize(&mut self.communicator);
         let Some(identifier) = identifier else {
             let reason = "Task failed (group key not output)".to_string();
-            self.set_result(Err(reason.clone()));
-            return Ok(RoundUpdate::Failed(reason));
+            return Ok(RoundUpdate::Failed(FailedTask {
+                task_info: self.task_info.clone(),
+                reason,
+            }));
         };
         // TODO
         let certificate = if self.protocol.get_type() == ProtocolType::Gg18 {
-            Some(issue_certificate(&self.name, &identifier)?)
+            Some(issue_certificate(&self.task_info.name, &identifier)?)
         } else {
             None
         };
@@ -208,54 +121,56 @@ impl GroupTask {
         info!(
             "Group established group_id={} devices={:?}",
             utils::hextrunc(&identifier),
-            self.participants
+            self.task_info
+                .participants
                 .iter()
                 .map(|p| (utils::hextrunc(p.device.identifier()), p.shares))
                 .collect::<Vec<_>>()
         );
 
-        let group = Group::new(
-            identifier.clone(),
-            self.name.clone(),
-            self.threshold,
-            self.participants.clone(),
-            self.protocol.get_type(),
-            self.key_type,
+        let group = Group {
+            id: identifier.clone(),
+            name: self.task_info.name.clone(),
+            threshold: self.threshold as i32,
+            protocol: self.protocol.get_type().into(),
+            key_type: self.task_info.key_type,
             certificate,
-            self.note.clone(),
-        );
+            note: self.note.clone(),
+            participant_ids_shares: self
+                .task_info
+                .participants
+                .iter()
+                .map(|p| (p.device.id.clone(), p.shares))
+                .collect(),
+        };
 
-        self.set_result(Ok(group.clone()));
-
-        self.communicator.write().await.clear_input();
+        self.communicator.clear_input();
         Ok(RoundUpdate::Finished(
             self.protocol.round(),
-            TaskResult::GroupEstablished(group),
+            FinishedTask::new(self.task_info.clone(), TaskResult::GroupEstablished(group)),
         ))
     }
 
-    async fn next_round(&mut self) -> Result<RoundUpdate, Error> {
+    fn next_round(&mut self) -> Result<RoundUpdate, Error> {
         if !self.certificates_sent {
-            self.send_certificates().await
+            self.send_certificates()
         } else if self.protocol.round() == 0 {
-            self.start_task().await
+            self.start_task()
         } else if self.protocol.round() < self.protocol.last_round() {
-            self.advance_task().await
+            self.advance_task()
         } else {
-            self.finalize_task().await
+            self.finalize_task()
         }
     }
 
-    async fn send_certificates(&mut self) -> Result<RoundUpdate, Error> {
-        self.communicator.write().await.set_active_devices(None);
-
+    fn send_certificates(&mut self) -> Result<RoundUpdate, Error> {
         let certs: HashMap<u32, Vec<u8>> = {
-            let communicator_read = self.communicator.read().await;
-            self.participants
+            self.task_info
+                .participants
                 .iter()
                 .flat_map(|p| {
                     let cert = &p.device.certificate;
-                    communicator_read
+                    self.communicator
                         .identifier_to_indices(p.device.identifier())
                         .into_iter()
                         .zip(std::iter::repeat(cert).cloned())
@@ -269,24 +184,23 @@ impl GroupTask {
         }
         .encode_to_vec();
 
-        self.communicator.write().await.send_all(|_| certs.clone());
+        self.communicator.send_all(|_| certs.clone());
         self.certificates_sent = true;
         Ok(RoundUpdate::GroupCertificatesSent)
     }
 }
 
-#[async_trait]
-impl Task for GroupTask {
-    fn get_type(&self) -> TaskType {
-        TaskType::Group
+impl RunningTask for GroupTask {
+    fn task_info(&self) -> &TaskInfo {
+        &self.task_info
     }
 
-    async fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>> {
-        if !self.waiting_for(device_id).await {
+    fn get_work(&self, device_id: &[u8]) -> Vec<Vec<u8>> {
+        if !self.waiting_for(device_id) {
             return Vec::new();
         }
 
-        self.communicator.read().await.get_messages(device_id)
+        self.communicator.get_messages(device_id)
     }
 
     fn get_round(&self) -> u16 {
@@ -297,130 +211,41 @@ impl Task for GroupTask {
         }
     }
 
-    async fn get_decisions(&self) -> (u32, u32) {
-        let communicator = self.communicator.read().await;
-        (communicator.accept_count(), communicator.reject_count())
+    fn initialize(&mut self) -> Result<RoundUpdate, Error> {
+        self.send_certificates()
     }
 
-    async fn update(
+    fn update(
         &mut self,
         device_id: &[u8],
-        data: &Vec<Vec<u8>>,
+        messages: Vec<ClientMessage>,
     ) -> Result<RoundUpdate, Error> {
-        let total_shares: u32 = self.participants.iter().map(|p| p.shares).sum();
-        if self.communicator.read().await.accept_count() != total_shares {
-            return Err(Error::GeneralProtocolError(
-                "Not enough agreements to proceed with the protocol.".into(),
-            ));
-        }
-
-        if !self.waiting_for(device_id).await {
+        if !self.waiting_for(device_id) {
             return Err(Error::GeneralProtocolError(
                 "Wasn't waiting for a message from this ID.".into(),
             ));
         }
 
-        assert_eq!(self.certificates_sent, true);
+        assert!(self.certificates_sent);
 
-        let messages = data
-            .iter()
-            .map(|d| ClientMessage::decode(d.as_slice()))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| Error::GeneralProtocolError("Expected ClientMessage.".into()))?;
+        self.communicator.receive_messages(device_id, messages);
 
-        self.communicator
-            .write()
-            .await
-            .receive_messages(device_id, messages);
-
-        if self.communicator.read().await.round_received()
-            && self.protocol.round() <= self.protocol.last_round()
+        if self.communicator.round_received() && self.protocol.round() <= self.protocol.last_round()
         {
-            return self.next_round().await;
+            return self.next_round();
         }
 
         Ok(RoundUpdate::Listen)
     }
 
-    async fn restart(&mut self) -> Result<RestartUpdate, Error> {
-        if self.result.is_some() {
-            return Ok(RestartUpdate::AlreadyFinished);
-        }
-
-        if self.is_approved().await {
-            self.increment_attempt_count();
-            // TODO: Should this instead be the certificate exchange round?
-            let round_update = self.start_task().await?;
-            Ok(RestartUpdate::Started(round_update))
-        } else {
-            Ok(RestartUpdate::Voting)
-        }
+    fn restart(&mut self) -> Result<RoundUpdate, Error> {
+        self.increment_attempt_count();
+        // TODO: Should this instead be the certificate exchange round?
+        self.start_task()
     }
 
-    async fn is_approved(&self) -> bool {
-        let total_shares: u32 = self.participants.iter().map(|p| p.shares).sum();
-        self.communicator.read().await.accept_count() == total_shares
-    }
-
-    fn get_participants(&self) -> &Vec<Participant> {
-        &self.participants
-    }
-
-    async fn waiting_for(&self, device: &[u8]) -> bool {
-        let communicator = self.communicator.write().await;
-        if !self.certificates_sent && self.protocol.round() == 0 {
-            return !communicator.device_decided(device);
-        } else if self.protocol.round() >= self.protocol.last_round() {
-            return !communicator.device_acknowledged(device);
-        }
-
-        communicator.waiting_for(device)
-    }
-
-    async fn decide(&mut self, device_id: &[u8], decision: bool) -> Result<DecisionUpdate, Error> {
-        self.communicator.write().await.decide(device_id, decision);
-        let decision_update = if self.result.is_none() && self.protocol.round() == 0 {
-            if self.communicator.read().await.reject_count() > 0 {
-                self.set_result(Err("Task declined".to_string()));
-                DecisionUpdate::Declined
-            } else if self.is_approved().await {
-                let round_update = self.next_round().await?;
-                DecisionUpdate::Accepted(round_update)
-            } else {
-                DecisionUpdate::Undecided
-            }
-        } else {
-            DecisionUpdate::Undecided
-        };
-        Ok(decision_update)
-    }
-
-    async fn acknowledge(&mut self, device_id: &[u8]) {
-        self.communicator.write().await.acknowledge(device_id);
-    }
-
-    fn get_request(&self) -> &[u8] {
-        &self.request
-    }
-
-    fn get_attempts(&self) -> u32 {
-        self.attempts
-    }
-
-    fn get_id(&self) -> &Uuid {
-        &self.id
-    }
-
-    fn get_communicator(&self) -> Arc<RwLock<Communicator>> {
-        self.communicator.clone()
-    }
-
-    fn get_threshold(&self) -> u32 {
-        self.threshold
-    }
-
-    fn get_data(&self) -> Option<&[u8]> {
-        None
+    fn waiting_for(&self, device: &[u8]) -> bool {
+        self.communicator.waiting_for(device)
     }
 }
 

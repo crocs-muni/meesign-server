@@ -23,6 +23,14 @@ pub mod sql_types {
 }
 
 diesel::table! {
+    active_task_participant (task_id, device_id) {
+        task_id -> Uuid,
+        device_id -> Bytea,
+        active_shares -> Int4,
+    }
+}
+
+diesel::table! {
     use diesel::sql_types::*;
     use super::sql_types::DeviceKind;
 
@@ -102,6 +110,8 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(active_task_participant -> device (device_id));
+diesel::joinable!(active_task_participant -> task (task_id));
 diesel::joinable!(group_participant -> device (device_id));
 diesel::joinable!(group_participant -> group (group_id));
 diesel::joinable!(task -> group (group_id));
@@ -110,6 +120,7 @@ diesel::joinable!(task_participant -> task (task_id));
 diesel::joinable!(task_result -> task (task_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    active_task_participant,
     device,
     group,
     group_participant,

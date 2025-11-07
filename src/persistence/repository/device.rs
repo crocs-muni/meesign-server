@@ -19,25 +19,6 @@ where
     Ok(device::table.load(connection).await?)
 }
 
-pub async fn get_devices_with_ids<Conn>(
-    connection: &mut Conn,
-    device_ids: &[&[u8]],
-) -> Result<Vec<Device>, PersistenceError>
-where
-    Conn: AsyncConnection<Backend = Pg>,
-{
-    let device_map: Vec<Device> = device::table
-        .filter(device::id.eq_any(device_ids))
-        .order_by(device::id)
-        .load(connection)
-        .await?;
-    let devices = device_ids
-        .iter()
-        .filter_map(|&id| device_map.iter().find(|dev| &dev.id == id).cloned())
-        .collect();
-    Ok(devices)
-}
-
 pub async fn get_group_participants<Conn>(
     connection: &mut Conn,
     group_id: &[u8],
@@ -49,28 +30,6 @@ where
         .inner_join(device::table)
         .filter(group_participant::group_id.eq(group_id))
         .select((Device::as_returning(), group_participant::shares))
-        .load::<(Device, i32)>(connection)
-        .await?
-        .into_iter()
-        .map(|(device, shares)| Participant {
-            device,
-            shares: shares as u32,
-        })
-        .collect();
-    Ok(devices)
-}
-
-pub async fn get_task_participants<Conn>(
-    connection: &mut Conn,
-    task_id: &Uuid,
-) -> Result<Vec<Participant>, PersistenceError>
-where
-    Conn: AsyncConnection<Backend = Pg>,
-{
-    let devices = task_participant::table
-        .inner_join(device::table)
-        .filter(task_participant::task_id.eq(task_id))
-        .select((Device::as_returning(), task_participant::shares))
         .load::<(Device, i32)>(connection)
         .await?
         .into_iter()
@@ -122,21 +81,21 @@ where
     Conn: AsyncConnection<Backend = Pg>,
 {
     if !name.is_name_valid() {
-        return Err(PersistenceError::InvalidArgumentError(format!(
-            "Invalid device name: {name}"
-        )));
+        return Err(PersistenceError::InvalidArgumentError(
+            "Invalid device name: {name}".to_string(),
+        ));
     }
 
     if identifier.is_empty() {
-        return Err(PersistenceError::InvalidArgumentError(format!(
-            "Empty identifier"
-        )));
+        return Err(PersistenceError::InvalidArgumentError(
+            "Empty identifier".to_string(),
+        ));
     }
 
     if certificate.is_empty() {
-        return Err(PersistenceError::InvalidArgumentError(format!(
-            "Empty certificate"
-        )));
+        return Err(PersistenceError::InvalidArgumentError(
+            "Empty certificate".to_string(),
+        ));
     }
 
     let new_device = NewDevice {

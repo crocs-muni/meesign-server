@@ -24,7 +24,7 @@ impl From<proto::ProtocolType> for ProtocolType {
     }
 }
 
-#[derive(Debug, DbEnum, Clone, PartialEq, Eq, Serialize)]
+#[derive(Copy, Debug, DbEnum, Clone, PartialEq, Eq, Serialize)]
 #[ExistingTypePath = "crate::persistence::schema::sql_types::TaskType"]
 #[DbValueStyle = "PascalCase"]
 pub enum TaskType {
@@ -44,7 +44,7 @@ pub enum TaskType {
 //     Decrypted,
 // }
 
-#[derive(Debug, DbEnum, Clone, PartialEq, Eq)]
+#[derive(Copy, Debug, DbEnum, Clone, PartialEq, Eq)]
 #[ExistingTypePath = "crate::persistence::schema::sql_types::DeviceKind"]
 #[DbValueStyle = "PascalCase"]
 pub enum DeviceKind {
@@ -52,7 +52,7 @@ pub enum DeviceKind {
     Bot,
 }
 
-#[derive(Debug, DbEnum, Clone, PartialEq, Eq, Serialize)]
+#[derive(Copy, Debug, DbEnum, Clone, PartialEq, Eq, Serialize)]
 #[ExistingTypePath = "crate::persistence::schema::sql_types::TaskState"]
 #[DbValueStyle = "PascalCase"]
 pub enum TaskState {
@@ -62,7 +62,7 @@ pub enum TaskState {
     Failed,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, DbEnum, Serialize)]
+#[derive(Copy, Debug, Clone, PartialEq, Eq, DbEnum, Serialize)]
 #[cfg_attr(test, derive(PartialOrd, Ord))]
 #[ExistingTypePath = "crate::persistence::schema::sql_types::KeyType"]
 #[DbValueStyle = "PascalCase"]
@@ -82,6 +82,38 @@ impl From<proto::KeyType> for KeyType {
     }
 }
 
+impl From<KeyType> for proto::KeyType {
+    fn from(value: KeyType) -> Self {
+        match value {
+            KeyType::SignPdf => proto::KeyType::SignPdf,
+            KeyType::SignChallenge => proto::KeyType::SignChallenge,
+            KeyType::Decrypt => proto::KeyType::Decrypt,
+        }
+    }
+}
+
+impl From<proto::TaskType> for TaskType {
+    fn from(task_type: proto::TaskType) -> Self {
+        match task_type {
+            proto::TaskType::Group => Self::Group,
+            proto::TaskType::SignChallenge => Self::SignChallenge,
+            proto::TaskType::SignPdf => Self::SignPdf,
+            proto::TaskType::Decrypt => Self::Decrypt,
+        }
+    }
+}
+
+impl From<TaskType> for proto::TaskType {
+    fn from(task_type: crate::persistence::TaskType) -> Self {
+        match task_type {
+            TaskType::Group => Self::Group,
+            TaskType::SignChallenge => Self::SignChallenge,
+            TaskType::SignPdf => Self::SignPdf,
+            TaskType::Decrypt => Self::Decrypt,
+        }
+    }
+}
+
 impl From<ProtocolType> for proto::ProtocolType {
     fn from(value: ProtocolType) -> Self {
         match value {
@@ -93,12 +125,11 @@ impl From<ProtocolType> for proto::ProtocolType {
     }
 }
 
-impl From<KeyType> for proto::KeyType {
-    fn from(value: KeyType) -> Self {
-        match value {
-            KeyType::SignPdf => proto::KeyType::SignPdf,
-            KeyType::SignChallenge => proto::KeyType::SignChallenge,
-            KeyType::Decrypt => proto::KeyType::Decrypt,
+impl From<DeviceKind> for proto::DeviceKind {
+    fn from(device_kind: DeviceKind) -> Self {
+        match device_kind {
+            DeviceKind::User => Self::User,
+            DeviceKind::Bot => Self::Bot,
         }
     }
 }

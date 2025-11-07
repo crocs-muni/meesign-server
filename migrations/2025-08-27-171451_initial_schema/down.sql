@@ -1,3 +1,4 @@
+DROP TABLE active_task_participant;
 DROP TABLE task_participant;
 DROP TABLE task_result;
 DROP TABLE task;

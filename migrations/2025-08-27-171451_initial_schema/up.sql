@@ -84,3 +84,12 @@ CREATE TABLE task_participant (
     "acknowledgment" boolean,
     PRIMARY KEY ("task_id", "device_id")
 );
+
+CREATE TABLE active_task_participant (
+    "task_id" uuid NOT NULL REFERENCES task("id"),
+    "device_id" bytea NOT NULL REFERENCES device("id"),
+    "active_shares" integer NOT NULL CHECK ("active_shares" > 0),
+    PRIMARY KEY ("task_id", "device_id"),
+    FOREIGN KEY ("task_id", "device_id")
+        REFERENCES task_participant("task_id", "device_id")
+);
