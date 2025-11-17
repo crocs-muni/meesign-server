@@ -91,6 +91,15 @@ impl State {
                 Participant { device, shares }
             })
             .collect();
+        let request = (proto::GroupRequest {
+            device_ids: device_ids.into_iter().map(Vec::from).collect(),
+            name: name.to_string(),
+            threshold,
+            protocol: protocol_type as i32,
+            key_type: key_type as i32,
+            note: note.clone(),
+        })
+        .encode_to_vec();
         let task_info = TaskInfo {
             id: Uuid::new_v4(),
             name: name.to_string(),
@@ -99,17 +108,9 @@ impl State {
             key_type,
             participants,
             attempts: 0,
+            request,
         };
         let accept_threshold = task_info.total_shares();
-        let request = (proto::GroupRequest {
-            device_ids: device_ids.into_iter().map(Vec::from).collect(),
-            name: task_info.name.clone(),
-            threshold,
-            protocol: protocol_type as i32,
-            key_type: key_type as i32,
-            note: note.clone(),
-        })
-        .encode_to_vec();
         let running_task_context = RunningTaskContext::Group {
             threshold,
             note: note.clone(),
@@ -118,7 +119,6 @@ impl State {
             task_info,
             decisions: HashMap::new(),
             accept_threshold,
-            request,
             running_task_context,
         };
 
@@ -178,12 +178,12 @@ impl State {
             key_type,
             participants,
             attempts: 0,
+            request,
         };
         let task = VotingTask {
             task_info,
             decisions: HashMap::new(),
             accept_threshold,
-            request,
             running_task_context,
         };
 
@@ -238,12 +238,12 @@ impl State {
             key_type,
             participants,
             attempts: 0,
+            request,
         };
         let task = VotingTask {
             task_info,
             decisions: HashMap::new(),
             accept_threshold,
-            request,
             running_task_context,
         };
 
@@ -321,19 +321,13 @@ impl State {
         Ok(tasks)
     }
 
-    pub async fn get_formatted_voting_task(
+    pub async fn get_formatted_task(
         &self,
         task_id: &Uuid,
         device_id: Option<&[u8]>,
     ) -> Result<proto::Task, Error> {
         let task = &*self.task_store.get_task(task_id).await?;
-        let request = if let Task::Voting(task) = task {
-            task.request.clone()
-        } else {
-            return Err(Error::GeneralProtocolError(
-                "Queried task is not in voting phase".into(),
-            ));
-        };
+        let request = task.task_info().request.clone();
         let task = task.format(device_id, Some(request));
         Ok(task)
     }
