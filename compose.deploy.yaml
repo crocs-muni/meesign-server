@@ -29,7 +29,10 @@ services:
     #   context: .
     #   dockerfile: Dockerfile
     networks:
-      - meesign-network
+      meesign-network:
+        aliases:
+          - meesign.local
+
     ports:
       - 1337:1337
     restart: unless-stopped
