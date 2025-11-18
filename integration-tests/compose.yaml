@@ -19,9 +19,10 @@ services:
   test-client:
     build:
       args:
-        # By deafult test against `main` branch
-        MEESIGN_TEST_CLIENT_REPO_OWNER: quapka
-        MEESIGN_TEST_CLIENT_REPO_BRANCH: integration-test
+        # TODO Test against crocs-muni `main` branch
+        # TODO Allow testing against a particular commit or a tag
+        MEESIGN_TEST_CLIENT_REPO_OWNER: crocs-muni
+        MEESIGN_TEST_CLIENT_REPO_BRANCH: devel
       dockerfile: ./integration-tests/Dockerfile.test_client
     networks:
       # This network is defined in the /docker-compose.dev.yaml

@@ -9,5 +9,10 @@ Dockerfile*
 ./keys
 ./integration-tests/.env
 
+# Ignore the compose file themselves
+compose.base.yaml
+compose.deploy.yaml
+./integration-tests/compose.yaml
+
 # Ignore integration tests completely
 ./integration-tests
