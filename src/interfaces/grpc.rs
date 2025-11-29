@@ -17,7 +17,7 @@ use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use crate::persistence::DeviceKind;
-use crate::proto::{Group, KeyType, MeeSign, MeeSignServer, ProtocolType};
+use crate::proto::{KeyType, MeeSign, MeeSignServer, ProtocolType};
 use crate::state::State;
 use crate::{proto as msg, utils, CA_CERT, CA_KEY};
 
@@ -261,21 +261,52 @@ impl MeeSign for MeeSignService {
             .unwrap_or_else(|| "unknown".to_string());
         debug!("GroupsRequest device_id={}", device_str);
 
-        // TODO: refactor, consider storing device IDS in the group model directly
         let groups = if let Some(device_id) = device_id {
             self.state.activate_device(&device_id);
             self.state
                 .get_device_groups(&device_id)
                 .await?
                 .into_iter()
-                .map(Group::from_model)
+                .map(|group_model| {
+                    msg::Group {
+                        identifier: group_model.id.clone(),
+                        name: group_model.name.clone(),
+                        threshold: group_model.threshold as u32,
+                        device_ids: group_model
+                            .participant_ids_shares
+                            .iter()
+                            .flat_map(|(device_id, shares)| {
+                                std::iter::repeat(device_id.clone()).take(*shares as usize)
+                            })
+                            .collect(),
+                        protocol: group_model.protocol as i32,
+                        key_type: group_model.key_type as i32,
+                        note: group_model.note.clone(),
+                    }
+                })
                 .collect()
         } else {
             self.state
                 .get_groups()
                 .await?
                 .into_iter()
-                .map(Group::from_model)
+                .map(|group_model| {
+                    msg::Group {
+                        identifier: group_model.id.clone(),
+                        name: group_model.name.clone(),
+                        threshold: group_model.threshold as u32,
+                        device_ids: group_model
+                            .participant_ids_shares
+                            .iter()
+                            .flat_map(|(device_id, shares)| {
+                                std::iter::repeat(device_id.clone()).take(*shares as usize)
+                            })
+                            .collect(),
+                        protocol: group_model.protocol as i32,
+                        key_type: group_model.key_type as i32,
+                        note: group_model.note.clone(),
+                    }
+                })
                 .collect()
         };
 

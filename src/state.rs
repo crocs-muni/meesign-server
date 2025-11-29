@@ -312,6 +312,13 @@ impl State {
         Ok(self.get_repo().get_groups().await?)
     }
 
+    pub async fn get_group_participants(
+        &self,
+        group_id: &[u8],
+    ) -> Result<Vec<Participant>, Error> {
+        Ok(self.get_repo().get_group_participants(group_id).await?)
+    }
+
     pub async fn get_formatted_tasks(&self) -> Result<Vec<proto::Task>, Error> {
         let task_ids = self.repo.get_tasks().await?;
         let mut tasks = Vec::new();

@@ -1,7 +1,7 @@
 use crate::communicator::Communicator;
 use crate::error::Error;
 use crate::persistence::{Group, PersistenceError, Task as TaskModel};
-use crate::proto::ProtocolType;
+use crate::proto::{GroupRequest, ProtocolType};
 use crate::protocols::{create_keygen_protocol, Protocol};
 use crate::tasks::{FailedTask, FinishedTask, RoundUpdate, RunningTask, TaskInfo, TaskResult};
 use crate::utils;
@@ -72,6 +72,35 @@ impl GroupTask {
             model.threshold as u32,
             model.protocol_round as u16,
         )?;
+
+        // Parse the GroupRequest from the task's request field to get the name
+        let group_request = GroupRequest::decode(model.request.as_slice())
+            .map_err(|e| Error::GeneralProtocolError(format!("Failed to parse GroupRequest: {}", e)))?;
+
+        // TODO: refactor
+        let result = model.result.map(|res| res.try_into_result()).transpose()?;
+        let result = match result {
+            Some(Ok(group_id)) => {
+                let Some(group) = group else {
+                    return Err(Error::PersistenceError(
+                        PersistenceError::DataInconsistencyError(
+                            "Established group is missing".into(),
+                        ),
+                    ));
+                };
+                assert_eq!(group_id, group.identifier());
+                Some(Ok(group))
+            }
+            Some(Err(err)) => Some(Err(err)),
+            None => None,
+        };
+        // Use the name from the GroupRequest if the group hasn't been established yet,
+        // otherwise use the name from the established group
+        let name = if let Some(Ok(group)) = &result {
+            group.name().into()
+        } else {
+            group_request.name
+        };
         let Some(certificates_sent) = model.group_certificates_sent else {
             return Err(PersistenceError::DataInconsistencyError(
                 "certificates_sent flag missing in group task".into(),
