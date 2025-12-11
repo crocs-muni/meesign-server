@@ -1,7 +1,7 @@
 # Build meesign helper
 FROM maven:3-jdk-11 AS java-builder
 WORKDIR /
-RUN git clone https://github.com/dufkan/meesign-helper.git meesign-helper
+RUN git clone https://github.com/crocs-muni/meesign-helper.git meesign-helper
 RUN cd meesign-helper && mvn clean compile assembly:single
 
 
