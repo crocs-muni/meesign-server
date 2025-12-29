@@ -74,8 +74,9 @@ impl GroupTask {
         )?;
 
         // Parse the GroupRequest from the task's request field to get the name
-        let group_request = GroupRequest::decode(model.request.as_slice())
-            .map_err(|e| Error::GeneralProtocolError(format!("Failed to parse GroupRequest: {}", e)))?;
+        let group_request = GroupRequest::decode(model.request.as_slice()).map_err(|e| {
+            Error::GeneralProtocolError(format!("Failed to parse GroupRequest: {}", e))
+        })?;
 
         // TODO: refactor
         let result = model.result.map(|res| res.try_into_result()).transpose()?;

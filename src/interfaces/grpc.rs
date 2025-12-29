@@ -267,22 +267,20 @@ impl MeeSign for MeeSignService {
                 .get_device_groups(&device_id)
                 .await?
                 .into_iter()
-                .map(|group_model| {
-                    msg::Group {
-                        identifier: group_model.id.clone(),
-                        name: group_model.name.clone(),
-                        threshold: group_model.threshold as u32,
-                        device_ids: group_model
-                            .participant_ids_shares
-                            .iter()
-                            .flat_map(|(device_id, shares)| {
-                                std::iter::repeat(device_id.clone()).take(*shares as usize)
-                            })
-                            .collect(),
-                        protocol: group_model.protocol as i32,
-                        key_type: group_model.key_type as i32,
-                        note: group_model.note.clone(),
-                    }
+                .map(|group_model| msg::Group {
+                    identifier: group_model.id.clone(),
+                    name: group_model.name.clone(),
+                    threshold: group_model.threshold as u32,
+                    device_ids: group_model
+                        .participant_ids_shares
+                        .iter()
+                        .flat_map(|(device_id, shares)| {
+                            std::iter::repeat(device_id.clone()).take(*shares as usize)
+                        })
+                        .collect(),
+                    protocol: group_model.protocol as i32,
+                    key_type: group_model.key_type as i32,
+                    note: group_model.note.clone(),
                 })
                 .collect()
         } else {
@@ -290,22 +288,20 @@ impl MeeSign for MeeSignService {
                 .get_groups()
                 .await?
                 .into_iter()
-                .map(|group_model| {
-                    msg::Group {
-                        identifier: group_model.id.clone(),
-                        name: group_model.name.clone(),
-                        threshold: group_model.threshold as u32,
-                        device_ids: group_model
-                            .participant_ids_shares
-                            .iter()
-                            .flat_map(|(device_id, shares)| {
-                                std::iter::repeat(device_id.clone()).take(*shares as usize)
-                            })
-                            .collect(),
-                        protocol: group_model.protocol as i32,
-                        key_type: group_model.key_type as i32,
-                        note: group_model.note.clone(),
-                    }
+                .map(|group_model| msg::Group {
+                    identifier: group_model.id.clone(),
+                    name: group_model.name.clone(),
+                    threshold: group_model.threshold as u32,
+                    device_ids: group_model
+                        .participant_ids_shares
+                        .iter()
+                        .flat_map(|(device_id, shares)| {
+                            std::iter::repeat(device_id.clone()).take(*shares as usize)
+                        })
+                        .collect(),
+                    protocol: group_model.protocol as i32,
+                    key_type: group_model.key_type as i32,
+                    note: group_model.note.clone(),
                 })
                 .collect()
         };
