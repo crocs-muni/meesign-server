@@ -51,7 +51,6 @@ pub struct VotingTask {
     pub task_info: TaskInfo,
     pub decisions: HashMap<Vec<u8>, i8>,
     pub accept_threshold: u32,
-    pub request: Vec<u8>,
     pub running_task_context: RunningTaskContext,
 }
 impl VotingTask {
@@ -204,6 +203,7 @@ pub struct TaskInfo {
     pub key_type: KeyType,
     pub participants: Vec<Participant>,
     pub attempts: u32,
+    pub request: Vec<u8>,
 }
 impl TaskInfo {
     pub fn total_shares(&self) -> u32 {

@@ -156,10 +156,7 @@ impl MeeSign for MeeSignService {
         if let Some(device_id) = device_id {
             self.state.activate_device(device_id);
         }
-        let task = self
-            .state
-            .get_formatted_voting_task(&task_id, device_id)
-            .await?;
+        let task = self.state.get_formatted_task(&task_id, device_id).await?;
         Ok(Response::new(task))
     }
 

@@ -170,7 +170,7 @@ impl TaskStore {
                 threshold,
                 task.task_info.protocol_type,
                 task.task_info.key_type,
-                &task.request,
+                &task.task_info.request,
                 note,
             )
             .await?;
@@ -192,7 +192,7 @@ impl TaskStore {
                 group.threshold as u32,
                 "name", // TODO: Fix name checks
                 data,
-                &task.request,
+                &task.task_info.request,
                 task_type,
                 task.task_info.key_type,
                 task.task_info.protocol_type,
@@ -261,6 +261,7 @@ impl TaskStore {
                 key_type: task_model.key_type,
                 participants,
                 attempts: task_model.attempt_count as u32,
+                request: task_model.request.clone(),
             };
             let task = match task_model.task_type {
                 TaskType::Group => self.group_task_from_model(task_info, task_model).await?,
@@ -328,7 +329,6 @@ impl TaskStore {
                     task_info,
                     decisions,
                     accept_threshold,
-                    request: task_model.request,
                     running_task_context,
                 };
                 Task::Voting(task)
@@ -415,7 +415,6 @@ impl TaskStore {
                     task_info,
                     decisions,
                     accept_threshold,
-                    request: task_model.request,
                     running_task_context,
                 };
                 Task::Voting(task)
