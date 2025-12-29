@@ -52,6 +52,7 @@ CREATE TABLE task (
     "protocol_round" integer NOT NULL CHECK ("protocol_round" >= 0),
     "attempt_count" integer NOT NULL CHECK ("attempt_count" >= 0),
     "threshold" integer NOT NULL CHECK ("threshold" > 0),
+    "name" varchar NOT NULL,
     "task_data" bytea,
     "preprocessed" bytea,
     "request" bytea NOT NULL,
