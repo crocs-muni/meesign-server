@@ -168,6 +168,7 @@ impl TaskStore {
                 Some(&task.task_info.id),
                 participant_ids_shares,
                 threshold,
+                &task.task_info.name,
                 task.task_info.protocol_type,
                 task.task_info.key_type,
                 &task.request,
@@ -190,7 +191,7 @@ impl TaskStore {
                 &group.id,
                 participant_ids_shares,
                 group.threshold as u32,
-                "name", // TODO: Fix name checks
+                &task.task_info.name,
                 data,
                 &task.request,
                 task_type,
@@ -255,7 +256,7 @@ impl TaskStore {
             let participants = task_id_participants.remove(&task_model.id).unwrap();
             let task_info = TaskInfo {
                 id: task_model.id,
-                name: "".into(), // TODO: Persist "name" in TaskModel
+                name: task_model.name.clone(),
                 task_type: task_model.task_type,
                 protocol_type: task_model.protocol_type,
                 key_type: task_model.key_type,

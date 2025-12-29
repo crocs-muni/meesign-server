@@ -1,4 +1,4 @@
-const MAX_USERNAME_LENGTH: usize = 64;
+const MAX_NAME_LENGTH: usize = 256;
 
 pub trait NameValidator {
     fn is_name_valid(&self) -> bool;
@@ -6,10 +6,8 @@ pub trait NameValidator {
 
 impl NameValidator for &str {
     fn is_name_valid(&self) -> bool {
-        self.chars().count() <= MAX_USERNAME_LENGTH
-            && !self
-                .chars()
-                .any(|x| x.is_ascii_punctuation() || x.is_control())
+        self.chars().count() <= MAX_NAME_LENGTH
+            && !self.chars().any(|x| x.is_control())
             && !self.is_empty()
     }
 }

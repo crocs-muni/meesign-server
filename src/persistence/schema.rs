@@ -78,6 +78,7 @@ diesel::table! {
         protocol_round -> Int4,
         attempt_count -> Int4,
         threshold -> Int4,
+        name -> Varchar,
         task_data -> Nullable<Bytea>,
         preprocessed -> Nullable<Bytea>,
         request -> Bytea,
