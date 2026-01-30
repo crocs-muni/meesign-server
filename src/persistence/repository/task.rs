@@ -42,6 +42,7 @@ where
         protocol_round: 0,
         attempt_count: 0,
         threshold: threshold as i32,
+        name,
         task_data,
         preprocessed: None,
         request,
@@ -89,6 +90,7 @@ pub async fn create_group_task<Conn>(
     id: Option<&Uuid>,
     participants: &[(&[u8], u32)],
     threshold: u32,
+    name: &str,
     key_type: KeyType,
     protocol_type: ProtocolType,
     request: &[u8],
@@ -97,6 +99,12 @@ pub async fn create_group_task<Conn>(
 where
     Conn: AsyncConnection<Backend = Pg>,
 {
+    if !name.is_name_valid() {
+        return Err(PersistenceError::InvalidArgumentError(format!(
+            "Invalid group name {name}"
+        )));
+    }
+
     let total_shares: u32 = participants.iter().map(|(_, shares)| shares).sum();
     if !(1..=total_shares).contains(&threshold) {
         return Err(PersistenceError::InvalidArgumentError(format!(
@@ -111,6 +119,7 @@ where
         protocol_round: 0,
         attempt_count: 0,
         threshold,
+        name,
         task_data: None,
         preprocessed: None,
         request,
@@ -158,6 +167,7 @@ macro_rules! task_model_columns {
             task::protocol_round,
             task::attempt_count,
             task::threshold,
+            task::name,
             task::task_data,
             task::preprocessed,
             task::request,

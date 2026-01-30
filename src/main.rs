@@ -169,7 +169,7 @@ mod proto {
             let device_ids = model
                 .participant_ids_shares
                 .into_iter()
-                .map(|(device_id, _)| device_id)
+                .flat_map(|(device_id, shares)| std::iter::repeat_n(device_id, shares as usize))
                 .collect();
             Self {
                 identifier: model.id,

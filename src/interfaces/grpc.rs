@@ -17,7 +17,7 @@ use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use crate::persistence::DeviceKind;
-use crate::proto::{Group, KeyType, MeeSign, MeeSignServer, ProtocolType};
+use crate::proto::{KeyType, MeeSign, MeeSignServer, ProtocolType};
 use crate::state::State;
 use crate::{proto as msg, utils, CA_CERT, CA_KEY};
 
@@ -261,21 +261,20 @@ impl MeeSign for MeeSignService {
             .unwrap_or_else(|| "unknown".to_string());
         debug!("GroupsRequest device_id={}", device_str);
 
-        // TODO: refactor, consider storing device IDS in the group model directly
         let groups = if let Some(device_id) = device_id {
             self.state.activate_device(&device_id);
             self.state
                 .get_device_groups(&device_id)
                 .await?
                 .into_iter()
-                .map(Group::from_model)
+                .map(msg::Group::from_model)
                 .collect()
         } else {
             self.state
                 .get_groups()
                 .await?
                 .into_iter()
-                .map(Group::from_model)
+                .map(msg::Group::from_model)
                 .collect()
         };
 
