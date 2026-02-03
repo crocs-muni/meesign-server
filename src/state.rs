@@ -24,14 +24,14 @@ use tonic::Status;
 pub struct State {
     devices: DashMap<Vec<u8>, Device>,
     subscribers: DashMap<Vec<u8>, Sender<Result<proto::Task, Status>>>,
-    repo: Arc<Repository>,
+    repo: Arc<dyn Repository + Send + Sync>,
     task_store: TaskStore,
     task_last_updates: DashMap<Uuid, u64>,
     device_last_activations: DashMap<Vec<u8>, u64>,
 }
 
 impl State {
-    pub async fn restore(repo: Arc<Repository>) -> Result<Self, Error> {
+    pub async fn restore(repo: Arc<dyn Repository + Send + Sync>) -> Result<Self, Error> {
         let devices = repo
             .get_devices()
             .await?
@@ -646,7 +646,7 @@ impl State {
         Ok(())
     }
 
-    fn get_repo(&self) -> &Arc<Repository> {
+    fn get_repo(&self) -> &Arc<dyn Repository + Send + Sync> {
         &self.repo
     }
 

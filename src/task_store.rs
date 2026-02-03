@@ -25,12 +25,12 @@ use crate::tasks::{
 pub struct TaskStore {
     // NOTE: DashMap locking applies to its internal shards, we must protect Tasks across awaits using tokio's RwLock.
     task_cache: DashMap<Uuid, Arc<RwLock<Task>>>,
-    repo: Arc<Repository>,
+    repo: Arc<dyn Repository + Send + Sync>,
 }
 
 impl TaskStore {
     /// Creates an empty `TaskStore`.
-    pub fn new(repo: Arc<Repository>) -> Self {
+    pub fn new(repo: Arc<dyn Repository + Send + Sync>) -> Self {
         Self {
             task_cache: DashMap::new(),
             repo,

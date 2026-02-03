@@ -6,7 +6,7 @@ use dotenvy::dotenv;
 use lazy_static::lazy_static;
 use openssl::pkey::{PKey, Private};
 use openssl::x509::X509;
-use persistence::Repository;
+use persistence::PostgresRepository;
 
 use crate::state::State;
 use tokio::try_join;
@@ -228,7 +228,7 @@ async fn main() -> Result<(), String> {
     }
     let _ = dotenv();
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let repo = Repository::from_url(&database_url)
+    let repo = PostgresRepository::from_url(&database_url)
         .await
         .expect("Coudln't init postgres repo");
     repo.apply_migrations().expect("Couldn't apply migrations");

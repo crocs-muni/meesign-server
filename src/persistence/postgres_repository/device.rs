@@ -9,7 +9,7 @@ use crate::persistence::schema::{device, group_participant, task, task_participa
 use crate::persistence::{
     error::PersistenceError,
     models::{Device, NewDevice, Participant},
-    repository::utils::NameValidator,
+    utils::NameValidator,
 };
 
 pub async fn get_devices<Conn>(connection: &mut Conn) -> Result<Vec<Device>, PersistenceError>
@@ -118,7 +118,7 @@ mod test {
     use crate::persistence::{
         enums::DeviceKind,
         error::PersistenceError,
-        repository::device::{add_device, get_devices},
+        postgres_repository::device::{add_device, get_devices},
         tests::persistency_unit_test_context::PersistencyUnitTestContext,
     };
 

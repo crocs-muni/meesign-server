@@ -5,9 +5,9 @@ use diesel_async::{AsyncConnection, RunQueryDsl};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
-use super::utils::NameValidator;
 use crate::persistence::models::{NewTaskResult, Task};
 use crate::persistence::schema::{active_task_participant, task_participant, task_result};
+use crate::persistence::utils::NameValidator;
 use crate::persistence::{
     enums::{KeyType, ProtocolType, TaskState, TaskType},
     error::PersistenceError,
