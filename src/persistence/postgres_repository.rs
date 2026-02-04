@@ -119,7 +119,7 @@ impl Repository for PostgresRepository {
     }
 
     /* Groups */
-    async fn add_group(
+    async fn add_group<'a>(
         &self,
         identifier: &[u8],
         group_task_id: &Uuid,
@@ -127,8 +127,8 @@ impl Repository for PostgresRepository {
         threshold: u32,
         protocol: ProtocolType,
         key_type: KeyType,
-        certificate: Option<&[u8]>,
-        note: Option<&str>,
+        certificate: Option<&'a [u8]>,
+        note: Option<&'a str>,
     ) -> Result<Group, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         connection
@@ -168,16 +168,16 @@ impl Repository for PostgresRepository {
     }
 
     /* Tasks */
-    async fn create_group_task(
+    async fn create_group_task<'a>(
         &self,
-        id: Option<&Uuid>,
-        participants: &[(&[u8], u32)],
+        id: Option<&'a Uuid>,
+        participants: &[(&'a [u8], u32)],
         threshold: u32,
         name: &str,
         protocol_type: ProtocolType,
         key_type: KeyType,
         request: &[u8],
-        note: Option<&str>,
+        note: Option<&'a str>,
     ) -> Result<Task, PersistenceError> {
         let connection = &mut self.get_async_connection().await?;
         connection
@@ -201,11 +201,11 @@ impl Repository for PostgresRepository {
             .await
     }
 
-    async fn create_threshold_task(
+    async fn create_threshold_task<'a>(
         &self,
-        id: Option<&Uuid>,
+        id: Option<&'a Uuid>,
         group_id: &[u8],
-        participants: &[(&[u8], u32)],
+        participants: &[(&'a [u8], u32)],
         threshold: u32,
         name: &str,
         task_data: &[u8],

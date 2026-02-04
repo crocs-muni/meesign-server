@@ -15,3 +15,6 @@ pub use models::{Device, Group, Participant, Task};
 pub use postgres_repository::PostgresRepository;
 pub use repository::Repository;
 pub use utils::NameValidator;
+
+#[cfg(test)]
+pub use repository::MockRepository;

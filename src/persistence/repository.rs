@@ -7,6 +7,10 @@ use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
+#[cfg(test)]
+use mockall::automock;
+
+#[cfg_attr(test, automock)]
 #[async_trait]
 pub trait Repository {
     /* Devices */
@@ -31,7 +35,7 @@ pub trait Repository {
     ) -> Result<Vec<(Uuid, Participant)>, PersistenceError>;
 
     /* Groups */
-    async fn add_group(
+    async fn add_group<'a>(
         &self,
         identifier: &[u8],
         group_task_id: &Uuid,
@@ -39,8 +43,8 @@ pub trait Repository {
         threshold: u32,
         protocol: ProtocolType,
         key_type: KeyType,
-        certificate: Option<&[u8]>,
-        note: Option<&str>,
+        certificate: Option<&'a [u8]>,
+        note: Option<&'a str>,
     ) -> Result<Group, PersistenceError>;
 
     async fn get_group(&self, group_identifier: &[u8]) -> Result<Option<Group>, PersistenceError>;
@@ -50,23 +54,23 @@ pub trait Repository {
     async fn get_device_groups(&self, identifier: &[u8]) -> Result<Vec<Group>, PersistenceError>;
 
     /* Tasks */
-    async fn create_group_task(
+    async fn create_group_task<'a>(
         &self,
-        id: Option<&Uuid>,
-        participants: &[(&[u8], u32)],
+        id: Option<&'a Uuid>,
+        participants: &[(&'a [u8], u32)],
         threshold: u32,
         name: &str,
         protocol_type: ProtocolType,
         key_type: KeyType,
         request: &[u8],
-        note: Option<&str>,
+        note: Option<&'a str>,
     ) -> Result<Task, PersistenceError>;
 
-    async fn create_threshold_task(
+    async fn create_threshold_task<'a>(
         &self,
-        id: Option<&Uuid>,
+        id: Option<&'a Uuid>,
         group_id: &[u8],
-        participants: &[(&[u8], u32)],
+        participants: &[(&'a [u8], u32)],
         threshold: u32,
         name: &str,
         task_data: &[u8],
