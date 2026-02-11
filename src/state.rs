@@ -1,5 +1,5 @@
 use dashmap::DashMap;
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -418,7 +418,7 @@ impl State {
         match decision_update {
             DecisionUpdate::Undecided => {}
             DecisionUpdate::Accepted => {
-                log::info!(
+                info!(
                     "Task approved task_id={}",
                     utils::hextrunc(task_id.as_bytes())
                 );
@@ -455,7 +455,7 @@ impl State {
                 }
             }
             DecisionUpdate::Declined(task) => {
-                log::info!(
+                info!(
                     "Task declined task_id={}",
                     utils::hextrunc(task_id.as_bytes())
                 );
