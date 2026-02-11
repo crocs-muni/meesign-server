@@ -416,9 +416,12 @@ impl<TS: TaskStore + Sync> StateInner<TS> {
     ) -> Result<(), Error> {
         let task_entry = &mut *self.task_store.get_task_mut(task_id).await?;
         let Task::Voting(task) = task_entry else {
-            return Err(Error::GeneralProtocolError(
-                "Cannot decide non-voting task".into(),
-            ));
+            debug!(
+                "Decision from non-voting task_id={} device_id={}",
+                utils::hextrunc(task_id.as_bytes()),
+                utils::hextrunc(device_id)
+            );
+            return Ok(());
         };
         self.set_task_last_update(task_id);
         let decision_update = task.decide(device_id, accept).await?;
@@ -710,5 +713,39 @@ mod tests {
         let task = state.get_formatted_task(&task_id, None).await;
         // NOTE: Expect no error
         assert!(task.is_ok());
+    }
+
+    #[tokio::test]
+    async fn decisions_work_past_threshold() {
+        let mut repo = MockRepository::new();
+        repo.expect_get_devices().return_once(|| Ok(Vec::new()));
+        let repo = Arc::new(repo);
+        let mut task_store = MockTaskStore::new();
+        let task_id = Uuid::new_v4();
+        task_store.expect_get_task_mut().return_once(move |_| {
+            // NOTE: Dummy non-voting task
+            Ok(Box::new(Task::Declined(DeclinedTask {
+                task_info: TaskInfo {
+                    id: task_id,
+                    name: "".to_string(),
+                    task_type: TaskType::SignChallenge,
+                    protocol_type: ProtocolType::Gg18,
+                    key_type: KeyType::SignChallenge,
+                    participants: Vec::new(),
+                    attempts: 0,
+                    request: Vec::new(),
+                },
+                accepts: 0,
+                rejects: 2,
+            })))
+        });
+        let state = StateInner::<MockTaskStore>::restore(repo, task_store)
+            .await
+            .unwrap();
+
+        // NOTE: The function called by the `decide` endpoint
+        let result = state.decide_task(&task_id, &[], true).await;
+        // NOTE: Expect no error
+        assert!(result.is_ok());
     }
 }
