@@ -248,7 +248,7 @@ where
 #[cfg(test)]
 mod test {
     use crate::persistence::{
-        repository::{device::add_device, task::create_group_task},
+        postgres_repository::{device::add_device, task::create_group_task},
         tests::persistency_unit_test_context::PersistencyUnitTestContext,
         DeviceKind,
     };

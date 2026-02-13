@@ -48,3 +48,6 @@ cli = []
 # Hacky feature to allow ignoring slower integrations tests
 # that are running against a database, see https://stackoverflow.com/a/48585979
 db-tests = []
+
+[dev-dependencies]
+mockall = "0.14.0"
