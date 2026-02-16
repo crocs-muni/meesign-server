@@ -58,6 +58,7 @@ message RegistrationRequest {
 message RegistrationResponse {
   bytes device_id = 1;
   bytes certificate = 2; // cert in DER format
+  optional string auth_token = 3; // JWT token for web clients (alternative to mTLS)
 }
 
 message GroupRequest {
