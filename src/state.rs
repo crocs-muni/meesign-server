@@ -1,8 +1,9 @@
 use dashmap::DashMap;
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use std::collections::HashMap;
 use uuid::Uuid;
 
+use crate::cached_task_store::CachedTaskStore;
 use crate::error::Error;
 use crate::persistence::{
     Device, DeviceKind, Group, KeyType, NameValidator, Participant, PersistenceError, ProtocolType,
@@ -21,28 +22,33 @@ use tokio::sync::mpsc::Sender;
 use tonic::codegen::Arc;
 use tonic::Status;
 
-pub struct State {
+pub type State = StateInner<CachedTaskStore>;
+
+pub(crate) struct StateInner<TS: TaskStore> {
     devices: DashMap<Vec<u8>, Device>,
     subscribers: DashMap<Vec<u8>, Sender<Result<proto::Task, Status>>>,
-    repo: Arc<Repository>,
-    task_store: TaskStore,
+    repo: Arc<dyn Repository + Send + Sync>,
+    task_store: TS,
     task_last_updates: DashMap<Uuid, u64>,
     device_last_activations: DashMap<Vec<u8>, u64>,
 }
 
-impl State {
-    pub async fn restore(repo: Arc<Repository>) -> Result<Self, Error> {
+impl<TS: TaskStore + Sync> StateInner<TS> {
+    pub async fn restore(
+        repo: Arc<dyn Repository + Send + Sync>,
+        task_store: TS,
+    ) -> Result<Self, Error> {
         let devices = repo
             .get_devices()
             .await?
             .into_iter()
             .map(|dev| (dev.id.clone(), dev))
             .collect();
-        let state = State {
+        let state = Self {
             devices,
             subscribers: DashMap::new(),
             repo: repo.clone(),
-            task_store: TaskStore::new(repo),
+            task_store,
             task_last_updates: DashMap::new(),
             device_last_activations: DashMap::new(),
         };
@@ -91,6 +97,15 @@ impl State {
                 Participant { device, shares }
             })
             .collect();
+        let request = (proto::GroupRequest {
+            device_ids: device_ids.into_iter().map(Vec::from).collect(),
+            name: name.to_string(),
+            threshold,
+            protocol: protocol_type as i32,
+            key_type: key_type as i32,
+            note: note.clone(),
+        })
+        .encode_to_vec();
         let task_info = TaskInfo {
             id: Uuid::new_v4(),
             name: name.to_string(),
@@ -99,17 +114,9 @@ impl State {
             key_type,
             participants,
             attempts: 0,
+            request,
         };
         let accept_threshold = task_info.total_shares();
-        let request = (proto::GroupRequest {
-            device_ids: device_ids.into_iter().map(Vec::from).collect(),
-            name: task_info.name.clone(),
-            threshold,
-            protocol: protocol_type as i32,
-            key_type: key_type as i32,
-            note: note.clone(),
-        })
-        .encode_to_vec();
         let running_task_context = RunningTaskContext::Group {
             threshold,
             note: note.clone(),
@@ -118,7 +125,6 @@ impl State {
             task_info,
             decisions: HashMap::new(),
             accept_threshold,
-            request,
             running_task_context,
         };
 
@@ -178,12 +184,12 @@ impl State {
             key_type,
             participants,
             attempts: 0,
+            request,
         };
         let task = VotingTask {
             task_info,
             decisions: HashMap::new(),
             accept_threshold,
-            request,
             running_task_context,
         };
 
@@ -238,12 +244,12 @@ impl State {
             key_type,
             participants,
             attempts: 0,
+            request,
         };
         let task = VotingTask {
             task_info,
             decisions: HashMap::new(),
             accept_threshold,
-            request,
             running_task_context,
         };
 
@@ -265,8 +271,10 @@ impl State {
     ) -> Result<Vec<proto::Task>, Error> {
         let task_ids = self.repo.get_active_device_tasks(device_id).await?;
         let mut tasks = Vec::new();
-        for task in self.task_store.get_tasks(task_ids).await? {
-            tasks.push(task.await.format(Some(device_id), None));
+        for task_id in task_ids {
+            let task = self.task_store.get_task(&task_id).await?;
+            let task = task.format(Some(device_id), None);
+            tasks.push(task);
         }
         Ok(tasks)
     }
@@ -315,25 +323,21 @@ impl State {
     pub async fn get_formatted_tasks(&self) -> Result<Vec<proto::Task>, Error> {
         let task_ids = self.repo.get_tasks().await?;
         let mut tasks = Vec::new();
-        for task in self.task_store.get_tasks(task_ids).await? {
-            tasks.push(task.await.format(None, None));
+        for task_id in task_ids {
+            let task = self.task_store.get_task(&task_id).await?;
+            let task = task.format(None, None);
+            tasks.push(task);
         }
         Ok(tasks)
     }
 
-    pub async fn get_formatted_voting_task(
+    pub async fn get_formatted_task(
         &self,
         task_id: &Uuid,
         device_id: Option<&[u8]>,
     ) -> Result<proto::Task, Error> {
         let task = &*self.task_store.get_task(task_id).await?;
-        let request = if let Task::Voting(task) = task {
-            task.request.clone()
-        } else {
-            return Err(Error::GeneralProtocolError(
-                "Queried task is not in voting phase".into(),
-            ));
-        };
+        let request = task.task_info().request.clone();
         let task = task.format(device_id, Some(request));
         Ok(task)
     }
@@ -424,7 +428,7 @@ impl State {
         match decision_update {
             DecisionUpdate::Undecided => {}
             DecisionUpdate::Accepted => {
-                log::info!(
+                info!(
                     "Task approved task_id={}",
                     utils::hextrunc(task_id.as_bytes())
                 );
@@ -461,7 +465,7 @@ impl State {
                 }
             }
             DecisionUpdate::Declined(task) => {
-                log::info!(
+                info!(
                     "Task declined task_id={}",
                     utils::hextrunc(task_id.as_bytes())
                 );
@@ -558,7 +562,7 @@ impl State {
 
     pub async fn restart_stale_tasks(&self) -> Result<(), Error> {
         let now = get_timestamp();
-        let task_ids = self
+        let task_ids: Vec<_> = self
             .repo
             .get_restart_candidates()
             .await?
@@ -568,9 +572,8 @@ impl State {
                 now.saturating_sub(last_update) > 30
             })
             .collect();
-        let tasks = self.task_store.get_tasks_mut(task_ids).await?;
-        for task_entry in tasks {
-            let task_entry = &mut *task_entry.await;
+        for task_id in task_ids {
+            let task_entry = &mut *self.task_store.get_task_mut(&task_id).await?;
             let Task::Running(task) = task_entry else {
                 return Err(PersistenceError::DataInconsistencyError(
                     "non-running task in candidates for restart".into(),
@@ -652,7 +655,7 @@ impl State {
         Ok(())
     }
 
-    fn get_repo(&self) -> &Arc<Repository> {
+    fn get_repo(&self) -> &Arc<dyn Repository + Send + Sync> {
         &self.repo
     }
 
@@ -665,5 +668,47 @@ impl State {
             .task_last_updates
             .entry(*task_id)
             .or_insert(get_timestamp())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::persistence::MockRepository;
+    use crate::task_store::MockTaskStore;
+    use crate::tasks::DeclinedTask;
+
+    #[tokio::test]
+    async fn get_task_works_with_non_voting_task() {
+        let mut repo = MockRepository::new();
+        repo.expect_get_devices().return_once(|| Ok(Vec::new()));
+        let repo = Arc::new(repo);
+        let mut task_store = MockTaskStore::new();
+        let task_id = Uuid::new_v4();
+        task_store.expect_get_task().return_once(move |_| {
+            // NOTE: Dummy non-voting task
+            Ok(Box::new(Task::Declined(DeclinedTask {
+                task_info: TaskInfo {
+                    id: task_id,
+                    name: "".to_string(),
+                    task_type: TaskType::SignChallenge,
+                    protocol_type: ProtocolType::Gg18,
+                    key_type: KeyType::SignChallenge,
+                    participants: Vec::new(),
+                    attempts: 0,
+                    request: Vec::new(),
+                },
+                accepts: 0,
+                rejects: 2,
+            })))
+        });
+        let state = StateInner::<MockTaskStore>::restore(repo, task_store)
+            .await
+            .unwrap();
+
+        // NOTE: The function called by the `get_task` endpoint
+        let task = state.get_formatted_task(&task_id, None).await;
+        // NOTE: Expect no error
+        assert!(task.is_ok());
     }
 }
