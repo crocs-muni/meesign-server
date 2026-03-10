@@ -21,8 +21,89 @@ use crate::proto::{KeyType, MeeSign, MeeSignServer, ProtocolType};
 use crate::state::State;
 use crate::{proto as msg, utils, CA_CERT, CA_KEY};
 
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use meesign_crypto::proto::{ClientMessage, Message as _};
+use serde::{Deserialize, Serialize};
 use std::pin::Pin;
+use tower_http::cors::CorsLayer;
+
+// JWT secret key for token-based authentication (web clients).
+// In production, load from a file or environment variable.
+lazy_static::lazy_static! {
+    static ref JWT_SECRET: Vec<u8> = {
+        let path = "keys/jwt-secret.key";
+        match std::fs::read(path) {
+            Ok(key) => key,
+            Err(_) => {
+                // Auto-generate a secret if the file doesn't exist
+                let secret: Vec<u8> = (0..32).map(|_| rand::random::<u8>()).collect();
+                let _ = std::fs::write(path, &secret);
+                warn!("JWT secret not found at {}, generated a new one", path);
+                secret
+            }
+        }
+    };
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct JwtClaims {
+    /// device_id as hex string
+    sub: String,
+    /// Issued at (unix timestamp)
+    iat: u64,
+}
+
+fn generate_jwt(device_id: &[u8]) -> Result<String, Status> {
+    let claims = JwtClaims {
+        sub: hex::encode(device_id),
+        iat: crate::get_timestamp(),
+    };
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(&JWT_SECRET),
+    )
+    .map_err(|e| Status::internal(format!("Failed to generate token: {}", e)))
+}
+
+fn validate_jwt(token: &str) -> Result<Vec<u8>, Status> {
+    let mut validation = Validation::default();
+    validation.required_spec_claims.clear();
+    validation.validate_exp = false;
+
+    let token_data = decode::<JwtClaims>(
+        token,
+        &DecodingKey::from_secret(&JWT_SECRET),
+        &validation,
+    )
+    .map_err(|_| Status::unauthenticated("Invalid authentication token"))?;
+
+    hex::decode(&token_data.claims.sub)
+        .map_err(|_| Status::unauthenticated("Invalid device ID in token"))
+}
+
+/// Extract device_id from a request, trying mTLS peer certs first,
+/// then falling back to JWT token in the "authorization" metadata header.
+fn extract_device_id<T>(request: &Request<T>) -> Option<Vec<u8>> {
+    // Path 1: mTLS peer certificate (native clients)
+    if let Some(certs) = request.peer_certs() {
+        if let Some(cert) = certs.first() {
+            return Some(cert_to_id(cert));
+        }
+    }
+
+    // Path 2: JWT token in metadata (web clients)
+    if let Some(auth_header) = request.metadata().get("authorization") {
+        if let Ok(auth_str) = auth_header.to_str() {
+            let token = auth_str.strip_prefix("Bearer ").unwrap_or(auth_str);
+            if let Ok(device_id) = validate_jwt(token) {
+                return Some(device_id);
+            }
+        }
+    }
+
+    None
+}
 
 pub struct MeeSignService {
     state: Arc<State>,
@@ -33,15 +114,16 @@ impl MeeSignService {
         MeeSignService { state }
     }
 
-    async fn check_client_auth(
+    /// Check client authentication using either mTLS peer certs or JWT token.
+    /// Returns Ok(()) if auth passes or is not required.
+    fn check_client_auth<T>(
         &self,
-        certs: &Option<Arc<Vec<Certificate>>>,
+        request: &Request<T>,
         required: bool,
     ) -> Result<(), Status> {
-        if let Some(certs) = certs {
-            let device_id = certs.first().map(cert_to_id).unwrap_or(vec![]);
+        if let Some(device_id) = extract_device_id(request) {
             if !self.state.device_exists(&device_id) {
-                return Err(Status::unauthenticated("Unknown device certificate"));
+                return Err(Status::unauthenticated("Unknown device"));
             }
         } else if required {
             return Err(Status::unauthenticated("Authentication required"));
@@ -59,7 +141,7 @@ impl MeeSign for MeeSignService {
         &self,
         request: Request<msg::ServerInfoRequest>,
     ) -> Result<Response<msg::ServerInfo>, Status> {
-        self.check_client_auth(&request.peer_certs(), false).await?;
+        self.check_client_auth(&request, false)?;
 
         debug!("ServerInfoRequest");
         Ok(Response::new(msg::ServerInfo {
@@ -71,7 +153,7 @@ impl MeeSign for MeeSignService {
         &self,
         request: Request<msg::RegistrationRequest>,
     ) -> Result<Response<msg::RegistrationResponse>, Status> {
-        self.check_client_auth(&request.peer_certs(), false).await?;
+        self.check_client_auth(&request, false)?;
 
         let request = request.into_inner();
         let name = request.name;
@@ -87,10 +169,14 @@ impl MeeSign for MeeSignService {
                 .add_device(&identifier, &name, &kind, &certificate)
                 .await
             {
-                Ok(_) => Ok(Response::new(msg::RegistrationResponse {
-                    device_id: identifier,
-                    certificate,
-                })),
+                Ok(_) => {
+                    let auth_token = generate_jwt(&identifier).ok();
+                    Ok(Response::new(msg::RegistrationResponse {
+                        device_id: identifier,
+                        certificate,
+                        auth_token,
+                    }))
+                }
                 Err(_) => Err(Status::failed_precondition(
                     "Request failed: device was not added",
                 )),
@@ -106,7 +192,7 @@ impl MeeSign for MeeSignService {
         &self,
         request: Request<msg::SignRequest>,
     ) -> Result<Response<msg::Task>, Status> {
-        self.check_client_auth(&request.peer_certs(), false).await?;
+        self.check_client_auth(&request, false)?;
 
         let request = request.into_inner();
         let group_id = request.group_id;
@@ -122,7 +208,7 @@ impl MeeSign for MeeSignService {
         &self,
         request: Request<msg::DecryptRequest>,
     ) -> Result<Response<msg::Task>, Status> {
-        self.check_client_auth(&request.peer_certs(), false).await?;
+        self.check_client_auth(&request, false)?;
 
         let request = request.into_inner();
         let group_id = request.group_id;
@@ -142,7 +228,7 @@ impl MeeSign for MeeSignService {
         &self,
         request: Request<msg::TaskRequest>,
     ) -> Result<Response<msg::Task>, Status> {
-        self.check_client_auth(&request.peer_certs(), false).await?;
+        self.check_client_auth(&request, false)?;
 
         let request = request.into_inner();
         let task_id = Uuid::from_slice(&request.task_id).unwrap();
@@ -164,12 +250,10 @@ impl MeeSign for MeeSignService {
         &self,
         request: Request<msg::TaskUpdate>,
     ) -> Result<Response<msg::Resp>, Status> {
-        self.check_client_auth(&request.peer_certs(), true).await?;
+        self.check_client_auth(&request, true)?;
 
-        let device_id = request
-            .peer_certs()
-            .and_then(|certs| certs.first().map(cert_to_id))
-            .unwrap();
+        let device_id = extract_device_id(&request)
+            .expect("device_id must be present after auth check");
 
         let request = request.into_inner();
         let task_id = Uuid::from_slice(&request.task).unwrap();
@@ -222,7 +306,7 @@ impl MeeSign for MeeSignService {
         &self,
         request: Request<msg::TasksRequest>,
     ) -> Result<Response<msg::Tasks>, Status> {
-        self.check_client_auth(&request.peer_certs(), false).await?;
+        self.check_client_auth(&request, false)?;
 
         let request = request.into_inner();
         let device_id = request.device_id;
@@ -248,7 +332,7 @@ impl MeeSign for MeeSignService {
         &self,
         request: Request<msg::GroupsRequest>,
     ) -> Result<Response<msg::Groups>, Status> {
-        self.check_client_auth(&request.peer_certs(), false).await?;
+        self.check_client_auth(&request, false)?;
 
         let request = request.into_inner();
         let device_id = request.device_id;
@@ -282,7 +366,7 @@ impl MeeSign for MeeSignService {
         &self,
         request: Request<msg::GroupRequest>,
     ) -> Result<Response<msg::Task>, Status> {
-        self.check_client_auth(&request.peer_certs(), false).await?;
+        self.check_client_auth(&request, false)?;
 
         let request = request.into_inner();
         let name = request.name;
@@ -330,7 +414,7 @@ impl MeeSign for MeeSignService {
         &self,
         request: Request<msg::DevicesRequest>,
     ) -> Result<Response<msg::Devices>, Status> {
-        self.check_client_auth(&request.peer_certs(), false).await?;
+        self.check_client_auth(&request, false)?;
 
         debug!("DevicesRequest");
 
@@ -352,11 +436,9 @@ impl MeeSign for MeeSignService {
     }
 
     async fn log(&self, request: Request<msg::LogRequest>) -> Result<Response<msg::Resp>, Status> {
-        self.check_client_auth(&request.peer_certs(), false).await?;
+        self.check_client_auth(&request, false)?;
 
-        let device_id = request
-            .peer_certs()
-            .and_then(|certs| certs.first().map(cert_to_id));
+        let device_id = extract_device_id(&request);
 
         let device_str = device_id
             .as_ref()
@@ -378,12 +460,10 @@ impl MeeSign for MeeSignService {
         &self,
         request: Request<msg::TaskDecision>,
     ) -> Result<Response<msg::Resp>, Status> {
-        self.check_client_auth(&request.peer_certs(), true).await?;
+        self.check_client_auth(&request, true)?;
 
-        let device_id = request
-            .peer_certs()
-            .and_then(|certs| certs.first().map(cert_to_id))
-            .unwrap();
+        let device_id = extract_device_id(&request)
+            .expect("device_id must be present after auth check");
 
         let request = request.into_inner();
         let task_id = Uuid::from_slice(&request.task).unwrap();
@@ -415,12 +495,10 @@ impl MeeSign for MeeSignService {
         &self,
         request: Request<msg::TaskAcknowledgement>,
     ) -> Result<Response<msg::Resp>, Status> {
-        self.check_client_auth(&request.peer_certs(), true).await?;
+        self.check_client_auth(&request, true)?;
 
-        let device_id = request
-            .peer_certs()
-            .and_then(|certs| certs.first().map(cert_to_id))
-            .unwrap();
+        let device_id = extract_device_id(&request)
+            .expect("device_id must be present after auth check");
 
         let task_id = request.into_inner().task_id;
 
@@ -451,12 +529,10 @@ impl MeeSign for MeeSignService {
         &self,
         request: Request<msg::SubscribeRequest>,
     ) -> Result<Response<Self::SubscribeUpdatesStream>, Status> {
-        self.check_client_auth(&request.peer_certs(), true).await?;
+        self.check_client_auth(&request, true)?;
 
-        let device_id = request
-            .peer_certs()
-            .and_then(|certs| certs.first().map(cert_to_id))
-            .unwrap();
+        let device_id = extract_device_id(&request)
+            .expect("device_id must be present after auth check");
 
         let (tx, rx) = mpsc::channel(8);
 
@@ -565,7 +641,18 @@ pub async fn run_grpc(state: Arc<State>, addr: &str, port: u16) -> Result<(), St
         .await
         .map_err(|_| "Unable to load server key".to_string())?;
 
+    // Wrap service with gRPC-Web support (auto-detects protocol from content-type)
+    let grpc_web_service = tonic_web::enable(MeeSignServer::new(node));
+
+    // Permissive CORS layer to allow browser-based gRPC-Web clients.
+    // tonic_web::enable() handles basic CORS but its default allowed headers
+    // don't include "authorization" (needed for JWT auth). This outer CorsLayer
+    // handles OPTIONS preflight with all necessary headers; for non-preflight
+    // responses its insert() replaces tonic-web's headers, avoiding duplicates.
+    let cors = CorsLayer::permissive();
+
     Server::builder()
+        .accept_http1(true) // gRPC-Web uses HTTP/1.1
         .tls_config(
             ServerTlsConfig::new()
                 .identity(Identity::from_pem(&cert, &key))
@@ -573,7 +660,8 @@ pub async fn run_grpc(state: Arc<State>, addr: &str, port: u16) -> Result<(), St
                 .client_auth_optional(true),
         )
         .map_err(|_| "Unable to setup TLS for gRPC server")?
-        .add_service(MeeSignServer::new(node))
+        .layer(cors)
+        .add_service(grpc_web_service)
         .serve(addr)
         .await
         .map_err(|_| String::from("Unable to run gRPC server"))?;
