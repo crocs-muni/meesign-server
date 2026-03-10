@@ -74,3 +74,8 @@ openssl req -new -key "./${KEY_FOLDER}/meesign-server-key.pem" -out csr.pem -con
 openssl x509 -req -days 365 -in csr.pem -CA "./${KEY_FOLDER}/meesign-ca-cert.pem" -CAkey "./${KEY_FOLDER}/meesign-ca-key.pem" -CAcreateserial -out "./${KEY_FOLDER}/meesign-server-cert.pem" -extfile server-ext.conf
 
 rm ca-cert.conf server-csr.conf server-ext.conf csr.pem
+
+# Generate the JWT token for CORS
+touch "$KEY_FOLDER/jwt-secret.key"
+chmod 600 "$KEY_FOLDER/jwt-secret.key"
+openssl rand 32 > "$KEY_FOLDER/jwt-secret.key"

@@ -6,19 +6,21 @@ use dotenvy::dotenv;
 use lazy_static::lazy_static;
 use openssl::pkey::{PKey, Private};
 use openssl::x509::X509;
-use persistence::Repository;
+use persistence::PostgresRepository;
 
+use crate::cached_task_store::CachedTaskStore;
 use crate::state::State;
-use tokio::{sync::Mutex, try_join};
+use tokio::try_join;
 use tonic::codegen::Arc;
 
+mod cached_task_store;
 mod communicator;
 mod error;
-mod group;
 mod interfaces;
 mod persistence;
 mod protocols;
 mod state;
+mod task_store;
 mod tasks;
 mod utils;
 
@@ -61,37 +63,6 @@ mod proto {
         }
     }
 
-    impl From<TaskType> for crate::persistence::TaskType {
-        fn from(task_type: TaskType) -> Self {
-            match task_type {
-                TaskType::Group => Self::Group,
-                TaskType::SignChallenge => Self::SignChallenge,
-                TaskType::SignPdf => Self::SignPdf,
-                TaskType::Decrypt => Self::Decrypt,
-            }
-        }
-    }
-
-    impl Into<TaskType> for crate::persistence::TaskType {
-        fn into(self) -> TaskType {
-            match self {
-                Self::Group => TaskType::Group,
-                Self::SignChallenge => TaskType::SignChallenge,
-                Self::SignPdf => TaskType::SignPdf,
-                Self::Decrypt => TaskType::Decrypt,
-            }
-        }
-    }
-
-    impl Into<DeviceKind> for crate::persistence::DeviceKind {
-        fn into(self) -> DeviceKind {
-            match self {
-                Self::User => DeviceKind::User,
-                Self::Bot => DeviceKind::Bot,
-            }
-        }
-    }
-
     impl Task {
         pub fn created(
             id: Vec<u8>,
@@ -109,6 +80,26 @@ mod proto {
                 accept,
                 reject,
                 data: Vec::new(),
+                request,
+                attempt,
+            }
+        }
+        pub fn declined(
+            id: Vec<u8>,
+            r#type: i32,
+            accept: u32,
+            reject: u32,
+            request: Option<Vec<u8>>,
+            attempt: u32,
+        ) -> Self {
+            Self {
+                id,
+                r#type,
+                state: task::TaskState::Failed.into(),
+                round: 0,
+                accept,
+                reject,
+                data: vec!["Task declined".to_string().into_bytes()],
                 request,
                 attempt,
             }
@@ -155,9 +146,6 @@ mod proto {
         pub fn failed(
             id: Vec<u8>,
             r#type: i32,
-            round: u32,
-            accept: u32,
-            reject: u32,
             reason: String,
             request: Option<Vec<u8>>,
             attempt: u32,
@@ -166,9 +154,9 @@ mod proto {
                 id,
                 r#type,
                 state: task::TaskState::Failed.into(),
-                round,
-                accept,
-                reject,
+                round: u32::MAX,
+                accept: u32::MAX,
+                reject: 0,
                 data: vec![reason.into_bytes()],
                 request,
                 attempt,
@@ -183,7 +171,7 @@ mod proto {
             let device_ids = model
                 .participant_ids_shares
                 .into_iter()
-                .map(|(device_id, _)| device_id)
+                .flat_map(|(device_id, shares)| std::iter::repeat_n(device_id, shares as usize))
                 .collect();
             Self {
                 identifier: model.id,
@@ -242,12 +230,17 @@ async fn main() -> Result<(), String> {
     }
     let _ = dotenv();
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let repo = Repository::from_url(&database_url)
+    let repo = PostgresRepository::from_url(&database_url)
         .await
         .expect("Coudln't init postgres repo");
     repo.apply_migrations().expect("Couldn't apply migrations");
+    let repo = Arc::new(repo);
+    let task_store = CachedTaskStore::new(repo.clone());
+    let state = State::restore(repo, task_store)
+        .await
+        .expect("Couldn't initialize State");
     // TODO: remove mutex when DB done
-    let state = Arc::new(Mutex::new(State::new(Arc::new(repo))));
+    let state = Arc::new(state);
 
     let grpc = interfaces::grpc::run_grpc(state.clone(), &args.addr, args.port);
     let timer = interfaces::timer::run_timer(state);
@@ -261,7 +254,6 @@ mod cli {
     use crate::proto::MeeSignClient;
     use crate::{Args, CA_CERT};
     use clap::Subcommand;
-    use meesign_crypto;
     use std::str::FromStr;
     use std::time::SystemTime;
     use tonic::transport::{Certificate, Channel, ClientTlsConfig, Uri};

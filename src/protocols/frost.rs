@@ -30,7 +30,6 @@ impl FROSTGroup {
 
 impl Protocol for FROSTGroup {
     fn initialize(&mut self, communicator: &mut Communicator, _: &[u8]) {
-        communicator.set_active_devices(None);
         let parties = self.parties;
         let threshold = self.threshold;
         communicator.send_all(|idx| {
@@ -96,7 +95,6 @@ impl FROSTSign {
 
 impl Protocol for FROSTSign {
     fn initialize(&mut self, communicator: &mut Communicator, data: &[u8]) {
-        communicator.set_active_devices(None);
         let participant_indices = communicator.get_protocol_indices();
         communicator.send_all(|idx| {
             (ProtocolInit {

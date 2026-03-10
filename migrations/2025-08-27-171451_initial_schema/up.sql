@@ -52,6 +52,7 @@ CREATE TABLE task (
     "protocol_round" integer NOT NULL CHECK ("protocol_round" >= 0),
     "attempt_count" integer NOT NULL CHECK ("attempt_count" >= 0),
     "threshold" integer NOT NULL CHECK ("threshold" > 0),
+    "name" varchar NOT NULL,
     "task_data" bytea,
     "preprocessed" bytea,
     "request" bytea NOT NULL,
@@ -83,4 +84,13 @@ CREATE TABLE task_participant (
     "decision" boolean,
     "acknowledgment" boolean,
     PRIMARY KEY ("task_id", "device_id")
+);
+
+CREATE TABLE active_task_participant (
+    "task_id" uuid NOT NULL REFERENCES task("id"),
+    "device_id" bytea NOT NULL REFERENCES device("id"),
+    "active_shares" integer NOT NULL CHECK ("active_shares" > 0),
+    PRIMARY KEY ("task_id", "device_id"),
+    FOREIGN KEY ("task_id", "device_id")
+        REFERENCES task_participant("task_id", "device_id")
 );

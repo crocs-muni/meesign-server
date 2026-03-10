@@ -9,7 +9,7 @@ use testcontainers_modules::postgres::Postgres;
 use testcontainers_modules::testcontainers::runners::AsyncRunner;
 use testcontainers_modules::testcontainers::ContainerAsync;
 
-use crate::persistence::{error::PersistenceError, repository::MIGRATIONS};
+use crate::persistence::{error::PersistenceError, postgres_repository::MIGRATIONS};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 

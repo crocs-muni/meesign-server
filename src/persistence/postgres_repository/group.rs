@@ -68,7 +68,7 @@ where
     Ok(groups)
 }
 
-pub async fn add_group<'a, Conn>(
+pub async fn add_group<Conn>(
     connection: &mut Conn,
     group_task_id: &Uuid,
     id: &[u8],
@@ -77,7 +77,7 @@ pub async fn add_group<'a, Conn>(
     protocol: ProtocolType,
     key_type: KeyType,
     certificate: Option<&[u8]>,
-    note: Option<&'a str>,
+    note: Option<&str>,
 ) -> Result<Group, PersistenceError>
 where
     Conn: AsyncConnection<Backend = Pg>,
@@ -85,13 +85,13 @@ where
     let threshold: i32 = threshold.try_into()?;
 
     if id.is_empty() {
-        return Err(PersistenceError::InvalidArgumentError(format!(
-            "Empty identifier"
-        )));
+        return Err(PersistenceError::InvalidArgumentError(
+            "Empty identifier".to_string(),
+        ));
     }
     let new_group = NewGroup {
         id,
-        threshold: threshold as i32,
+        threshold,
         protocol,
         name,
         certificate,
@@ -248,7 +248,7 @@ where
 #[cfg(test)]
 mod test {
     use crate::persistence::{
-        repository::{device::add_device, task::create_group_task},
+        postgres_repository::{device::add_device, task::create_group_task},
         tests::persistency_unit_test_context::PersistencyUnitTestContext,
         DeviceKind,
     };
@@ -299,6 +299,7 @@ mod test {
             None,
             participants,
             threshold,
+            GROUP_1_NAME,
             KeyType::SignPdf,
             ProtocolType::Gg18,
             &[],
@@ -387,6 +388,7 @@ mod test {
             None,
             group_1_participants,
             threshold,
+            GROUP_1_NAME,
             KeyType::Decrypt,
             ProtocolType::ElGamal,
             &[],
@@ -411,6 +413,7 @@ mod test {
             None,
             group_2_participants,
             threshold,
+            GROUP_2_NAME,
             KeyType::SignChallenge,
             ProtocolType::Frost,
             &[],

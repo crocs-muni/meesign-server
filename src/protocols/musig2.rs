@@ -25,7 +25,6 @@ impl MuSig2Group {
 
 impl Protocol for MuSig2Group {
     fn initialize(&mut self, communicator: &mut Communicator, _: &[u8]) {
-        communicator.set_active_devices(None);
         let parties = self.parties;
         communicator.send_all(|idx| {
             (ProtocolGroupInit {
@@ -90,7 +89,6 @@ impl MuSig2Sign {
 
 impl Protocol for MuSig2Sign {
     fn initialize(&mut self, communicator: &mut Communicator, data: &[u8]) {
-        communicator.set_active_devices(None);
         let participant_indices = communicator.get_protocol_indices();
         communicator.send_all(|idx| {
             (ProtocolInit {
