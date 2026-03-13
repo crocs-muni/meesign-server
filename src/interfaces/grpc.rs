@@ -653,6 +653,13 @@ pub async fn run_grpc(state: Arc<State>, addr: &str, port: u16) -> Result<(), St
 
     Server::builder()
         .accept_http1(true) // gRPC-Web uses HTTP/1.1
+        .tls_config(
+            ServerTlsConfig::new()
+                .identity(Identity::from_pem(&cert, &key))
+                .client_ca_root(Certificate::from_pem(ca_cert))
+                .client_auth_optional(true),
+        )
+        .map_err(|_| "Unable to setup TLS for gRPC server")?
         .layer(cors)
         .add_service(grpc_web_service)
         .serve(addr)
