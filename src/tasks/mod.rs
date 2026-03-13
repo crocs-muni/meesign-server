@@ -3,6 +3,9 @@ pub(crate) mod group;
 pub(crate) mod sign;
 pub(crate) mod sign_pdf;
 
+#[cfg(test)]
+pub(crate) mod proptest;
+
 use meesign_crypto::proto::ClientMessage;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
@@ -28,6 +31,7 @@ pub enum DecisionUpdate {
     Declined(DeclinedTask),
 }
 
+#[cfg_attr(test, derive(Clone, Debug))]
 pub enum TaskResult {
     GroupEstablished(Group),
     Signed(Vec<u8>),
@@ -46,6 +50,7 @@ impl TaskResult {
     }
 }
 
+#[cfg_attr(test, derive(Debug))]
 #[must_use]
 pub struct VotingTask {
     pub task_info: TaskInfo,
@@ -78,6 +83,7 @@ impl VotingTask {
         let decision_update = if accepts >= self.accept_threshold {
             DecisionUpdate::Accepted
         } else if rejects >= self.reject_threshold() {
+            // TODO: Check using potential acceptors instead, allowing for earlier rejection
             DecisionUpdate::Declined(DeclinedTask {
                 task_info: self.task_info.clone(),
                 accepts,
@@ -108,12 +114,14 @@ impl VotingTask {
         self.decisions.get(device_id) > Some(&0)
     }
 }
+#[cfg_attr(test, derive(Debug))]
 #[must_use]
 pub struct DeclinedTask {
     pub task_info: TaskInfo,
     pub accepts: u32,
     pub rejects: u32,
 }
+#[cfg_attr(test, derive(Debug))]
 #[must_use]
 pub struct FinishedTask {
     pub task_info: TaskInfo,
@@ -133,11 +141,13 @@ impl FinishedTask {
         self.acknowledgements.insert(device_id.to_vec());
     }
 }
+#[cfg_attr(test, derive(Debug))]
 #[must_use]
 pub struct FailedTask {
     pub task_info: TaskInfo,
     pub reason: String,
 }
+
 #[must_use]
 pub enum Task {
     Voting(VotingTask),
@@ -195,6 +205,7 @@ impl Task {
 }
 
 #[derive(Clone)]
+#[cfg_attr(test, derive(Debug))]
 pub struct TaskInfo {
     pub id: Uuid,
     pub name: String,
@@ -234,6 +245,7 @@ pub trait RunningTask: Send + Sync {
 }
 
 #[derive(Clone)]
+#[cfg_attr(test, derive(Debug))]
 pub enum RunningTaskContext {
     Group {
         threshold: u32,
@@ -291,5 +303,18 @@ impl RunningTaskContext {
             )),
         };
         Ok(task)
+    }
+}
+
+#[cfg(test)]
+impl std::fmt::Debug for Task {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Task::Voting(t) => write!(f, "Voting({:?})", t),
+            Task::Declined(t) => write!(f, "Declined({:?})", t),
+            Task::Finished(t) => write!(f, "Finished({:?})", t),
+            Task::Failed(t) => write!(f, "Failed({:?})", t),
+            Task::Running(_) => write!(f, "Running(..)"),
+        }
     }
 }

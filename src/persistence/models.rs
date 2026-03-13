@@ -19,12 +19,14 @@ pub struct NewDevice<'a> {
 }
 
 #[derive(Clone)]
+#[cfg_attr(test, derive(Debug))]
 pub struct Participant {
     pub device: Device,
     pub shares: u32,
 }
 
 #[derive(Queryable, Selectable, Clone, PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
 #[diesel(table_name = device)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Device {

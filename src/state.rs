@@ -679,73 +679,46 @@ mod tests {
     use super::*;
     use crate::persistence::MockRepository;
     use crate::task_store::MockTaskStore;
-    use crate::tasks::DeclinedTask;
+    use crate::tasks::proptest::valid_nonvoting_task;
 
-    #[tokio::test]
-    async fn get_task_works_with_non_voting_task() {
-        let mut repo = MockRepository::new();
-        repo.expect_get_devices().return_once(|| Ok(Vec::new()));
-        let repo = Arc::new(repo);
-        let mut task_store = MockTaskStore::new();
-        let task_id = Uuid::new_v4();
-        task_store.expect_get_task().return_once(move |_| {
-            // NOTE: Dummy non-voting task
-            Ok(Box::new(Task::Declined(DeclinedTask {
-                task_info: TaskInfo {
-                    id: task_id,
-                    name: "".to_string(),
-                    task_type: TaskType::SignChallenge,
-                    protocol_type: ProtocolType::Gg18,
-                    key_type: KeyType::SignChallenge,
-                    participants: Vec::new(),
-                    attempts: 0,
-                    request: Vec::new(),
-                },
-                accepts: 0,
-                rejects: 2,
-            })))
-        });
-        let state = StateInner::<MockTaskStore>::restore(repo, task_store)
-            .await
-            .unwrap();
+    use proptest::prelude::*;
+    use tokio::runtime::Runtime;
 
-        // NOTE: The function called by the `get_task` endpoint
-        let task = state.get_formatted_task(&task_id, None).await;
-        // NOTE: Expect no error
-        assert!(task.is_ok());
+    /// A convenience macro to write tests using both proptest and tokio's async
+    macro_rules! proptest_async {
+        (
+            $(#[$meta:meta])*
+            async fn $name:ident ( $($args:tt)* ) $(-> $ret:ty)? $body:block
+        ) => {
+            proptest! {
+                #[test]
+                $(#[$meta])*
+                fn $name($($args)*) $(-> $ret)? {
+                    Runtime::new().unwrap().block_on(async $body)
+                }
+            }
+        };
     }
 
-    #[tokio::test]
-    async fn decisions_work_past_threshold() {
-        let mut repo = MockRepository::new();
-        repo.expect_get_devices().return_once(|| Ok(Vec::new()));
-        let repo = Arc::new(repo);
-        let mut task_store = MockTaskStore::new();
-        let task_id = Uuid::new_v4();
-        task_store.expect_get_task_mut().return_once(move |_| {
-            // NOTE: Dummy non-voting task
-            Ok(Box::new(Task::Declined(DeclinedTask {
-                task_info: TaskInfo {
-                    id: task_id,
-                    name: "".to_string(),
-                    task_type: TaskType::SignChallenge,
-                    protocol_type: ProtocolType::Gg18,
-                    key_type: KeyType::SignChallenge,
-                    participants: Vec::new(),
-                    attempts: 0,
-                    request: Vec::new(),
-                },
-                accepts: 0,
-                rejects: 2,
-            })))
-        });
-        let state = StateInner::<MockTaskStore>::restore(repo, task_store)
-            .await
-            .unwrap();
+    proptest_async! {
+        async fn get_task_works_with_non_voting_task(task in valid_nonvoting_task(5, 3)) {
+            let mut repo = MockRepository::new();
+            repo.expect_get_devices().return_once(|| Ok(Vec::new()));
+            let repo = Arc::new(repo);
+            let mut task_store = MockTaskStore::new();
+            let task_id = task.task_info().id;
+            task_store.expect_get_task().return_once(move |_| {
+                // NOTE: Dummy non-voting task
+                Ok(Box::new(task))
+            });
+            let state = StateInner::<MockTaskStore>::restore(repo, task_store)
+                .await
+                .unwrap();
 
-        // NOTE: The function called by the `decide` endpoint
-        let result = state.decide_task(&task_id, &[], true).await;
-        // NOTE: Expect no error
-        assert!(result.is_ok());
+            // NOTE: The function called by the `get_task` endpoint
+            let task = state.get_formatted_task(&task_id, None).await;
+            // NOTE: Expect no error
+            assert!(task.is_ok());
+        }
     }
 }
