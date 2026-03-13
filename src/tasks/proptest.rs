@@ -395,3 +395,48 @@ pub fn valid_nonvoting_task(device_limit: usize, shares_limit: u32) -> impl Stra
         // TODO: Add running task
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    proptest! {
+        #[test]
+        fn voting_task_is_valid(task in valid_voting_task(5, 3)) {
+            let (accept_shares, reject_shares) = VotingTask::accepts_rejects(&task.decisions);
+            let undecided_shares: u32 = task
+                .task_info
+                .participants
+                .iter()
+                .filter(|participant| !task.decisions.contains_key(&participant.device.id))
+                .map(|participant| participant.shares)
+                .sum();
+
+            assert!(accept_shares < task.accept_threshold);
+            assert!(accept_shares + undecided_shares >= task.accept_threshold);
+            assert!(accept_shares + reject_shares + undecided_shares == task.task_info.total_shares());
+
+            let participant_id_set: HashSet<_> = task
+                .task_info
+                .participants
+                .into_iter()
+                .map(|participant| participant.device.id)
+                .collect();
+
+            for (participant_id, _) in &task.decisions {
+                assert!(participant_id_set.contains(participant_id));
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn declined_task_is_valid(task in valid_declined_task(5, 3)) {
+            assert!(task.rejects >= 1);
+            assert!(task.accepts + task.rejects <= task.task_info.total_shares());
+
+            // TODO: Check that accepts and rejects are sums of shares of disjoint subsets?
+        }
+    }
+}
