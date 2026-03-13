@@ -162,16 +162,13 @@ fn voting_task_decisions(
     task_info: &TaskInfo,
     accept_threshold: u32,
 ) -> impl Strategy<Value = HashMap<Vec<u8>, i8>> {
-    // If the accumulated shares of accepting participants exceed the accept threshold,
-    // the task is accepted and thus not voting. We need to limit the accepting participants.
-    // To avoid `prop_filter`, we randomly shuffle the participants, and keep only
-    // the longest prefix whose total shares cannot exceed the threshold,
-    // even if all of them accept.
+    // We shuffle the participants once to avoid choosing random subsets later
     let shuffled_participants = Just(task_info.participants.clone()).prop_shuffle();
     (shuffled_participants).prop_flat_map(move |shuffled_participants| {
-        // A set of participants with fewer total shares than the accept threshold
-        let potential_voters: Vec<Participant> = shuffled_participants
-            .into_iter()
+        // The longest prefix of voters who can accept without change the task phase
+        let potentially_accepting_voters: Vec<Participant> = shuffled_participants
+            .iter()
+            .cloned()
             .scan(0, |acc_shares, participant| {
                 *acc_shares += participant.shares;
                 if *acc_shares < accept_threshold {
@@ -181,29 +178,58 @@ fn voting_task_decisions(
                 }
             })
             .collect();
+        // We pick some of them to actually accept
+        (0..=potentially_accepting_voters.len()).prop_flat_map(move |n_accepting_voters| {
+            let mut shuffled_participants = shuffled_participants.clone();
+            // These voters definitely accept
+            let accepting_voters = &shuffled_participants[0..n_accepting_voters];
+            let total_accepting_shares: u32 = accepting_voters
+                .iter()
+                .map(|participant| participant.shares)
+                .sum();
+            let accepting_decisions: HashMap<Vec<u8>, i8> = accepting_voters
+                .iter()
+                .map(|participant| (participant.device.id.clone(), participant.shares as i8))
+                .collect();
 
-        // Generate a subset of the potential voters
-        let voter_indices = range_subset::range_subset(
-            0..potential_voters.len(),  // NOTE: From indices 0..n_potential_voters
-            0..=potential_voters.len(), //       we select 0 up to n_potential_voters
-        );
-        // Generate arbitrary decisions for the voters
-        let votes =
-            prop::collection::vec(prop_oneof![Just(true), Just(false)], potential_voters.len());
-        (voter_indices, votes).prop_map(move |(voter_indices, votes)| {
-            voter_indices
-                .into_iter()
-                .map(|voter_idx| {
-                    let participant = &potential_voters[voter_idx];
-                    let accepted = votes[voter_idx];
-                    let vote = if accepted {
-                        participant.shares as i8
+            // The rest cannot accept
+            let mut non_accepting_voters = shuffled_participants.split_off(n_accepting_voters);
+
+            // These voters must stay undecided to ensure that the task can still be accepted,
+            // i.e. it is not declined
+            let definitely_undecided_voters: Vec<Participant> = non_accepting_voters
+                .iter()
+                .cloned()
+                .scan(0, |acc_shares, participant| {
+                    let participant_shares = participant.shares;
+                    let res = if *acc_shares + total_accepting_shares < accept_threshold {
+                        Some(participant)
                     } else {
-                        -(participant.shares as i8)
+                        None
                     };
-                    (participant.device.id.clone(), vote)
+                    *acc_shares += participant_shares;
+                    res
                 })
-                .collect()
+                .collect();
+
+            // The rest may decide to either hold their vote or reject
+            let non_accepting_voters =
+                non_accepting_voters.split_off(definitely_undecided_voters.len());
+
+            // We pick some of them to reject
+            (0..=non_accepting_voters.len()).prop_map({
+                let non_accepting_voters = non_accepting_voters;
+                let accepting_decisions = accepting_decisions;
+                move |n_rejecting_voters| {
+                    let mut decisions = accepting_decisions.clone();
+                    let rejecting_voters = &non_accepting_voters[0..n_rejecting_voters];
+                    let rejecting_decisions = rejecting_voters.into_iter().map(|participant| {
+                        (participant.device.id.clone(), -(participant.shares as i8))
+                    });
+                    decisions.extend(rejecting_decisions);
+                    decisions
+                }
+            })
         })
     })
 }
@@ -242,20 +268,14 @@ pub fn valid_voting_task(
     })
 }
 
-fn declined_task_decisions(
+fn declined_task_accepts_rejects(
     task_info: &TaskInfo,
     accept_threshold: u32,
-) -> impl Strategy<Value = HashMap<Vec<u8>, i8>> {
-    // The task is declined if it becomes impossible to accept the task even if all undecided
-    // participants accepted. We calculate the minimum amount of rejects and let the others
-    // decide randomly.
-    // To avoid `prop_filter`, we randomly shuffle the participants, and find the longest
-    // prefix whose total shares cannot exceed the threshold, even if all of them accept.
-    // The rest must reject, but this prefix can decide arbitrarily.
+) -> impl Strategy<Value = (u32, u32)> {
     let shuffled_participants = Just(task_info.participants.clone()).prop_shuffle();
     (shuffled_participants).prop_flat_map(move |shuffled_participants| {
-        // A set of participants with fewer total shares than the accept threshold
-        let arbitrary_voters: Vec<Participant> = shuffled_participants
+        // The longest prefix with total shares fewer than the accept threshold
+        let potentially_non_rejecting_voters: Vec<Participant> = shuffled_participants
             .iter()
             .cloned()
             .scan(0, |acc_shares, participant| {
@@ -268,39 +288,35 @@ fn declined_task_decisions(
             })
             .collect();
 
-        // The participants which need to reject for the task to be declined
-        let rejecting_voters = &shuffled_participants[arbitrary_voters.len()..];
+        // Pick some of them to actually not reject
+        (0..=potentially_non_rejecting_voters.len()).prop_flat_map(move |n_non_rejecting_voters| {
+            let mut shuffled_participants = shuffled_participants.clone();
 
-        let rejecting_decisions: HashMap<_, _> = rejecting_voters
-            .into_iter()
-            .map(|participant| (participant.device.id.clone(), -(participant.shares as i8)))
-            .collect();
+            // The participants which need to reject for the task to be declined
+            let rejecting_voters = &shuffled_participants[n_non_rejecting_voters..];
+            let rejects = rejecting_voters
+                .iter()
+                .map(|participant| participant.shares)
+                .sum();
 
-        // Generate a subset of the arbitrary voters, representing those who actually vote
-        let voter_indices = range_subset::range_subset(
-            0..arbitrary_voters.len(),  // NOTE: From indices 0..n_arbitrary_voters
-            0..=arbitrary_voters.len(), //       we select 0 up to n_arbitrary_voters
-        );
-        // Generate arbitrary decisions for the voters
-        let votes =
-            prop::collection::vec(prop_oneof![Just(true), Just(false)], arbitrary_voters.len());
-        (voter_indices, votes).prop_map({
-            let rejecting_decisions = rejecting_decisions.clone();
-            move |(voter_indices, votes)| {
-                let mut rejecting_decisions = rejecting_decisions.clone();
-                let arbitrary_votes = voter_indices.into_iter().map(|voter_idx| {
-                    let participant = &arbitrary_voters[voter_idx];
-                    let accepted = votes[voter_idx];
-                    let vote = if accepted {
-                        participant.shares as i8
-                    } else {
-                        -(participant.shares as i8)
-                    };
-                    (participant.device.id.clone(), vote)
-                });
-                rejecting_decisions.extend(arbitrary_votes);
-                rejecting_decisions
-            }
+            shuffled_participants.truncate(n_non_rejecting_voters);
+            let non_rejecting_voters = shuffled_participants;
+
+            // NOTE: This must hold because the total shares of non-rejecting voters are strictly
+            //       fewer than the accept threshold
+            assert!(rejects > 0);
+
+            // Pick some of the non-rejecting voters to actually accept
+            (0..=n_non_rejecting_voters).prop_map(move |n_accepting_voters| {
+                let non_rejecting_voters = non_rejecting_voters.clone();
+                let accepting_voters = &non_rejecting_voters[0..n_accepting_voters];
+                let accepts = accepting_voters
+                    .iter()
+                    .map(|participant| participant.shares)
+                    .sum();
+
+                (accepts, rejects)
+            })
         })
     })
 }
@@ -313,16 +329,12 @@ pub fn valid_declined_task(
     valid_task_info(device_limit, shares_limit).prop_flat_map(|task_info| {
         let total_shares = task_info.total_shares();
         (1..=total_shares).prop_flat_map(move |accept_threshold| {
-            declined_task_decisions(&task_info, accept_threshold).prop_map({
+            declined_task_accepts_rejects(&task_info, accept_threshold).prop_map({
                 let task_info = task_info.clone();
-                move |decisions| {
-                    let accepts = decisions.values().filter(|&vote| *vote > 0).count() as u32;
-                    let rejects = decisions.values().filter(|&vote| *vote < 0).count() as u32;
-                    DeclinedTask {
-                        task_info: task_info.clone(),
-                        accepts,
-                        rejects,
-                    }
+                move |(accepts, rejects)| DeclinedTask {
+                    task_info: task_info.clone(),
+                    accepts,
+                    rejects,
                 }
             })
         })
