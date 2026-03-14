@@ -705,13 +705,13 @@ mod tests {
             let mut repo = MockRepository::new();
             repo.expect_get_devices().return_once(|| Ok(Vec::new()));
             let repo = Arc::new(repo);
-            let mut task_store = MockTaskStore::new();
+            let mut task_store = MockTaskStore::<Box<Task>, Box<Task>>::new();
             let task_id = task.task_info().id;
             task_store.expect_get_task().return_once(move |_| {
                 // NOTE: Dummy non-voting task
                 Ok(Box::new(task))
             });
-            let state = StateInner::<MockTaskStore>::restore(repo, task_store)
+            let state = StateInner::restore(repo, task_store)
                 .await
                 .unwrap();
 
@@ -727,13 +727,13 @@ mod tests {
             let mut repo = MockRepository::new();
             repo.expect_get_devices().return_once(|| Ok(Vec::new()));
             let repo = Arc::new(repo);
-            let mut task_store = MockTaskStore::new();
+            let mut task_store = MockTaskStore::<Box<Task>, Box<Task>>::new();
             let task_id = task.task_info().id;
             task_store.expect_get_task_mut().return_once(move |_| {
                 // NOTE: Dummy non-voting task
                 Ok(Box::new(task))
             });
-            let state = StateInner::<MockTaskStore>::restore(repo, task_store)
+            let state = StateInner::restore(repo, task_store)
                 .await
                 .unwrap();
             // NOTE: The function called by the `decide` endpoint
