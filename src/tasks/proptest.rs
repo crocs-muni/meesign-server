@@ -234,38 +234,41 @@ fn voting_task_decisions(
     })
 }
 
+pub fn task_info_to_valid_voting_task(task_info: TaskInfo) -> impl Strategy<Value = VotingTask> {
+    let total_shares = task_info.total_shares();
+    let min_accept_threshold = match task_info.task_type {
+        TaskType::Group => total_shares,
+        _ => 1,
+    };
+    // Just like when creating a task in the client, we first specify
+    // the accept threshold, which is implicitly `total_shares` for group tasks
+    (min_accept_threshold..=total_shares).prop_flat_map({
+        let task_info = task_info.clone();
+        move |accept_threshold| {
+            (
+                voting_task_decisions(&task_info, accept_threshold),
+                valid_running_task_context(&task_info, accept_threshold),
+            )
+                .prop_map({
+                    let task_info = task_info.clone();
+                    move |(decisions, running_task_context)| VotingTask {
+                        task_info: task_info.clone(),
+                        decisions,
+                        accept_threshold,
+                        running_task_context,
+                    }
+                })
+        }
+    })
+}
+
 /// Proptest strategy to generate a valid voting task
 pub fn valid_voting_task(
     device_limit: usize,
     shares_limit: u32,
 ) -> impl Strategy<Value = VotingTask> {
-    valid_task_info(device_limit, shares_limit).prop_flat_map(move |task_info| {
-        let total_shares = task_info.total_shares();
-        let min_accept_threshold = match task_info.task_type {
-            TaskType::Group => total_shares,
-            _ => 1,
-        };
-        // Just like when creating a task in the client, we first specify
-        // the accept threshold, which is implicitly `total_shares` for group tasks
-        (min_accept_threshold..=total_shares).prop_flat_map({
-            let task_info = task_info.clone();
-            move |accept_threshold| {
-                (
-                    voting_task_decisions(&task_info, accept_threshold),
-                    valid_running_task_context(&task_info, accept_threshold),
-                )
-                    .prop_map({
-                        let task_info = task_info.clone();
-                        move |(decisions, running_task_context)| VotingTask {
-                            task_info: task_info.clone(),
-                            decisions,
-                            accept_threshold,
-                            running_task_context,
-                        }
-                    })
-            }
-        })
-    })
+    valid_task_info(device_limit, shares_limit)
+        .prop_flat_map(|task_info| task_info_to_valid_voting_task(task_info))
 }
 
 fn declined_task_accepts_rejects(
@@ -408,10 +411,31 @@ pub fn valid_nonvoting_task(device_limit: usize, shares_limit: u32) -> impl Stra
     ]
 }
 
+/// Proptest strategy to generate a valid voting task with a specified task type
+pub fn valid_voting_task_of_type(
+    device_limit: usize,
+    shares_limit: u32,
+    task_type: TaskType,
+) -> impl Strategy<Value = VotingTask> {
+    valid_task_info(device_limit, shares_limit)
+        .prop_filter("unwanted task type", move |task_info| {
+            task_info.task_type == task_type
+        })
+        .prop_flat_map(task_info_to_valid_voting_task)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proto;
     use std::collections::HashSet;
+
+    proptest! {
+        #[test]
+        fn task_info_is_valid(task_info in valid_task_info(5, 3)) {
+            assert!(task_info.total_shares() >= 2);
+        }
+    }
 
     proptest! {
         #[test]
@@ -425,6 +449,7 @@ mod tests {
                 .map(|participant| participant.shares)
                 .sum();
 
+            assert!(task.accept_threshold >= 2);
             assert!(accept_shares < task.accept_threshold);
             assert!(accept_shares + undecided_shares >= task.accept_threshold);
             assert!(accept_shares + reject_shares + undecided_shares == task.task_info.total_shares());
@@ -449,6 +474,30 @@ mod tests {
             assert!(task.accepts + task.rejects <= task.task_info.total_shares());
 
             // TODO: Check that accepts and rejects are sums of shares of disjoint subsets?
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn group_voting_task_is_valid(task in valid_voting_task_of_type(5, 3, TaskType::Group)) {
+            let protocol_type = proto::ProtocolType::from(task.task_info.protocol_type);
+            let RunningTaskContext::Group{threshold, ..} = task.running_task_context else {
+                panic!("Invalid running task context for a group voting task");
+            };
+            assert!(protocol_type.check_threshold(threshold, task.task_info.total_shares()));
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn sign_pdf_voting_task_is_valid(task in valid_voting_task_of_type(5, 3, TaskType::SignPdf)) {
+            let RunningTaskContext::SignPdf{data, ..} = task.running_task_context else {
+                panic!("Invalid running task context for a sign PDF voting task");
+            };
+            let task_name = task.task_info.name;
+            assert!(data.len() <= 8 * 1024 * 1024);
+            assert!(task_name.len() <= 256, "task name has len() = {}", task_name.len());
+            assert!(task_name.chars().all(|x| !x.is_control()));
         }
     }
 }
