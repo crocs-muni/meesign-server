@@ -19,6 +19,13 @@ prop_compose! {
     }
 }
 
+/// Proptest strategy to generate a valid task name
+pub fn valid_task_name() -> impl Strategy<Value = String> {
+    // NOTE: The regex matches arbitrary strings of 0-256 characters,
+    //       excluding unicode control characters
+    r"[^\p{Cc}]{0,256}".prop_filter("<= 256 bytes", |name| name.len() <= 256)
+}
+
 prop_compose! {
     /// Proptest strategy to generate a valid set of participants
     pub fn valid_participants(device_limit: usize, shares_limit: u32)(n_devices in 2..device_limit)(
@@ -79,7 +86,7 @@ pub fn valid_task_triple() -> impl Strategy<Value = (TaskType, ProtocolType, Key
 prop_compose! {
     /// Proptest strategy to generate a valid task info
     pub fn valid_task_info(device_limit: usize, shares_limit: u32)(
-        name in ".*",
+        name in valid_task_name(),
         (task_type, protocol_type, key_type) in valid_task_triple(),
         participants in valid_participants(device_limit, shares_limit),
         attempts in 0..5u32, // TODO: Review arbitrary bound on attempts
@@ -238,7 +245,7 @@ pub fn task_info_to_valid_voting_task(task_info: TaskInfo) -> impl Strategy<Valu
     let total_shares = task_info.total_shares();
     let min_accept_threshold = match task_info.task_type {
         TaskType::Group => total_shares,
-        _ => 1,
+        _ => 2,
     };
     // Just like when creating a task in the client, we first specify
     // the accept threshold, which is implicitly `total_shares` for group tasks
@@ -331,7 +338,7 @@ pub fn valid_declined_task(
 ) -> impl Strategy<Value = DeclinedTask> {
     valid_task_info(device_limit, shares_limit).prop_flat_map(|task_info| {
         let total_shares = task_info.total_shares();
-        (1..=total_shares).prop_flat_map(move |accept_threshold| {
+        (2..=total_shares).prop_flat_map(move |accept_threshold| {
             declined_task_accepts_rejects(&task_info, accept_threshold).prop_map({
                 let task_info = task_info.clone();
                 move |(accepts, rejects)| DeclinedTask {
