@@ -424,7 +424,7 @@ impl<TS: TaskStore + Sync> StateInner<TS> {
             return Ok(());
         };
         self.set_task_last_update(task_id);
-        let decision_update = task.decide(device_id, accept).await?;
+        let decision_update = task.decide(device_id, accept)?;
         self.repo
             .set_task_decision(task_id, device_id, accept)
             .await?;

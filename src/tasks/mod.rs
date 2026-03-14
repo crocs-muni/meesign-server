@@ -59,11 +59,7 @@ pub struct VotingTask {
     pub running_task_context: RunningTaskContext,
 }
 impl VotingTask {
-    pub async fn decide(
-        &mut self,
-        device_id: &[u8],
-        accept: bool,
-    ) -> Result<DecisionUpdate, Error> {
+    pub fn decide(&mut self, device_id: &[u8], accept: bool) -> Result<DecisionUpdate, Error> {
         let shares = self
             .task_info
             .participants
