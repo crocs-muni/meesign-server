@@ -20,7 +20,7 @@ services:
     healthcheck:
       # TODO The healthcheck performance is dependent on the lifetime of the
       #      application. With more devices it could get slower.
-      test: [ "CMD-SHELL", "meesign-server get-devices"]
+      test: [ "CMD-SHELL", "meesign-server --ca-cert-path /meesign/keys/meesign-ca-cert.pem get-devices"]
       interval: 1s
       timeout: 5s
       retries: 10
