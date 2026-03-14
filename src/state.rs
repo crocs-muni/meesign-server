@@ -679,10 +679,13 @@ mod tests {
     use super::*;
     use crate::persistence::MockRepository;
     use crate::task_store::MockTaskStore;
-    use crate::tasks::proptest::valid_nonvoting_task;
+    use crate::tasks::proptest::{
+        task_info_to_valid_voting_task, valid_nonvoting_task, valid_task_info,
+    };
 
     use proptest::prelude::*;
     use tokio::runtime::Runtime;
+    use tokio::sync::{Mutex, OwnedMutexGuard};
 
     /// A convenience macro to write tests using both proptest and tokio's async
     macro_rules! proptest_async {
@@ -698,6 +701,61 @@ mod tests {
                 }
             }
         };
+    }
+
+    fn valid_voting_task_excluding_signpdf(
+        device_limit: usize,
+        shares_limit: u32,
+    ) -> impl Strategy<Value = VotingTask> {
+        valid_task_info(device_limit, shares_limit)
+            .prop_filter("unwanted task type", |task_info| {
+                task_info.task_type != TaskType::SignPdf
+            })
+            .prop_flat_map(task_info_to_valid_voting_task)
+    }
+
+    prop_compose! {
+        /// Proptest strategy to generate a critical voting task
+        /// Critical here means that the acceptance/rejection of the task
+        /// depends on one last undecided participant.
+        fn critical_voting_task_excluding_sign_pdf(device_limit: usize, shares_limit: u32)(
+            mut task in valid_voting_task_excluding_signpdf(device_limit, shares_limit),
+        ) -> VotingTask {
+            let mut candidates: Vec<Participant> = task
+                .task_info
+                .participants
+                .iter()
+                .filter(|participant| !task.decisions.contains_key(&participant.device.id))
+                .cloned()
+                .collect();
+            candidates.sort_unstable_by_key(|participant| participant.shares);
+            let (mut accepts, mut rejects) = VotingTask::accepts_rejects(&task.decisions);
+            let mut undecided = task.task_info.total_shares() - accepts - rejects;
+            for candidate in candidates {
+                if candidate.shares + accepts < task.accept_threshold {
+                    // Accept as many as possible
+                    let Ok(DecisionUpdate::Undecided) = task.decide(&candidate.device.id, true) else {
+                        panic!("Valid decision failed");
+                    };
+                    accepts += candidate.shares;
+                    undecided -= candidate.shares;
+                } else if accepts + undecided - candidate.shares >= task.accept_threshold {
+                    // Reject as many as possible
+                    let Ok(DecisionUpdate::Undecided) = task.decide(&candidate.device.id, false) else {
+                        panic!("Valid decision failed");
+                    };
+                    rejects += candidate.shares;
+                    undecided -= candidate.shares;
+                }
+            }
+            // A critical voting task needs at least one undecided participant,
+            // because the voting is not complete. There cannot be more than one,
+            // because an accept-critical decision cannot also be a reject-critical
+            // unless it's the last participant.
+            assert!(task.decisions.len() + 1 == task.task_info.participants.len());
+
+            task
+        }
     }
 
     proptest_async! {
@@ -740,6 +798,122 @@ mod tests {
             let result = state.decide_task(&task_id, &[], true).await;
             // NOTE: Expect no error
             assert!(result.is_ok());
+        }
+    }
+
+    proptest_async! {
+        async fn voting_task_transitions_to_running_with_enough_accepts(task in critical_voting_task_excluding_sign_pdf(5, 3)) {
+            // Prepare repo and task store
+            let mut repo = MockRepository::new();
+            repo.expect_get_devices().return_once(|| Ok(Vec::new()));
+            let mut task_store = MockTaskStore::<OwnedMutexGuard<Task>, OwnedMutexGuard<Task>>::new();
+
+            // Extract task id and task type
+            let task_id = task.task_info.id;
+            let task_type = task.task_info.task_type;
+
+            // Extract the id of the last undecided participant
+            let undecided_participant_ids: Vec<_> = task
+                .task_info
+                .participants
+                .iter()
+                .map(|participant| &participant.device.id)
+                .filter(|id| !task.decisions.contains_key(id.as_slice()))
+                .collect();
+            assert!(undecided_participant_ids.len() == 1);
+            let undecided_participant_id = undecided_participant_ids[0].clone();
+
+
+            // Prepare mutable task reference
+            let task = Arc::new(Mutex::new(Task::Voting(task)));
+            let lock = task.clone().lock_owned().await;
+            task_store.expect_get_task_mut().return_once(move |_| {
+                // NOTE: Reference to our `task`
+                Ok(lock)
+            });
+
+            // Expect that a decision will be stored
+            repo.expect_set_task_decision().return_once(|_, _, _| Ok(()));
+            // And the task will prepare to run
+            repo.expect_set_task_active_shares().return_once(|_, _| Ok(()));
+            // Expectations for the first round
+            match task_type {
+                TaskType::Group => {
+                    repo.expect_set_task_group_certificates_sent().return_once(|_, _| Ok(()));
+                },
+                _ => {
+                    repo.expect_set_task_round().return_once(|_, round| Ok(round));
+                }
+            }
+
+            // Create state
+            let state = StateInner::restore(Arc::new(repo), task_store)
+                .await
+                .unwrap();
+
+            // Run the behavior being tested
+            // NOTE: The function called by the `decide` endpoint
+            state
+                .decide_task(&task_id, &undecided_participant_id, true)
+                .await
+                .unwrap();
+
+            let Task::Running(_) = *task.lock().await else {
+                panic!("Critical voting task didn't change phase after last decision");
+            };
+        }
+    }
+
+    proptest_async! {
+        async fn voting_task_transitions_to_declined_with_enough_rejects(task in critical_voting_task_excluding_sign_pdf(5, 3)) {
+            // Prepare repo and task store
+            let mut repo = MockRepository::new();
+            repo.expect_get_devices().return_once(|| Ok(Vec::new()));
+            let mut task_store = MockTaskStore::<OwnedMutexGuard<Task>, OwnedMutexGuard<Task>>::new();
+
+            // Extract task id
+            let task_id = task.task_info.id;
+
+            // Extract the id of the last undecided participant
+            let undecided_participant_ids: Vec<_> = task
+                .task_info
+                .participants
+                .iter()
+                .map(|participant| &participant.device.id)
+                .filter(|id| !task.decisions.contains_key(id.as_slice()))
+                .collect();
+            assert!(undecided_participant_ids.len() == 1);
+            let undecided_participant_id = undecided_participant_ids[0].clone();
+
+
+            // Prepare mutable task reference
+            let task = Arc::new(Mutex::new(Task::Voting(task)));
+            let lock = task.clone().lock_owned().await;
+            task_store.expect_get_task_mut().return_once(move |_| {
+                // NOTE: Reference to our `task`
+                Ok(lock)
+            });
+
+            // Expect that a decision will be stored
+            repo.expect_set_task_decision().return_once(|_, _, _| Ok(()));
+            // And a (failed) result will be set
+            repo.expect_set_task_result().return_once(|_, _| Ok(()));
+
+            // Create state
+            let state = StateInner::restore(Arc::new(repo), task_store)
+                .await
+                .unwrap();
+
+            // Run the behavior being tested
+            // NOTE: The function called by the `decide` endpoint
+            state
+                .decide_task(&task_id, &undecided_participant_id, false)
+                .await
+                .unwrap();
+
+            let Task::Declined(_) = *task.lock().await else {
+                panic!("Critical voting task didn't change phase after last decision");
+            };
         }
     }
 }
