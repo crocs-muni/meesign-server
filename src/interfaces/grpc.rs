@@ -210,6 +210,7 @@ impl MeeSign for MeeSignService {
     ) -> Result<Response<msg::Task>, Status> {
         self.check_client_auth(&request, false)?;
 
+        let creator_device_id = extract_device_id(&request);
         let request = request.into_inner();
         let group_id = request.group_id;
         let name = request.name;
@@ -219,7 +220,7 @@ impl MeeSign for MeeSignService {
 
         let task = self
             .state
-            .add_decrypt_task(&group_id, &name, &data, &data_type)
+            .add_decrypt_task(&group_id, &name, &data, &data_type, creator_device_id)
             .await?;
         Ok(Response::new(task))
     }
