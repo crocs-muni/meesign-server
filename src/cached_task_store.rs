@@ -125,6 +125,7 @@ impl CachedTaskStore {
                 protocol_type: task_model.protocol_type,
                 key_type: task_model.key_type,
                 participants,
+                observers: vec![],
                 attempts: task_model.attempt_count as u32,
                 request: task_model.request.clone(),
             };

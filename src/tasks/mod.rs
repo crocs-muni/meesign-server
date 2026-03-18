@@ -202,6 +202,8 @@ pub struct TaskInfo {
     pub protocol_type: ProtocolType,
     pub key_type: KeyType,
     pub participants: Vec<Participant>,
+    /// Non-participant device IDs that should receive task updates.
+    pub observers: Vec<Vec<u8>>,
     pub attempts: u32,
     pub request: Vec<u8>,
 }

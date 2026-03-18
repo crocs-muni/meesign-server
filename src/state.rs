@@ -113,6 +113,7 @@ impl<TS: TaskStore + Sync> StateInner<TS> {
             protocol_type,
             key_type,
             participants,
+            observers: vec![],
             attempts: 0,
             request,
         };
@@ -183,6 +184,7 @@ impl<TS: TaskStore + Sync> StateInner<TS> {
             protocol_type,
             key_type,
             participants,
+            observers: vec![],
             attempts: 0,
             request,
         };
@@ -202,6 +204,7 @@ impl<TS: TaskStore + Sync> StateInner<TS> {
         name: &str,
         data: &[u8],
         data_type: &str,
+        creator_device_id: Option<Vec<u8>>,
     ) -> Result<proto::Task, Error> {
         let group: Option<Group> = self.get_repo().get_group(group_id).await?;
         let Some(group) = group else {
@@ -236,6 +239,15 @@ impl<TS: TaskStore + Sync> StateInner<TS> {
                 ));
             }
         };
+        // Add the creator as an observer if they're not already a participant
+        let observers = match creator_device_id {
+            Some(ref did)
+                if !participants.iter().any(|p| p.device.id == did.as_slice()) =>
+            {
+                vec![did.clone()]
+            }
+            _ => vec![],
+        };
         let task_info = TaskInfo {
             id: Uuid::new_v4(),
             name: name.to_string(),
@@ -243,6 +255,7 @@ impl<TS: TaskStore + Sync> StateInner<TS> {
             protocol_type,
             key_type,
             participants,
+            observers,
             attempts: 0,
             request,
         };
@@ -426,7 +439,10 @@ impl<TS: TaskStore + Sync> StateInner<TS> {
             .set_task_decision(task_id, device_id, accept)
             .await?;
         match decision_update {
-            DecisionUpdate::Undecided => {}
+            DecisionUpdate::Undecided => {
+                // Notify participants and observers about updated accept/reject counts
+                self.send_updates(task_entry).await?;
+            }
             DecisionUpdate::Accepted => {
                 info!(
                     "Task approved task_id={}",
@@ -648,6 +664,21 @@ impl<TS: TaskStore + Sync> StateInner<TS> {
             }
         }
 
+        // Also notify observers (non-participant task creators)
+        for observer_id in &task.task_info().observers {
+            if let Some(tx) = self.subscribers.get(observer_id.as_slice()) {
+                let result = tx.try_send(Ok(task.format(None, None)));
+
+                if result.is_err() {
+                    debug!(
+                        "Closed observer channel device_id={}…",
+                        utils::hextrunc(&observer_id[..4.min(observer_id.len())])
+                    );
+                    remove.push(observer_id.clone());
+                }
+            }
+        }
+
         for device_id in remove {
             self.remove_subscriber(&device_id);
         }
@@ -695,6 +726,7 @@ mod tests {
                     protocol_type: ProtocolType::Gg18,
                     key_type: KeyType::SignChallenge,
                     participants: Vec::new(),
+                    observers: Vec::new(),
                     attempts: 0,
                     request: Vec::new(),
                 },
