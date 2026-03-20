@@ -207,6 +207,13 @@ struct Args {
     #[clap(short, long, default_value_t = String::from("meesign.local"))]
     host: String,
 
+    #[clap(
+        short,
+        long,
+        help = "The filepath to the X509 CA certificate to be used to verify server's TLS certificate, defaults to system's CA roots."
+    )]
+    ca_cert_path: Option<String>,
+
     #[cfg(feature = "cli")]
     #[clap(subcommand)]
     command: Option<cli::Commands>,
@@ -252,8 +259,9 @@ async fn main() -> Result<(), String> {
 mod cli {
     use crate::proto::KeyType;
     use crate::proto::MeeSignClient;
-    use crate::{Args, CA_CERT};
+    use crate::{Args};
     use clap::Subcommand;
+    use openssl::x509::X509;
     use std::str::FromStr;
     use std::time::SystemTime;
     use tonic::transport::{Certificate, Channel, ClientTlsConfig, Uri};
@@ -293,13 +301,19 @@ mod cli {
 
     pub(super) async fn handle_command(args: Args) -> Result<(), String> {
         if let Some(command) = args.command {
-            let tls = ClientTlsConfig::new()
-                .domain_name(&args.host)
-                .ca_certificate(Certificate::from_pem(
-                    CA_CERT
-                        .to_pem()
-                        .map_err(|_| "Unable to load CA certificate".to_string())?,
-                ));
+            let tls = match &args.ca_cert_path {
+                Some(filepath) => {
+                    let ca_cert: X509 = X509::from_pem(&std::fs::read(filepath).unwrap()).unwrap();
+                    ClientTlsConfig::new()
+                        .domain_name(&args.host)
+                        .ca_certificate(Certificate::from_pem(
+                            ca_cert
+                                .to_pem()
+                                .map_err(|_| "Unable to load CA certificate".to_string())?,
+                        ))
+                }
+                None => ClientTlsConfig::new().domain_name(&args.host),
+            };
 
             let channel = Channel::builder(
                 Uri::from_str(&format!("https://{}:{}", &args.host, args.port))

@@ -71,12 +71,9 @@ fn validate_jwt(token: &str) -> Result<Vec<u8>, Status> {
     validation.required_spec_claims.clear();
     validation.validate_exp = false;
 
-    let token_data = decode::<JwtClaims>(
-        token,
-        &DecodingKey::from_secret(&JWT_SECRET),
-        &validation,
-    )
-    .map_err(|_| Status::unauthenticated("Invalid authentication token"))?;
+    let token_data =
+        decode::<JwtClaims>(token, &DecodingKey::from_secret(&JWT_SECRET), &validation)
+            .map_err(|_| Status::unauthenticated("Invalid authentication token"))?;
 
     hex::decode(&token_data.claims.sub)
         .map_err(|_| Status::unauthenticated("Invalid device ID in token"))
@@ -116,11 +113,7 @@ impl MeeSignService {
 
     /// Check client authentication using either mTLS peer certs or JWT token.
     /// Returns Ok(()) if auth passes or is not required.
-    fn check_client_auth<T>(
-        &self,
-        request: &Request<T>,
-        required: bool,
-    ) -> Result<(), Status> {
+    fn check_client_auth<T>(&self, request: &Request<T>, required: bool) -> Result<(), Status> {
         if let Some(device_id) = extract_device_id(request) {
             if !self.state.device_exists(&device_id) {
                 return Err(Status::unauthenticated("Unknown device"));
@@ -253,8 +246,8 @@ impl MeeSign for MeeSignService {
     ) -> Result<Response<msg::Resp>, Status> {
         self.check_client_auth(&request, true)?;
 
-        let device_id = extract_device_id(&request)
-            .expect("device_id must be present after auth check");
+        let device_id =
+            extract_device_id(&request).expect("device_id must be present after auth check");
 
         let request = request.into_inner();
         let task_id = Uuid::from_slice(&request.task).unwrap();
@@ -463,8 +456,8 @@ impl MeeSign for MeeSignService {
     ) -> Result<Response<msg::Resp>, Status> {
         self.check_client_auth(&request, true)?;
 
-        let device_id = extract_device_id(&request)
-            .expect("device_id must be present after auth check");
+        let device_id =
+            extract_device_id(&request).expect("device_id must be present after auth check");
 
         let request = request.into_inner();
         let task_id = Uuid::from_slice(&request.task).unwrap();
@@ -498,8 +491,8 @@ impl MeeSign for MeeSignService {
     ) -> Result<Response<msg::Resp>, Status> {
         self.check_client_auth(&request, true)?;
 
-        let device_id = extract_device_id(&request)
-            .expect("device_id must be present after auth check");
+        let device_id =
+            extract_device_id(&request).expect("device_id must be present after auth check");
 
         let task_id = request.into_inner().task_id;
 
@@ -532,8 +525,8 @@ impl MeeSign for MeeSignService {
     ) -> Result<Response<Self::SubscribeUpdatesStream>, Status> {
         self.check_client_auth(&request, true)?;
 
-        let device_id = extract_device_id(&request)
-            .expect("device_id must be present after auth check");
+        let device_id =
+            extract_device_id(&request).expect("device_id must be present after auth check");
 
         let (tx, rx) = mpsc::channel(8);
 
