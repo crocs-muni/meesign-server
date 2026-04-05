@@ -680,7 +680,7 @@ mod tests {
     use crate::persistence::MockRepository;
     use crate::task_store::MockTaskStore;
     use crate::tasks::proptest::{
-        task_info_to_valid_voting_task, valid_nonvoting_task, valid_task_info,
+        task_info_to_valid_voting_task, valid_nonvoting_task, valid_task_info, valid_voting_task,
     };
 
     use proptest::prelude::*;
@@ -755,6 +755,30 @@ mod tests {
             assert!(task.decisions.len() + 1 == task.task_info.participants.len());
 
             task
+        }
+    }
+
+    prop_compose! {
+        fn valid_accepted_task(device_limit: usize, shares_limit: u32)(
+            mut task in valid_voting_task(device_limit, shares_limit),
+        ) -> VotingTask {
+            let candidate_ids: Vec<Vec<u8>> = task
+                .task_info
+                .participants
+                .iter()
+                .map(|participant| &participant.device.id)
+                .filter(|id| !task.decisions.contains_key(id.as_slice()))
+                .cloned()
+                .collect();
+
+            for candidate_id in candidate_ids {
+                match task.decide(&candidate_id, true) {
+                    Ok(DecisionUpdate::Accepted) => return task,
+                    Ok(DecisionUpdate::Undecided) => {},
+                    _ => panic!("Unexpected decision update"),
+                }
+            }
+            panic!("Voting task didn't allow task accept");
         }
     }
 
@@ -914,6 +938,82 @@ mod tests {
             let Task::Declined(_) = *task.lock().await else {
                 panic!("Critical voting task didn't change phase after last decision");
             };
+        }
+    }
+
+    proptest_async! {
+        async fn valid_accepted_task_is_valid(task in valid_accepted_task(5, 3)) {
+            let (accepts, _) = VotingTask::accepts_rejects(&task.decisions);
+            assert!(accepts >= task.accept_threshold);
+        }
+    }
+
+    proptest_async! {
+        async fn choose_active_shares_properties(task in valid_accepted_task(5, 3)) {
+            let mut repo = MockRepository::new();
+            repo.expect_get_devices().return_once(|| Ok(Vec::new()));
+            // TODO: Check the active shares
+            repo.expect_set_task_active_shares().return_once(|_, _| Ok(()));
+            let repo = Arc::new(repo);
+            let task_store = MockTaskStore::<Box<Task>, Box<Task>>::new();
+            let state = StateInner::restore(repo, task_store)
+                .await
+                .unwrap();
+
+            // Run the behavior being tested
+            let Ok(active_shares) = state.choose_active_shares(&task).await else {
+                panic!("Choosing active shares failed unexpectedly");
+            };
+
+            for device in active_shares.values() {
+                // NOTE: Each active share must have accepted participation on the task
+                assert!(task.device_accepted(&device.id), "non-accepting voter chosen as active");
+            }
+
+            // NOTE: We recreate the candidate shares as per the documentation
+            // NOTE: Step 1: Gather all candidate shares sorted by their corresponding device id
+            let mut candidate_shares: Vec<_> = task
+                .task_info
+                .participants
+                .iter()
+                .flat_map(|participant| {
+                    std::iter::repeat_n(participant.device.id.clone(), participant.shares as usize)
+                })
+                .collect();
+            candidate_shares.sort_unstable();
+            // NOTE: Step 2: Assign indices [0..n] to the sorted shares: this is implicit by the vector's indexing
+
+            for (idx, device) in &active_shares {
+                // NOTE: The device id at a given protocol index must be consistent
+                assert_eq!(candidate_shares[*idx as usize], device.id);
+            }
+
+            // NOTE: Step 3: For each device, get the range of indices assigned to its shares
+            let mut candidate_share_ranges: HashMap<Vec<u8>, Vec<u32>> = HashMap::new();
+            for (idx, id) in candidate_shares.into_iter().enumerate() {
+                candidate_share_ranges.entry(id).or_default().push(idx as u32);
+            }
+
+            // NOTE: We also compute the index ranges of the active shares
+            let mut active_share_ranges: HashMap<Vec<u8>, Vec<u32>> = HashMap::new();
+            for (idx, device) in &active_shares {
+                active_share_ranges.entry(device.id.clone()).or_default().push(*idx);
+            }
+
+            for (id, active_range) in &mut active_share_ranges {
+                // NOTE: And sort them
+                active_range.sort_unstable();
+
+                // NOTE: We test correctness of Step 4: Choose the active shares such that for each device, they are chosen from the start of its range
+
+                // NOTE: The index range of a device's active shares must be a prefix of the index range of all its shares
+                let candidate_range = &candidate_share_ranges[id];
+                assert_eq!(active_range, &candidate_range[0..active_range.len()], "active shares are not a prefix of candidate shares");
+            }
+
+            // NOTE: Finally, there must be exactly `accept_threshold` active shares
+            let total_active_shares = active_shares.len() as u32;
+            assert_eq!(total_active_shares, task.accept_threshold);
         }
     }
 }
