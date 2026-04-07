@@ -7,6 +7,7 @@ pub(crate) mod sign_pdf;
 pub(crate) mod proptest;
 
 use meesign_crypto::proto::ClientMessage;
+use rand::{prelude::IteratorRandom, thread_rng};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
@@ -108,6 +109,65 @@ impl VotingTask {
     }
     pub fn device_accepted(&self, device_id: &[u8]) -> bool {
         self.decisions.get(device_id) > Some(&0)
+    }
+
+    pub fn choose_active_shares(
+        &self,
+        is_preferred: impl Fn(&Participant) -> bool,
+    ) -> HashMap<u32, Device> {
+        // NOTE: Threshold tasks need to use indices from group establishment, that is,
+        //       the indices assigned to all task participants. Since we don't store
+        //       any such index mapping, we generate it from a sorted list of devices.
+        let mut all_participants = self.task_info.participants.clone();
+        all_participants.sort_by(|a, b| a.device.id.cmp(&b.device.id));
+        let first_share_indices: HashMap<Vec<u8>, u32> = all_participants
+            .into_iter()
+            .scan(0, |idx, p| {
+                let first_share = *idx;
+                *idx += p.shares;
+                Some((p.device.id.clone(), first_share))
+            })
+            .collect();
+
+        let accepting_participants: Vec<&Participant> = self
+            .task_info
+            .participants
+            .iter()
+            .filter(|participant| self.device_accepted(&participant.device.id))
+            .collect();
+
+        let preferred_participants: Vec<&Participant> = accepting_participants
+            .iter()
+            .copied()
+            .filter(|&participant| is_preferred(participant))
+            .collect();
+
+        let total_preferred_shares: u32 = preferred_participants
+            .iter()
+            .map(|participant| participant.shares)
+            .sum();
+
+        let candidate_participants = if total_preferred_shares >= self.accept_threshold {
+            preferred_participants
+        } else {
+            accepting_participants
+        };
+
+        let chosen_shares = candidate_participants
+            .into_iter()
+            .flat_map(|p| std::iter::repeat_n(&p.device, p.shares as usize))
+            .choose_multiple(&mut thread_rng(), self.accept_threshold as usize);
+
+        let active_shares = chosen_shares
+            .into_iter()
+            .scan(first_share_indices, |share_indices, device| {
+                let share_index = share_indices[&device.id];
+                *share_indices.get_mut(&device.id).unwrap() += 1;
+                Some((share_index, device.clone()))
+            })
+            .collect();
+
+        active_shares
     }
 }
 #[cfg_attr(test, derive(Debug))]

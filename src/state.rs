@@ -17,7 +17,6 @@ use crate::tasks::{
 use crate::{get_timestamp, utils};
 use meesign_crypto::proto::ClientMessage;
 use prost::Message as _;
-use rand::{prelude::IteratorRandom, thread_rng};
 use tokio::sync::mpsc::Sender;
 use tonic::codegen::Arc;
 use tonic::Status;
@@ -489,66 +488,24 @@ impl<TS: TaskStore + Sync> StateInner<TS> {
     /// The clients expect that out of a participant's [0..n] shares,
     /// exactly the first [0..k] will be chosen.
     async fn choose_active_shares(&self, task: &VotingTask) -> Result<HashMap<u32, Device>, Error> {
-        // NOTE: Threshold tasks need to use indices from group establishment, that is,
-        //       the indices assigned to all task participants. Since we don't store
-        //       any such index mapping, we generate it from a sorted list of devices.
-        let mut all_participants = task.task_info.participants.clone();
-        all_participants.sort_by(|a, b| a.device.id.cmp(&b.device.id));
-        let first_share_indices: HashMap<Vec<u8>, u32> = all_participants
-            .into_iter()
-            .scan(0, |idx, p| {
-                let first_share = *idx;
-                *idx += p.shares;
-                Some((p.device.id.clone(), first_share))
-            })
-            .collect();
+        let latest_acceptable_time = get_timestamp() - 5; // TODO: Factor the constant out
 
-        let accepting_participants: Vec<&Participant> = task
-            .task_info
-            .participants
-            .iter()
-            .filter(|p| task.device_accepted(&p.device.id))
-            .collect();
-        let latest_acceptable_time = get_timestamp() - 5;
-        let connected_participants: Vec<&Participant> = accepting_participants
-            .iter()
-            .filter(|p| {
-                let last_active_time = self.get_device_last_activation(&p.device.id);
-                last_active_time > latest_acceptable_time
-            })
-            .copied()
-            .collect();
+        let active_shares = task.choose_active_shares(|participant| {
+            let last_active_time = self.get_device_last_activation(&participant.device.id);
+            last_active_time > latest_acceptable_time
+        });
 
-        let total_connected_shares: u32 = connected_participants.iter().map(|p| p.shares).sum();
-        let candidates = if total_connected_shares >= task.accept_threshold {
-            connected_participants
-        } else {
-            accepting_participants
-        };
-
-        let chosen_devices = candidates
-            .into_iter()
-            .flat_map(|p| std::iter::repeat_n(&p.device, p.shares as usize))
-            .choose_multiple(&mut thread_rng(), task.accept_threshold as usize);
-
-        let mut active_shares = HashMap::new();
-        for device in &chosen_devices {
-            *active_shares.entry(device.id.clone()).or_default() += 1;
+        // NOTE: We need to persist the number of active shares per device
+        let mut active_share_counts = HashMap::new();
+        for device in active_shares.values() {
+            *active_share_counts.entry(device.id.clone()).or_default() += 1;
         }
+
         self.repo
-            .set_task_active_shares(&task.task_info.id, &active_shares)
+            .set_task_active_shares(&task.task_info.id, &active_share_counts)
             .await?;
 
-        let active_devices = chosen_devices
-            .into_iter()
-            .scan(first_share_indices, |share_indices, device| {
-                let share_index = share_indices[&device.id];
-                *share_indices.get_mut(&device.id).unwrap() += 1;
-                Some((share_index, device.clone()))
-            })
-            .collect();
-
-        Ok(active_devices)
+        Ok(active_shares)
     }
 
     pub async fn acknowledge_task(&self, task_id: &Uuid, device: &[u8]) -> Result<(), Error> {
