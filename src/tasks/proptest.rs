@@ -7,8 +7,8 @@ use uuid::Uuid;
 use std::collections::HashMap;
 
 use super::{
-    DeclinedTask, FailedTask, FinishedTask, RunningTaskContext, Task, TaskInfo, TaskResult,
-    VotingTask,
+    DecisionUpdate, DeclinedTask, FailedTask, FinishedTask, RunningTask, RunningTaskContext, Task,
+    TaskInfo, TaskResult, VotingTask,
 };
 use crate::persistence::{Device, DeviceKind, Group, KeyType, Participant, ProtocolType, TaskType};
 
@@ -278,6 +278,47 @@ pub fn valid_voting_task(
         .prop_flat_map(|task_info| task_info_to_valid_voting_task(task_info))
 }
 
+/// Proptest strategy to generate a valid running task that was just started
+pub fn valid_started_running_task(
+    device_limit: usize,
+    shares_limit: u32,
+) -> impl Strategy<Value = Box<dyn RunningTask>> {
+    valid_task_info(device_limit, shares_limit)
+        .prop_flat_map(|task_info| task_info_to_valid_started_running_task(task_info))
+}
+
+fn task_info_to_valid_started_running_task(
+    task_info: TaskInfo,
+) -> impl Strategy<Value = Box<dyn RunningTask>> {
+    let shuffled_participants = Just(task_info.participants.clone()).prop_shuffle();
+    (
+        shuffled_participants,
+        task_info_to_valid_voting_task(task_info),
+    )
+        .prop_map(|(shuffled_participants, mut voting_task)| {
+            // Accept with random participants until the threshold is reached
+            for participant in shuffled_participants {
+                match voting_task.decide(&participant.device.id, true).unwrap() {
+                    DecisionUpdate::Accepted => break,
+                    _ => {}
+                }
+            }
+
+            let active_shares = voting_task.choose_active_shares(|_| true);
+
+            let running_task = voting_task
+                .running_task_context
+                .clone()
+                .create_running_task(&voting_task, active_shares)
+                .expect(&format!(
+                    "generated invalid data for {:?}",
+                    voting_task.task_info
+                ));
+
+            running_task
+        })
+}
+
 fn declined_task_accepts_rejects(
     task_info: &TaskInfo,
     accept_threshold: u32,
@@ -414,7 +455,8 @@ pub fn valid_nonvoting_task(device_limit: usize, shares_limit: u32) -> impl Stra
         valid_declined_task(device_limit, shares_limit).prop_map(Task::Declined),
         valid_failed_task(device_limit, shares_limit).prop_map(Task::Failed),
         valid_finished_task(device_limit, shares_limit).prop_map(Task::Finished),
-        // TODO: Add running task
+        valid_started_running_task(device_limit, shares_limit).prop_map(Task::Running),
+        // TODO: Extend running task
     ]
 }
 

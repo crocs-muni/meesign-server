@@ -207,7 +207,7 @@ pub struct FailedTask {
 #[must_use]
 pub enum Task {
     Voting(VotingTask),
-    Running(Box<dyn RunningTask + Send + Sync>),
+    Running(Box<dyn RunningTask>),
     Declined(DeclinedTask),
     Finished(FinishedTask),
     Failed(FailedTask),
@@ -372,5 +372,12 @@ impl std::fmt::Debug for Task {
             Task::Failed(t) => write!(f, "Failed({:?})", t),
             Task::Running(_) => write!(f, "Running(..)"),
         }
+    }
+}
+
+#[cfg(test)]
+impl std::fmt::Debug for dyn RunningTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RunningTask(..)")
     }
 }
