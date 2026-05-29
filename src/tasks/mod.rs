@@ -3,7 +3,11 @@ pub(crate) mod group;
 pub(crate) mod sign;
 pub(crate) mod sign_pdf;
 
+#[cfg(test)]
+pub(crate) mod proptest;
+
 use meesign_crypto::proto::ClientMessage;
+use rand::{prelude::IteratorRandom, thread_rng};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
@@ -28,6 +32,7 @@ pub enum DecisionUpdate {
     Declined(DeclinedTask),
 }
 
+#[cfg_attr(test, derive(Clone, Debug))]
 pub enum TaskResult {
     GroupEstablished(Group),
     Signed(Vec<u8>),
@@ -46,6 +51,7 @@ impl TaskResult {
     }
 }
 
+#[cfg_attr(test, derive(Debug))]
 #[must_use]
 pub struct VotingTask {
     pub task_info: TaskInfo,
@@ -54,11 +60,7 @@ pub struct VotingTask {
     pub running_task_context: RunningTaskContext,
 }
 impl VotingTask {
-    pub async fn decide(
-        &mut self,
-        device_id: &[u8],
-        accept: bool,
-    ) -> Result<DecisionUpdate, Error> {
+    pub fn decide(&mut self, device_id: &[u8], accept: bool) -> Result<DecisionUpdate, Error> {
         let shares = self
             .task_info
             .participants
@@ -78,6 +80,7 @@ impl VotingTask {
         let decision_update = if accepts >= self.accept_threshold {
             DecisionUpdate::Accepted
         } else if rejects >= self.reject_threshold() {
+            // TODO: Check using potential acceptors instead, allowing for earlier rejection
             DecisionUpdate::Declined(DeclinedTask {
                 task_info: self.task_info.clone(),
                 accepts,
@@ -107,13 +110,74 @@ impl VotingTask {
     pub fn device_accepted(&self, device_id: &[u8]) -> bool {
         self.decisions.get(device_id) > Some(&0)
     }
+
+    pub fn choose_active_shares(
+        &self,
+        is_preferred: impl Fn(&Participant) -> bool,
+    ) -> HashMap<u32, Device> {
+        // NOTE: Threshold tasks need to use indices from group establishment, that is,
+        //       the indices assigned to all task participants. Since we don't store
+        //       any such index mapping, we generate it from a sorted list of devices.
+        let mut all_participants = self.task_info.participants.clone();
+        all_participants.sort_by(|a, b| a.device.id.cmp(&b.device.id));
+        let first_share_indices: HashMap<Vec<u8>, u32> = all_participants
+            .into_iter()
+            .scan(0, |idx, p| {
+                let first_share = *idx;
+                *idx += p.shares;
+                Some((p.device.id.clone(), first_share))
+            })
+            .collect();
+
+        let accepting_participants: Vec<&Participant> = self
+            .task_info
+            .participants
+            .iter()
+            .filter(|participant| self.device_accepted(&participant.device.id))
+            .collect();
+
+        let preferred_participants: Vec<&Participant> = accepting_participants
+            .iter()
+            .copied()
+            .filter(|&participant| is_preferred(participant))
+            .collect();
+
+        let total_preferred_shares: u32 = preferred_participants
+            .iter()
+            .map(|participant| participant.shares)
+            .sum();
+
+        let candidate_participants = if total_preferred_shares >= self.accept_threshold {
+            preferred_participants
+        } else {
+            accepting_participants
+        };
+
+        let chosen_shares = candidate_participants
+            .into_iter()
+            .flat_map(|p| std::iter::repeat_n(&p.device, p.shares as usize))
+            .choose_multiple(&mut thread_rng(), self.accept_threshold as usize);
+
+        let active_shares = chosen_shares
+            .into_iter()
+            .scan(first_share_indices, |share_indices, device| {
+                let share_index = share_indices[&device.id];
+                *share_indices.get_mut(&device.id).unwrap() += 1;
+                Some((share_index, device.clone()))
+            })
+            .collect();
+
+        active_shares
+    }
 }
+#[cfg_attr(test, derive(Debug))]
 #[must_use]
 pub struct DeclinedTask {
     pub task_info: TaskInfo,
     pub accepts: u32,
     pub rejects: u32,
 }
+#[cfg_attr(test, derive(Debug))]
 #[must_use]
 pub struct FinishedTask {
     pub task_info: TaskInfo,
@@ -133,15 +197,17 @@ impl FinishedTask {
         self.acknowledgements.insert(device_id.to_vec());
     }
 }
+#[cfg_attr(test, derive(Debug))]
 #[must_use]
 pub struct FailedTask {
     pub task_info: TaskInfo,
     pub reason: String,
 }
+
 #[must_use]
 pub enum Task {
     Voting(VotingTask),
-    Running(Box<dyn RunningTask + Send + Sync>),
+    Running(Box<dyn RunningTask>),
     Declined(DeclinedTask),
     Finished(FinishedTask),
     Failed(FailedTask),
@@ -195,6 +261,7 @@ impl Task {
 }
 
 #[derive(Clone)]
+#[cfg_attr(test, derive(Debug))]
 pub struct TaskInfo {
     pub id: Uuid,
     pub name: String,
@@ -234,6 +301,7 @@ pub trait RunningTask: Send + Sync {
 }
 
 #[derive(Clone)]
+#[cfg_attr(test, derive(Debug))]
 pub enum RunningTaskContext {
     Group {
         threshold: u32,
@@ -291,5 +359,25 @@ impl RunningTaskContext {
             )),
         };
         Ok(task)
+    }
+}
+
+#[cfg(test)]
+impl std::fmt::Debug for Task {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Task::Voting(t) => write!(f, "Voting({:?})", t),
+            Task::Declined(t) => write!(f, "Declined({:?})", t),
+            Task::Finished(t) => write!(f, "Finished({:?})", t),
+            Task::Failed(t) => write!(f, "Failed({:?})", t),
+            Task::Running(_) => write!(f, "Running(..)"),
+        }
+    }
+}
+
+#[cfg(test)]
+impl std::fmt::Debug for dyn RunningTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RunningTask(..)")
     }
 }

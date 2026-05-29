@@ -1,7 +1,9 @@
 use crate::error::Error;
 use crate::tasks::{Task, VotingTask};
 use async_trait::async_trait;
+use std::future::Future;
 use std::ops::{Deref, DerefMut};
+use std::pin::Pin;
 use uuid::Uuid;
 
 #[async_trait]
@@ -29,7 +31,11 @@ use mockall::mock;
 
 #[cfg(test)]
 mock! {
-    pub TaskStore {
+    pub TaskStore<Ref, RefMut>
+    where
+        Ref: Deref<Target = Task> + Send,
+        RefMut: DerefMut<Target = Task> + Send,
+    {
         pub fn persist_task(&self, task: VotingTask) ->
             Result<Option<Task>, Error>;
         pub fn get_task(&self, task_id: &Uuid) ->
@@ -41,18 +47,48 @@ mock! {
 
 // TODO: Mock the async behavior as well.
 #[cfg(test)]
-#[async_trait]
-impl TaskStore for MockTaskStore {
-    type TaskRef = Box<Task>;
-    type TaskRefMut = Box<Task>;
+// #[async_trait]
+impl<Ref, RefMut> TaskStore for MockTaskStore<Ref, RefMut>
+where
+    Ref: Deref<Target = Task> + Send,
+    RefMut: DerefMut<Target = Task> + Send,
+{
+    type TaskRef = Ref;
+    type TaskRefMut = RefMut;
 
-    async fn persist_task(&self, task: VotingTask) -> Result<Option<Task>, Error> {
-        self.persist_task(task)
+    fn persist_task<'life0, 'async_trait>(
+        &'life0 self,
+        task: VotingTask,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Task>, Error>> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
+        let res = self.persist_task(task);
+        Box::pin(async move { res })
     }
-    async fn get_task(&self, task_id: &Uuid) -> Result<Self::TaskRef, Error> {
-        self.get_task(task_id)
+    fn get_task<'life0, 'life1, 'async_trait>(
+        &'life0 self,
+        task_id: &'life1 Uuid,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::TaskRef, Error>> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        'life1: 'async_trait,
+        Self: 'async_trait,
+    {
+        let res = self.get_task(task_id);
+        Box::pin(async move { res })
     }
-    async fn get_task_mut(&self, task_id: &Uuid) -> Result<Self::TaskRefMut, Error> {
-        self.get_task_mut(task_id)
+    fn get_task_mut<'life0, 'life1, 'async_trait>(
+        &'life0 self,
+        task_id: &'life1 Uuid,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::TaskRefMut, Error>> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        'life1: 'async_trait,
+        Self: 'async_trait,
+    {
+        let res = self.get_task_mut(task_id);
+        Box::pin(async move { res })
     }
 }

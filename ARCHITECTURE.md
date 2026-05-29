@@ -26,12 +26,15 @@ This repository contains a gRPC server which coordinates multi-party threshold p
 
 ## Module structure
 - `persistence` contains code related to the server persistence.
+  - `postgres_repository` contains the Postgres implementation of server persistence
 - `state` contains and manages all of the server's state.
 - `interfaces` contains the modules `grpc` and `timer`, which define long-running services
   - `grpc` provides the server's gRPC endpoints, handles client registration and certificates
   - `timer` periodically runs checks over the state
-- `task_store` manages the persistence and caching of tasks
-- `task` contains the logic for task computation
+- `task_store` defines an interface for managing task lifetime
+- `cached_task_store` an implementation of a task store with persistence and caching
+- `tasks` contains the logic for task computation
+  - `proptest` contains code relevant to property testing with tasks
 - `protocol` contains the logic for protocol computation
 - `communicator` defines the communicator
 - `error` contains definitions of error variants
@@ -40,7 +43,7 @@ This repository contains a gRPC server which coordinates multi-party threshold p
 ## Persistence
 Most of the server state is persisted throughout server restarts, but some state is deliberately ephemeral and kept only in the RAM. The ephemeral state is mostly data which changes "rapidly", namely activity timestamps and messages exchanged during protocol computation.
 
-Persistence is handled in the `state` module, with the exception of `task_store`, which is only used within `state`. This is to decouple the logic from bookkeeping.
+Persistence is handled in the `state` module, with the exception of `cached_task_store`, which is only used within `state`. This is to decouple the logic from bookkeeping.
 
 The `persistence` module is supposed to be a "dumb" interface for communicating with the DB. In particular, it shouldn't validate data, perform complex logic, etc...
 

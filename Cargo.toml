@@ -54,3 +54,4 @@ db-tests = []
 
 [dev-dependencies]
 mockall = "0.14.0"
+proptest = "1.10.0"

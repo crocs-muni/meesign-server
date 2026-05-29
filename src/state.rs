@@ -17,7 +17,6 @@ use crate::tasks::{
 use crate::{get_timestamp, utils};
 use meesign_crypto::proto::ClientMessage;
 use prost::Message as _;
-use rand::{prelude::IteratorRandom, thread_rng};
 use tokio::sync::mpsc::Sender;
 use tonic::codegen::Arc;
 use tonic::Status;
@@ -416,12 +415,15 @@ impl<TS: TaskStore + Sync> StateInner<TS> {
     ) -> Result<(), Error> {
         let task_entry = &mut *self.task_store.get_task_mut(task_id).await?;
         let Task::Voting(task) = task_entry else {
-            return Err(Error::GeneralProtocolError(
-                "Cannot decide non-voting task".into(),
-            ));
+            debug!(
+                "Decision from non-voting task_id={} device_id={}",
+                utils::hextrunc(task_id.as_bytes()),
+                utils::hextrunc(device_id)
+            );
+            return Ok(());
         };
         self.set_task_last_update(task_id);
-        let decision_update = task.decide(device_id, accept).await?;
+        let decision_update = task.decide(device_id, accept)?;
         self.repo
             .set_task_decision(task_id, device_id, accept)
             .await?;
@@ -486,66 +488,24 @@ impl<TS: TaskStore + Sync> StateInner<TS> {
     /// The clients expect that out of a participant's [0..n] shares,
     /// exactly the first [0..k] will be chosen.
     async fn choose_active_shares(&self, task: &VotingTask) -> Result<HashMap<u32, Device>, Error> {
-        // NOTE: Threshold tasks need to use indices from group establishment, that is,
-        //       the indices assigned to all task participants. Since we don't store
-        //       any such index mapping, we generate it from a sorted list of devices.
-        let mut all_participants = task.task_info.participants.clone();
-        all_participants.sort_by(|a, b| a.device.id.cmp(&b.device.id));
-        let first_share_indices: HashMap<Vec<u8>, u32> = all_participants
-            .into_iter()
-            .scan(0, |idx, p| {
-                let first_share = *idx;
-                *idx += p.shares;
-                Some((p.device.id.clone(), first_share))
-            })
-            .collect();
+        let latest_acceptable_time = get_timestamp() - 5; // TODO: Factor the constant out
 
-        let accepting_participants: Vec<&Participant> = task
-            .task_info
-            .participants
-            .iter()
-            .filter(|p| task.device_accepted(&p.device.id))
-            .collect();
-        let latest_acceptable_time = get_timestamp() - 5;
-        let connected_participants: Vec<&Participant> = accepting_participants
-            .iter()
-            .filter(|p| {
-                let last_active_time = self.get_device_last_activation(&p.device.id);
-                last_active_time > latest_acceptable_time
-            })
-            .copied()
-            .collect();
+        let active_shares = task.choose_active_shares(|participant| {
+            let last_active_time = self.get_device_last_activation(&participant.device.id);
+            last_active_time > latest_acceptable_time
+        });
 
-        let total_connected_shares: u32 = connected_participants.iter().map(|p| p.shares).sum();
-        let candidates = if total_connected_shares >= task.accept_threshold {
-            connected_participants
-        } else {
-            accepting_participants
-        };
-
-        let chosen_devices = candidates
-            .into_iter()
-            .flat_map(|p| std::iter::repeat_n(&p.device, p.shares as usize))
-            .choose_multiple(&mut thread_rng(), task.accept_threshold as usize);
-
-        let mut active_shares = HashMap::new();
-        for device in &chosen_devices {
-            *active_shares.entry(device.id.clone()).or_default() += 1;
+        // NOTE: We need to persist the number of active shares per device
+        let mut active_share_counts = HashMap::new();
+        for device in active_shares.values() {
+            *active_share_counts.entry(device.id.clone()).or_default() += 1;
         }
+
         self.repo
-            .set_task_active_shares(&task.task_info.id, &active_shares)
+            .set_task_active_shares(&task.task_info.id, &active_share_counts)
             .await?;
 
-        let active_devices = chosen_devices
-            .into_iter()
-            .scan(first_share_indices, |share_indices, device| {
-                let share_index = share_indices[&device.id];
-                *share_indices.get_mut(&device.id).unwrap() += 1;
-                Some((share_index, device.clone()))
-            })
-            .collect();
-
-        Ok(active_devices)
+        Ok(active_shares)
     }
 
     pub async fn acknowledge_task(&self, task_id: &Uuid, device: &[u8]) -> Result<(), Error> {
@@ -676,39 +636,341 @@ mod tests {
     use super::*;
     use crate::persistence::MockRepository;
     use crate::task_store::MockTaskStore;
-    use crate::tasks::DeclinedTask;
+    use crate::tasks::proptest::{
+        task_info_to_valid_voting_task, valid_nonvoting_task, valid_task_info, valid_voting_task,
+    };
 
-    #[tokio::test]
-    async fn get_task_works_with_non_voting_task() {
-        let mut repo = MockRepository::new();
-        repo.expect_get_devices().return_once(|| Ok(Vec::new()));
-        let repo = Arc::new(repo);
-        let mut task_store = MockTaskStore::new();
-        let task_id = Uuid::new_v4();
-        task_store.expect_get_task().return_once(move |_| {
-            // NOTE: Dummy non-voting task
-            Ok(Box::new(Task::Declined(DeclinedTask {
-                task_info: TaskInfo {
-                    id: task_id,
-                    name: "".to_string(),
-                    task_type: TaskType::SignChallenge,
-                    protocol_type: ProtocolType::Gg18,
-                    key_type: KeyType::SignChallenge,
-                    participants: Vec::new(),
-                    attempts: 0,
-                    request: Vec::new(),
+    use proptest::prelude::*;
+    use tokio::runtime::Runtime;
+    use tokio::sync::{Mutex, OwnedMutexGuard};
+
+    /// A convenience macro to write tests using both proptest and tokio's async
+    macro_rules! proptest_async {
+        (
+            $(#[$meta:meta])*
+            async fn $name:ident ( $($args:tt)* ) $(-> $ret:ty)? $body:block
+        ) => {
+            proptest! {
+                #[test]
+                $(#[$meta])*
+                fn $name($($args)*) $(-> $ret)? {
+                    Runtime::new().unwrap().block_on(async $body)
+                }
+            }
+        };
+    }
+
+    fn valid_voting_task_excluding_signpdf(
+        device_limit: usize,
+        shares_limit: u32,
+    ) -> impl Strategy<Value = VotingTask> {
+        valid_task_info(device_limit, shares_limit)
+            .prop_filter("unwanted task type", |task_info| {
+                task_info.task_type != TaskType::SignPdf
+            })
+            .prop_flat_map(task_info_to_valid_voting_task)
+    }
+
+    prop_compose! {
+        /// Proptest strategy to generate a critical voting task
+        /// Critical here means that the acceptance/rejection of the task
+        /// depends on one last undecided participant.
+        fn critical_voting_task_excluding_sign_pdf(device_limit: usize, shares_limit: u32)(
+            mut task in valid_voting_task_excluding_signpdf(device_limit, shares_limit),
+        ) -> VotingTask {
+            let mut candidates: Vec<Participant> = task
+                .task_info
+                .participants
+                .iter()
+                .filter(|participant| !task.decisions.contains_key(&participant.device.id))
+                .cloned()
+                .collect();
+            candidates.sort_unstable_by_key(|participant| participant.shares);
+            let (mut accepts, mut rejects) = VotingTask::accepts_rejects(&task.decisions);
+            let mut undecided = task.task_info.total_shares() - accepts - rejects;
+            for candidate in candidates {
+                if candidate.shares + accepts < task.accept_threshold {
+                    // Accept as many as possible
+                    let Ok(DecisionUpdate::Undecided) = task.decide(&candidate.device.id, true) else {
+                        panic!("Valid decision failed");
+                    };
+                    accepts += candidate.shares;
+                    undecided -= candidate.shares;
+                } else if accepts + undecided - candidate.shares >= task.accept_threshold {
+                    // Reject as many as possible
+                    let Ok(DecisionUpdate::Undecided) = task.decide(&candidate.device.id, false) else {
+                        panic!("Valid decision failed");
+                    };
+                    rejects += candidate.shares;
+                    undecided -= candidate.shares;
+                }
+            }
+            // A critical voting task needs at least one undecided participant,
+            // because the voting is not complete. There cannot be more than one,
+            // because an accept-critical decision cannot also be a reject-critical
+            // unless it's the last participant.
+            assert!(task.decisions.len() + 1 == task.task_info.participants.len());
+
+            task
+        }
+    }
+
+    prop_compose! {
+        fn valid_accepted_task(device_limit: usize, shares_limit: u32)(
+            mut task in valid_voting_task(device_limit, shares_limit),
+        ) -> VotingTask {
+            let candidate_ids: Vec<Vec<u8>> = task
+                .task_info
+                .participants
+                .iter()
+                .map(|participant| &participant.device.id)
+                .filter(|id| !task.decisions.contains_key(id.as_slice()))
+                .cloned()
+                .collect();
+
+            for candidate_id in candidate_ids {
+                match task.decide(&candidate_id, true) {
+                    Ok(DecisionUpdate::Accepted) => return task,
+                    Ok(DecisionUpdate::Undecided) => {},
+                    _ => panic!("Unexpected decision update"),
+                }
+            }
+            panic!("Voting task didn't allow task accept");
+        }
+    }
+
+    proptest_async! {
+        async fn get_task_works_with_non_voting_task(task in valid_nonvoting_task(5, 3)) {
+            let mut repo = MockRepository::new();
+            repo.expect_get_devices().return_once(|| Ok(Vec::new()));
+            let repo = Arc::new(repo);
+            let mut task_store = MockTaskStore::<Box<Task>, Box<Task>>::new();
+            let task_id = task.task_info().id;
+            task_store.expect_get_task().return_once(move |_| {
+                // NOTE: Dummy non-voting task
+                Ok(Box::new(task))
+            });
+            let state = StateInner::restore(repo, task_store)
+                .await
+                .unwrap();
+
+            // NOTE: The function called by the `get_task` endpoint
+            let task = state.get_formatted_task(&task_id, None).await;
+            // NOTE: Expect no error
+            assert!(task.is_ok());
+        }
+    }
+
+    proptest_async! {
+        async fn decisions_work_past_threshold(task in valid_nonvoting_task(5, 3)) {
+            let mut repo = MockRepository::new();
+            repo.expect_get_devices().return_once(|| Ok(Vec::new()));
+            let repo = Arc::new(repo);
+            let mut task_store = MockTaskStore::<Box<Task>, Box<Task>>::new();
+            let task_id = task.task_info().id;
+            task_store.expect_get_task_mut().return_once(move |_| {
+                // NOTE: Dummy non-voting task
+                Ok(Box::new(task))
+            });
+            let state = StateInner::restore(repo, task_store)
+                .await
+                .unwrap();
+            // NOTE: The function called by the `decide` endpoint
+            let result = state.decide_task(&task_id, &[], true).await;
+            // NOTE: Expect no error
+            assert!(result.is_ok());
+        }
+    }
+
+    proptest_async! {
+        async fn voting_task_transitions_to_running_with_enough_accepts(task in critical_voting_task_excluding_sign_pdf(5, 3)) {
+            // Prepare repo and task store
+            let mut repo = MockRepository::new();
+            repo.expect_get_devices().return_once(|| Ok(Vec::new()));
+            let mut task_store = MockTaskStore::<OwnedMutexGuard<Task>, OwnedMutexGuard<Task>>::new();
+
+            // Extract task id and task type
+            let task_id = task.task_info.id;
+            let task_type = task.task_info.task_type;
+
+            // Extract the id of the last undecided participant
+            let undecided_participant_ids: Vec<_> = task
+                .task_info
+                .participants
+                .iter()
+                .map(|participant| &participant.device.id)
+                .filter(|id| !task.decisions.contains_key(id.as_slice()))
+                .collect();
+            assert!(undecided_participant_ids.len() == 1);
+            let undecided_participant_id = undecided_participant_ids[0].clone();
+
+
+            // Prepare mutable task reference
+            let task = Arc::new(Mutex::new(Task::Voting(task)));
+            let lock = task.clone().lock_owned().await;
+            task_store.expect_get_task_mut().return_once(move |_| {
+                // NOTE: Reference to our `task`
+                Ok(lock)
+            });
+
+            // Expect that a decision will be stored
+            repo.expect_set_task_decision().return_once(|_, _, _| Ok(()));
+            // And the task will prepare to run
+            repo.expect_set_task_active_shares().return_once(|_, _| Ok(()));
+            // Expectations for the first round
+            match task_type {
+                TaskType::Group => {
+                    repo.expect_set_task_group_certificates_sent().return_once(|_, _| Ok(()));
                 },
-                accepts: 0,
-                rejects: 2,
-            })))
-        });
-        let state = StateInner::<MockTaskStore>::restore(repo, task_store)
-            .await
-            .unwrap();
+                _ => {
+                    repo.expect_set_task_round().return_once(|_, round| Ok(round));
+                }
+            }
 
-        // NOTE: The function called by the `get_task` endpoint
-        let task = state.get_formatted_task(&task_id, None).await;
-        // NOTE: Expect no error
-        assert!(task.is_ok());
+            // Create state
+            let state = StateInner::restore(Arc::new(repo), task_store)
+                .await
+                .unwrap();
+
+            // Run the behavior being tested
+            // NOTE: The function called by the `decide` endpoint
+            state
+                .decide_task(&task_id, &undecided_participant_id, true)
+                .await
+                .unwrap();
+
+            let Task::Running(_) = *task.lock().await else {
+                panic!("Critical voting task didn't change phase after last decision");
+            };
+        }
+    }
+
+    proptest_async! {
+        async fn voting_task_transitions_to_declined_with_enough_rejects(task in critical_voting_task_excluding_sign_pdf(5, 3)) {
+            // Prepare repo and task store
+            let mut repo = MockRepository::new();
+            repo.expect_get_devices().return_once(|| Ok(Vec::new()));
+            let mut task_store = MockTaskStore::<OwnedMutexGuard<Task>, OwnedMutexGuard<Task>>::new();
+
+            // Extract task id
+            let task_id = task.task_info.id;
+
+            // Extract the id of the last undecided participant
+            let undecided_participant_ids: Vec<_> = task
+                .task_info
+                .participants
+                .iter()
+                .map(|participant| &participant.device.id)
+                .filter(|id| !task.decisions.contains_key(id.as_slice()))
+                .collect();
+            assert!(undecided_participant_ids.len() == 1);
+            let undecided_participant_id = undecided_participant_ids[0].clone();
+
+
+            // Prepare mutable task reference
+            let task = Arc::new(Mutex::new(Task::Voting(task)));
+            let lock = task.clone().lock_owned().await;
+            task_store.expect_get_task_mut().return_once(move |_| {
+                // NOTE: Reference to our `task`
+                Ok(lock)
+            });
+
+            // Expect that a decision will be stored
+            repo.expect_set_task_decision().return_once(|_, _, _| Ok(()));
+            // And a (failed) result will be set
+            repo.expect_set_task_result().return_once(|_, _| Ok(()));
+
+            // Create state
+            let state = StateInner::restore(Arc::new(repo), task_store)
+                .await
+                .unwrap();
+
+            // Run the behavior being tested
+            // NOTE: The function called by the `decide` endpoint
+            state
+                .decide_task(&task_id, &undecided_participant_id, false)
+                .await
+                .unwrap();
+
+            let Task::Declined(_) = *task.lock().await else {
+                panic!("Critical voting task didn't change phase after last decision");
+            };
+        }
+    }
+
+    proptest_async! {
+        async fn valid_accepted_task_is_valid(task in valid_accepted_task(5, 3)) {
+            let (accepts, _) = VotingTask::accepts_rejects(&task.decisions);
+            assert!(accepts >= task.accept_threshold);
+        }
+    }
+
+    proptest_async! {
+        async fn choose_active_shares_properties(task in valid_accepted_task(5, 3)) {
+            let mut repo = MockRepository::new();
+            repo.expect_get_devices().return_once(|| Ok(Vec::new()));
+            // TODO: Check the active shares
+            repo.expect_set_task_active_shares().return_once(|_, _| Ok(()));
+            let repo = Arc::new(repo);
+            let task_store = MockTaskStore::<Box<Task>, Box<Task>>::new();
+            let state = StateInner::restore(repo, task_store)
+                .await
+                .unwrap();
+
+            // Run the behavior being tested
+            let Ok(active_shares) = state.choose_active_shares(&task).await else {
+                panic!("Choosing active shares failed unexpectedly");
+            };
+
+            for device in active_shares.values() {
+                // NOTE: Each active share must have accepted participation on the task
+                assert!(task.device_accepted(&device.id), "non-accepting voter chosen as active");
+            }
+
+            // NOTE: We recreate the candidate shares as per the documentation
+            // NOTE: Step 1: Gather all candidate shares sorted by their corresponding device id
+            let mut candidate_shares: Vec<_> = task
+                .task_info
+                .participants
+                .iter()
+                .flat_map(|participant| {
+                    std::iter::repeat_n(participant.device.id.clone(), participant.shares as usize)
+                })
+                .collect();
+            candidate_shares.sort_unstable();
+            // NOTE: Step 2: Assign indices [0..n] to the sorted shares: this is implicit by the vector's indexing
+
+            for (idx, device) in &active_shares {
+                // NOTE: The device id at a given protocol index must be consistent
+                assert_eq!(candidate_shares[*idx as usize], device.id);
+            }
+
+            // NOTE: Step 3: For each device, get the range of indices assigned to its shares
+            let mut candidate_share_ranges: HashMap<Vec<u8>, Vec<u32>> = HashMap::new();
+            for (idx, id) in candidate_shares.into_iter().enumerate() {
+                candidate_share_ranges.entry(id).or_default().push(idx as u32);
+            }
+
+            // NOTE: We also compute the index ranges of the active shares
+            let mut active_share_ranges: HashMap<Vec<u8>, Vec<u32>> = HashMap::new();
+            for (idx, device) in &active_shares {
+                active_share_ranges.entry(device.id.clone()).or_default().push(*idx);
+            }
+
+            for (id, active_range) in &mut active_share_ranges {
+                // NOTE: And sort them
+                active_range.sort_unstable();
+
+                // NOTE: We test correctness of Step 4: Choose the active shares such that for each device, they are chosen from the start of its range
+
+                // NOTE: The index range of a device's active shares must be a prefix of the index range of all its shares
+                let candidate_range = &candidate_share_ranges[id];
+                assert_eq!(active_range, &candidate_range[0..active_range.len()], "active shares are not a prefix of candidate shares");
+            }
+
+            // NOTE: Finally, there must be exactly `accept_threshold` active shares
+            let total_active_shares = active_shares.len() as u32;
+            assert_eq!(total_active_shares, task.accept_threshold);
+        }
     }
 }
